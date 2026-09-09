@@ -1,0 +1,82 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:UserIdentityDesktop.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="720"
+        x:Class="UserIdentityDesktop.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Icon="/Assets/favicon.ico"
+        Title="Fire User Connect"
+        MinWidth="800" MinHeight="550"
+        Width="1100" Height="720"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource ForgeBg}">
+
+    <Grid RowDefinitions="Auto,*">
+        <!-- Top App Navigation / Title Header -->
+        <Border Grid.Row="0"
+                Background="{DynamicResource ForgeSurface}"
+                BorderBrush="{DynamicResource ForgeBorder}"
+                BorderThickness="0,0,0,1"
+                Padding="16,8">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <Image Source="/Assets/PageLogo.png" Width="24" Height="24" Stretch="Uniform" VerticalAlignment="Center" />
+                    <TextBlock Text="Fire User Connect"
+                               FontWeight="Bold"
+                               FontSize="14"
+                               Foreground="{DynamicResource ForgeTextPrimary}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+
+                <!-- People Search -->
+                <Grid Grid.Column="1"
+                      HorizontalAlignment="Center"
+                      Width="420"
+                      IsVisible="{Binding IsChatView}">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBox Classes="fire-input"
+                                 Text="{Binding IdentitySearchText, Mode=TwoWay}"
+                                 PlaceholderText="Search members &amp; identity..."
+                                 Height="36"
+                                 CornerRadius="18"
+                                 Padding="14,6"
+                                 FontSize="12" />
+                        <Button Grid.Column="1"
+                                Classes="icon-btn"
+                                Command="{Binding ClearIdentitySearchCommand}"
+                                IsVisible="{Binding IdentitySearchText, Converter={StaticResource NullToBoolConverter}}"
+                                Margin="-34,0,0,0"
+                                Width="30" Height="30"
+                                ToolTip.Tip="Clear search">
+                            <TextBlock Text="✕" FontSize="11" Foreground="{DynamicResource ForgeTextMuted}" />
+                        </Button>
+                    </Grid>
+                </Grid>
+
+                <!-- Theme Toggle Button -->
+                <Button Grid.Column="2"
+                        Classes="icon-btn"
+                        Command="{Binding ToggleThemeCommand}"
+                        ToolTip.Tip="Toggle Dark/Light Mode"
+                        Width="32" Height="32"
+                        Padding="0">
+                    <Panel>
+                        <TextBlock Text="☀" FontSize="14"
+                                   IsVisible="{Binding IsDarkMode}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Text="🌙" FontSize="14"
+                                   IsVisible="{Binding !IsDarkMode}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                    </Panel>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- Current View Host (LoginView or ChatView) -->
+        <ContentControl Grid.Row="1" Content="{Binding CurrentView}" />
+    </Grid>
+</Window>

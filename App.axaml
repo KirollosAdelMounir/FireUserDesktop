@@ -1,0 +1,148 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:UserIdentityDesktop"
+             xmlns:converters="using:UserIdentityDesktop.Converters"
+             x:Class="UserIdentityDesktop.App"
+             RequestedThemeVariant="Dark">
+
+    <Application.DataTemplates>
+        <local:ViewLocator />
+    </Application.DataTemplates>
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <converters:BoolInverterConverter x:Key="BoolInverterConverter" />
+            <converters:NullToBoolConverter x:Key="NullToBoolConverter" />
+            <converters:DateTimeFormatConverter x:Key="DateTimeFormatConverter" />
+
+            <!-- Brand shared brushes -->
+            <SolidColorBrush x:Key="ForgePrimary" Color="#FF4500" />
+            <SolidColorBrush x:Key="ForgePrimaryHover" Color="#FF5722" />
+            <SolidColorBrush x:Key="ForgeAccentGold" Color="#FFB703" />
+            <SolidColorBrush x:Key="ForgeSuccess" Color="#2EC4B6" />
+            <SolidColorBrush x:Key="ForgeDanger" Color="#E63946" />
+
+            <LinearGradientBrush x:Key="ForgePrimaryGradient" StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Color="#FF3700" Offset="0.0" />
+                <GradientStop Color="#FF7700" Offset="0.5" />
+                <GradientStop Color="#FFA100" Offset="1.0" />
+            </LinearGradientBrush>
+
+            <LinearGradientBrush x:Key="ForgePrimaryGradientSubtle" StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Color="#33FF4500" Offset="0.0" />
+                <GradientStop Color="#22FF8C00" Offset="1.0" />
+            </LinearGradientBrush>
+
+            <ResourceDictionary.ThemeDictionaries>
+                <!-- Obsidian / Magma Dark Theme -->
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="ForgeBg" Color="#0C0808" />
+                    <SolidColorBrush x:Key="ForgeBgSecondary" Color="#140D0F" />
+                    <SolidColorBrush x:Key="ForgeSurface" Color="#171012" />
+                    <SolidColorBrush x:Key="ForgeSurfaceCard" Color="#1C1315" />
+                    <SolidColorBrush x:Key="ForgeSurfaceHover" Color="#26181B" />
+                    <SolidColorBrush x:Key="ForgeBorder" Color="#33FF5722" />
+                    <SolidColorBrush x:Key="ForgeBorderFocus" Color="#FF6B2B" />
+                    <SolidColorBrush x:Key="ForgeTextPrimary" Color="#FBF5F2" />
+                    <SolidColorBrush x:Key="ForgeTextSecondary" Color="#CFBCBA" />
+                    <SolidColorBrush x:Key="ForgeTextMuted" Color="#8E7876" />
+                    <SolidColorBrush x:Key="ForgeBubbleReceived" Color="#201518" />
+                </ResourceDictionary>
+
+                <!-- Warm Ash Light Theme -->
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="ForgeBg" Color="#F8F4F0" />
+                    <SolidColorBrush x:Key="ForgeBgSecondary" Color="#F0EBE4" />
+                    <SolidColorBrush x:Key="ForgeSurface" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="ForgeSurfaceCard" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="ForgeSurfaceHover" Color="#FFF5EE" />
+                    <SolidColorBrush x:Key="ForgeBorder" Color="#33FF5A14" />
+                    <SolidColorBrush x:Key="ForgeBorderFocus" Color="#FF4500" />
+                    <SolidColorBrush x:Key="ForgeTextPrimary" Color="#1E1310" />
+                    <SolidColorBrush x:Key="ForgeTextSecondary" Color="#6E5852" />
+                    <SolidColorBrush x:Key="ForgeTextMuted" Color="#9E8A84" />
+                    <SolidColorBrush x:Key="ForgeBubbleReceived" Color="#FFFFFF" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme />
+
+        <Style Selector="ProgressBar.forge-progress">
+            <Setter Property="Foreground" Value="{DynamicResource ForgePrimaryGradient}" />
+            <Setter Property="Background" Value="#22FF4500" />
+            <Setter Property="Height" Value="3" />
+        </Style>
+
+        <!-- Fire Button Style -->
+        <Style Selector="Button.fire-btn">
+            <Setter Property="Background" Value="{DynamicResource ForgePrimaryGradient}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="16,10" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.16" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Button.fire-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource ForgePrimaryHover}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Opacity" Value="0.92" />
+        </Style>
+
+        <!-- Secondary Button Style -->
+        <Style Selector="Button.secondary-btn">
+            <Setter Property="Background" Value="{DynamicResource ForgeBgSecondary}" />
+            <Setter Property="Foreground" Value="{DynamicResource ForgeTextPrimary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ForgeBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.secondary-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource ForgeSurfaceHover}" />
+        </Style>
+
+        <!-- Icon Button Style -->
+        <Style Selector="Button.icon-btn">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource ForgeTextSecondary}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="20" />
+            <Setter Property="Padding" Value="8" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.16" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Button.icon-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource ForgeSurfaceHover}" />
+            <Setter Property="Foreground" Value="{DynamicResource ForgePrimary}" />
+            <Setter Property="Opacity" Value="0.84" />
+        </Style>
+
+        <!-- Fire Input Box Style -->
+        <Style Selector="TextBox.fire-input">
+            <Setter Property="Background" Value="{DynamicResource ForgeSurfaceCard}" />
+            <Setter Property="Foreground" Value="{DynamicResource ForgeTextPrimary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ForgeBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="12,10" />
+        </Style>
+        <Style Selector="TextBox.fire-input:focus /template/ Border#PART_BorderElement">
+            <Setter Property="BorderBrush" Value="{DynamicResource ForgeBorderFocus}" />
+            <Setter Property="BorderThickness" Value="1.5" />
+        </Style>
+    </Application.Styles>
+</Application>
