@@ -1,0 +1,32 @@
+{
+  "osx-x64": {
+    "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2/ffmpeg.zip",
+    "archive": "zip",
+    "sha256": "7c6b4125b191cbf773832dc51f424cf2b6bb7da43007d1e066f95909e47cacd4",
+    "executable": "ffmpeg"
+  },
+  "win-x64": {
+    "url": "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip",
+    "archive": "zip",
+    "sha256": "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba",
+    "executable": "ffmpeg.exe"
+  },
+  "linux-x64": {
+    "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-18-13-01/ffmpeg-n8.1.3-18-g46d899d7a0-linux64-lgpl-8.1.tar.xz",
+    "archive": "tar.xz",
+    "sha256": "746a270f8f6bdaca09a5caee3a9303e2e42cd4006891541f629179d162927516",
+    "executable": "ffmpeg"
+  },
+  "linux-arm64": {
+    "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-18-13-01/ffmpeg-n8.1.3-18-g46d899d7a0-linuxarm64-lgpl-8.1.tar.xz",
+    "archive": "tar.xz",
+    "sha256": "56f57d8e57a9b484d34e751ca92540a095795a19da08bcfa0069bd376f4b8585",
+    "executable": "ffmpeg"
+  },
+  "osx-arm64": {
+    "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip",
+    "archive": "zip",
+    "sha256": "c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924",
+    "executable": "ffmpeg"
+  }
+}

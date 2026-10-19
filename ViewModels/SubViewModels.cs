@@ -28,6 +28,8 @@ public sealed class StatusOption
 public partial class RecipientItemViewModel : ObservableObject
 {
     public Guid ReceiverId { get; set; }
+    public bool IsGroup { get; set; }
+    public string? ConversationId { get; set; }
 
     [ObservableProperty]
     private string _receiverName = string.Empty;
@@ -73,6 +75,8 @@ public partial class RecipientItemViewModel : ObservableObject
         return new RecipientItemViewModel
         {
             ReceiverId = dto.ReceiverId,
+            IsGroup = dto.IsGroup,
+            ConversationId = dto.ConversationId,
             ReceiverName = dto.ReceiverName,
             LastMessage = dto.LastMessage,
             LastSent = dto.LastSent,
@@ -142,7 +146,7 @@ public partial class ChatAttachmentItemViewModel : ObservableObject
             var savePath = await _fileService.PickSaveFileAsync(Attachment.FileName, "Save Attachment");
             if (!string.IsNullOrEmpty(savePath))
             {
-                var success = await _chatService.SaveAttachmentToFileAsync(Attachment.Id, savePath);
+                var success = await _chatService.SaveAttachmentToFileAsync(Attachment.Id, savePath, Attachment.Encryption);
                 if (success)
                 {
                     _fileService.OpenFileWithDefaultApp(savePath);

@@ -24,6 +24,7 @@ public partial class App : Avalonia.Application
     public static string? PendingDeepLink { get; set; }
     public static MainViewModel? MainViewModelInstance { get; private set; }
     private static readonly Queue<string> PendingDeepLinks = new();
+    private bool _shutdownPrepared;
 
     public override void Initialize()
     {
@@ -61,6 +62,15 @@ public partial class App : Avalonia.Application
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
             MainViewModelInstance = (MainViewModel)mainWindow.DataContext;
+            desktop.ShutdownRequested += async (_, args) =>
+            {
+                if (_shutdownPrepared) return;
+                args.Cancel = true;
+                _shutdownPrepared = true;
+                try { await MainViewModelInstance.ShutdownAsync(); }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Shutdown cleanup: " + ex.GetType().Name); }
+                finally { mainWindow.AllowClose = true; desktop.Shutdown(); }
+            };
             if (!string.IsNullOrWhiteSpace(PendingDeepLink))
                 EnqueueDeepLink(PendingDeepLink);
 
@@ -78,8 +88,11 @@ public partial class App : Avalonia.Application
                 mainWindow.ShowFromTray();
             };
             var exit = new NativeMenuItem { Header = "Exit" };
-            exit.Click += (_, _) =>
+            exit.Click += async (_, _) =>
             {
+                exit.IsEnabled = false;
+                try { if (MainViewModelInstance != null) await MainViewModelInstance.ShutdownAsync(); }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Shutdown cleanup: " + ex.GetType().Name); }
                 mainWindow.AllowClose = true;
                 desktop.Shutdown();
             };

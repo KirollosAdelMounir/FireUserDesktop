@@ -98,9 +98,13 @@
                     Background="{DynamicResource ForgeSurface}"
                     BorderBrush="{DynamicResource ForgeBorder}"
                     BorderThickness="0,0,1.5,0">
-                <Grid RowDefinitions="Auto,Auto,Auto,*">
+                <Grid RowDefinitions="64,Auto,Auto,*,Auto">
+                    <Grid Margin="20,0" ColumnDefinitions="Auto,*" VerticalAlignment="Center">
+                        <PathIcon Width="20" Height="20" Foreground="{DynamicResource ForgePrimary}" Data="M2,3 L22,3 22,17 8,17 2,22 Z M5,6 L19,6 19,14 7,14 5,16 Z" />
+                        <TextBlock Grid.Column="1" Text="Conversations" FontSize="17" FontWeight="SemiBold" Margin="10,0,0,0" />
+                    </Grid>
                     <!-- User Profile Header -->
-                    <Border Grid.Row="0"
+                    <Border Grid.Row="4"
                             Padding="16,12"
                             BorderBrush="{DynamicResource ForgeBorder}"
                             BorderThickness="0,0,0,1">
@@ -332,14 +336,14 @@
             <!-- ===================================================== -->
             <!-- 2. MAIN CHAT & IDENTITY SEARCH SECTION                -->
             <!-- ===================================================== -->
-            <Grid Grid.Column="1" RowDefinitions="Auto,*">
+            <Grid x:Name="ConversationSurface" Grid.Column="1" RowDefinitions="Auto,*">
                 <!-- Conversation Header -->
                 <Border Grid.Row="0"
                         Background="{DynamicResource ForgeSurface}"
                         BorderBrush="{DynamicResource ForgeBorder}"
                         BorderThickness="0,0,0,1.5"
                         Padding="16,10">
-                    <Grid ColumnDefinitions="Auto,*">
+                    <Grid ColumnDefinitions="*,Auto">
                         <!-- Left: Recipient Header Info (or Brand Placeholder) -->
                         <Panel Grid.Column="0" MinWidth="180">
                             <!-- When a recipient is selected -->
@@ -404,6 +408,10 @@
                             </StackPanel>
                         </Panel>
 
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" IsVisible="{Binding SelectedRecipient, Converter={StaticResource NullToBoolConverter}}" IsEnabled="{Binding Workspace.CanStartCall}">
+                            <Button Classes="icon-btn" Command="{Binding Workspace.StartVoiceCommand}" ToolTip.Tip="Voice call" AutomationProperties.Name="Voice call" Width="38" Height="38"><PathIcon Width="20" Height="20" Data="M6,2 L10,6 8,9 C10,13 12,15 16,17 L19,15 23,19 21,23 C11,24 0,13 1,4 Z" /></Button>
+                            <Button Classes="icon-btn" Command="{Binding Workspace.StartVideoCommand}" ToolTip.Tip="Video call" AutomationProperties.Name="Video call" Width="38" Height="38"><PathIcon Width="21" Height="20" Data="M2,5 L16,5 16,19 2,19 Z M18,9 L23,6 23,18 18,15 Z" /></Button>
+                        </StackPanel>
                     </Grid>
                 </Border>
 
@@ -759,7 +767,7 @@
                                 BorderBrush="{DynamicResource ForgeBorder}"
                                 BorderThickness="0,1.5,0,0"
                                 Padding="14,10">
-                            <Grid ColumnDefinitions="Auto,*,Auto">
+                            <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
                                 <!-- Attachment Button -->
                                 <Button Grid.Column="0"
                                         Classes="icon-btn"
@@ -793,6 +801,7 @@
                                         IsEnabled="{Binding !IsSendingMessage}">
                                     <TextBlock Text="➤" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </Button>
+                                <TextBlock Grid.Row="1" Grid.ColumnSpan="3" Text="{Binding SendError}" TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource ForgeDanger}" Margin="0,6,0,0" IsVisible="{Binding SendError, Converter={StaticResource NullToBoolConverter}}" />
                             </Grid>
                         </Border>
                     </Grid>

@@ -5,6 +5,8 @@
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets/favicon.ico</ApplicationIcon>
+    <NativeRuntimeIdentifier Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</NativeRuntimeIdentifier>
+    <NativeRuntimeIdentifier Condition="'$(NativeRuntimeIdentifier)' == ''">$(NETCoreSdkRuntimeIdentifier)</NativeRuntimeIdentifier>
   </PropertyGroup>
 
   <ItemGroup>
@@ -12,6 +14,7 @@
     <Compile Remove="Core\**" />
     <Compile Remove="Data\**" />
     <Compile Remove="Service\**" />
+    <Compile Remove="Tests\**" />
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
 
@@ -29,6 +32,28 @@
       <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
     </PackageReference>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Common" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.13" />
   </ItemGroup>
+  <PropertyGroup>
+    <NativeBridgeFile Condition="$([System.String]::Copy('$(NativeRuntimeIdentifier)').StartsWith('win-'))">fireuser_livekit.dll</NativeBridgeFile>
+    <NativeBridgeFile Condition="$([System.String]::Copy('$(NativeRuntimeIdentifier)').StartsWith('linux-'))">libfireuser_livekit.so</NativeBridgeFile>
+    <NativeBridgeFile Condition="$([System.String]::Copy('$(NativeRuntimeIdentifier)').StartsWith('osx-'))">libfireuser_livekit.dylib</NativeBridgeFile>
+    <PowerShellExe Condition="'$(PowerShellExe)' == '' and '$(OS)' == 'Windows_NT'">powershell</PowerShellExe>
+    <PowerShellExe Condition="'$(PowerShellExe)' == ''">pwsh</PowerShellExe>
+  </PropertyGroup>
+  <ItemGroup><NativeBridgeInput Include="Native/*.cpp;Native/*.h;Native/CMakeLists.txt;scripts/build-native.ps1" /></ItemGroup>
+  <Target Name="BuildNativeBridge" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true'" Inputs="@(NativeBridgeInput)" Outputs="Native/artifacts/$(NativeRuntimeIdentifier)/$(NativeBridgeFile)">
+    <Exec Command="$(PowerShellExe) -NoProfile -File &quot;$(MSBuildProjectDirectory)/scripts/build-native.ps1&quot; -RuntimeIdentifier $(NativeRuntimeIdentifier)" />
+    <Touch Files="Native/artifacts/$(NativeRuntimeIdentifier)/$(NativeBridgeFile)" AlwaysCreate="false" />
+  </Target>
+  <Target Name="PrepareMediaRuntime" BeforeTargets="AssignTargetPaths" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Command="$(PowerShellExe) -NoProfile -File &quot;$(MSBuildProjectDirectory)/scripts/setup-media.ps1&quot; -RuntimeIdentifier $(NativeRuntimeIdentifier)" />
+    <ItemGroup>
+      <_NativeArtifacts Include="Native/artifacts/$(NativeRuntimeIdentifier)/*" />
+      <_MediaRuntime Include="Native/media/$(NativeRuntimeIdentifier)/**/*" />
+      <Content Include="@(_NativeArtifacts)" Link="%(_NativeArtifacts.Filename)%(_NativeArtifacts.Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+      <Content Include="@(_MediaRuntime)" Link="media/%(_MediaRuntime.RecursiveDir)%(_MediaRuntime.Filename)%(_MediaRuntime.Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
 </Project>

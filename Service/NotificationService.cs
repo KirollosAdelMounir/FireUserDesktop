@@ -570,7 +570,7 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
         void SetPath([MarshalAs(UnmanagedType.LPWStr)] string path);
     }
 
-    [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("886DDE0C-1113-4E77-8A0B-7B6A3B0A2B8A")]
+    [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99")]
     private interface IPropertyStore
     {
         void GetCount(out uint count);

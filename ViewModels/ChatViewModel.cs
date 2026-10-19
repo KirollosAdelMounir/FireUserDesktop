@@ -17,6 +17,7 @@ namespace UserIdentityDesktop.ViewModels;
 
 public partial class ChatViewModel : ViewModelBase
 {
+    public WorkspaceViewModel? Workspace { get; internal set; }
     private readonly IAuthService _authService;
     private readonly IChatService _chatService;
     private readonly IUserService _userService;
@@ -24,7 +25,6 @@ public partial class ChatViewModel : ViewModelBase
     private readonly IFileService _fileService;
     private readonly INotificationService _notificationService;
 
-    private Timer? _seenTimer;
     private Timer? _typingTimer;
     private Timer? _remoteTypingResetTimer;
     private Timer? _searchDebounceTimer;
@@ -119,6 +119,7 @@ public partial class ChatViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _isSendingMessage;
+    [ObservableProperty] private string? _sendError;
 
     public ObservableCollection<RecipientItemViewModel> Recipients { get; } = new();
     public ObservableCollection<RecipientItemViewModel> FilteredRecipients { get; } = new();
@@ -149,6 +150,7 @@ public partial class ChatViewModel : ViewModelBase
 
     public event Action? RequestScrollToBottom;
     public event Action? LogoutRequested;
+    public Func<Task>? BeforeLogoutAsync { get; set; }
 
     public ChatViewModel(
         IAuthService authService,
@@ -207,7 +209,6 @@ public partial class ChatViewModel : ViewModelBase
         _chatService.ConnectionStateChanged -= OnConnectionStateChanged;
         _userService.SearchResultReceived -= OnSearchResultReceived;
 
-        StopSeenTimer();
         _typingTimer?.Dispose();
         _remoteTypingResetTimer?.Dispose();
         _searchDebounceTimer?.Dispose();
@@ -408,26 +409,22 @@ public partial class ChatViewModel : ViewModelBase
             _ = _chatService.NotifyTypingAsync(oldValue.ReceiverId, false);
         }
 
-        StopSeenTimer();
         IsOtherPartyTyping = false;
         Messages.Clear();
 
         if (newValue == null) return;
+        SendError = null;
+        if (newValue.IsGroup)
+        {
+            SendError = "Group and meeting chat history is not available in this desktop build yet. Direct chat and native meeting calls are available.";
+            return;
+        }
 
         // 1. Immediately mark as seen in UI and declare seen to backend/opposite user
         newValue.IsSeen = true;
         _ = _chatService.MarkSeenAsync(newValue.ReceiverId);
 
-        // 2. Start 1-second interval matching Angular logic
-        _seenTimer = new Timer(async _ =>
-        {
-            if (SelectedRecipient != null)
-            {
-                await _chatService.MarkSeenAsync(SelectedRecipient.ReceiverId);
-            }
-        }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
-
-        // 3. Reset pagination & load conversation history with background loader
+        // Load once; incoming messages and local activity update read receipts.
         CurrentPage = 0;
         HasMoreMessages = true;
         _ = LoadChatHistoryAsync(newValue.ReceiverId, 0);
@@ -540,6 +537,7 @@ public partial class ChatViewModel : ViewModelBase
     public async Task SendMessageAsync()
     {
         if (SelectedRecipient == null || IsSendingMessage) return;
+        if (SelectedRecipient.IsGroup) { SendError = "This desktop build currently supports direct messages. Group chat support is pending."; return; }
         var text = MessageDraft?.Trim();
         var hasAttachments = PendingAttachments.Count > 0;
 
@@ -550,8 +548,8 @@ public partial class ChatViewModel : ViewModelBase
         var recipientId = SelectedRecipient.ReceiverId;
         var filesToSend = PendingAttachments.Select(p => p.FilePath).ToList();
 
-        MessageDraft = string.Empty;
-        PendingAttachments.Clear();
+        var originalDraft = MessageDraft;
+        SendError = null;
 
         if (_isCurrentlyTypingNotified)
         {
@@ -561,14 +559,21 @@ public partial class ChatViewModel : ViewModelBase
 
         try
         {
+            var success = false;
             if (hasAttachments)
             {
-                await _chatService.SendMessageWithAttachmentsAsync(recipientId, text, filesToSend);
+                success = await _chatService.SendMessageWithAttachmentsAsync(recipientId, text, filesToSend);
             }
             else if (!string.IsNullOrEmpty(text))
             {
-                await _chatService.SendMessageAsync(recipientId, text);
+                success = await _chatService.SendMessageAsync(recipientId, text);
             }
+            if (success)
+            {
+                if (SelectedRecipient?.ReceiverId == recipientId && MessageDraft == originalDraft) MessageDraft = string.Empty;
+                foreach (var pending in PendingAttachments.Where(x => filesToSend.Contains(x.FilePath)).ToList()) PendingAttachments.Remove(pending);
+            }
+            else SendError = "Message was not sent. Your draft is retained. Check your connection and unlock chat in Media settings if a PIN is required.";
         }
         finally
         {
@@ -829,7 +834,7 @@ public partial class ChatViewModel : ViewModelBase
                 if (dto.ReceiverId == CurrentUser.Id)
                     continue;
 
-                var existing = Recipients.FirstOrDefault(r => r.ReceiverId == dto.ReceiverId);
+                var existing = Recipients.FirstOrDefault(r => r.ReceiverId == dto.ReceiverId && r.ConversationId == dto.ConversationId);
                 if (existing != null)
                 {
                     existing.ReceiverName = dto.ReceiverName;
@@ -910,6 +915,7 @@ public partial class ChatViewModel : ViewModelBase
     {
         Dispatcher.UIThread.Post(() =>
         {
+            var recovered = state == HubConnectionState.Connected && ConnectionStatusText == "Reconnecting...";
             IsConnected = state == HubConnectionState.Connected;
             ConnectionStatusText = state switch
             {
@@ -917,6 +923,11 @@ public partial class ChatViewModel : ViewModelBase
                 HubConnectionState.Reconnecting => "Reconnecting...",
                 _ => "Disconnected"
             };
+            if (recovered)
+            {
+                _ = LoadRecipientsAsync();
+                if (SelectedRecipient is { IsGroup: false } selected) _ = LoadChatHistoryAsync(selected.ReceiverId, 0);
+            }
         });
     }
 
@@ -986,16 +997,10 @@ public partial class ChatViewModel : ViewModelBase
         OnPropertyChanged(nameof(CurrentStatusColor));
     }
 
-    private void StopSeenTimer()
-    {
-        _seenTimer?.Dispose();
-        _seenTimer = null;
-    }
-
     [RelayCommand]
     public async Task LogoutAsync()
     {
-        StopSeenTimer();
+        if (BeforeLogoutAsync != null) await BeforeLogoutAsync();
         UnregisterEvents();
 
         await _chatService.DisconnectAsync();

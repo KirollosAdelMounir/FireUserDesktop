@@ -11,15 +11,16 @@ using Microsoft.AspNetCore.SignalR.Client;
 using UserIdentityDesktop.Core.Models;
 
 using UserIdentityDesktop.Core;
+using UserIdentityDesktop.Data;
 namespace UserIdentityDesktop.Service;
 
 public class ChatService : IChatService
 {
     private readonly IAuthService _authService;
     private readonly IConfigurationService _configService;
+    private readonly ChatEncryption _encryption;
     private HubConnection? _hubConnection;
     private Timer? _heartbeatTimer;
-    private Timer? _presenceTimer;
     private DateTime _lastActivitySentUtc = DateTime.MinValue;
 
     private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
@@ -33,11 +34,15 @@ public class ChatService : IChatService
     public event Action<UserPresence>? UserPresenceChanged;
     public event Action<Guid, UserStatus>? UserStatusChanged;
     public event Action<HubConnectionState>? ConnectionStateChanged;
+    public event Action? WorkplaceChanged;
+    public event Action<IncomingCall>? IncomingCallReceived;
+    public event Action<CallParticipantLeft>? CallParticipantLeft;
 
-    public ChatService(IAuthService authService, IConfigurationService configService)
+    public ChatService(IAuthService authService, IConfigurationService configService, ChatEncryption? encryption = null)
     {
         _authService = authService;
         _configService = configService;
+        _encryption = encryption ?? new ChatEncryption(authService, configService);
     }
 
     public async Task ConnectAsync()
@@ -60,13 +65,20 @@ public class ChatService : IChatService
             .WithAutomaticReconnect()
             .Build();
 
-        _hubConnection.On<ChatMessage>("ReceiveMessageInChat", msg =>
+        _hubConnection.On("WorkplaceChanged", () => WorkplaceChanged?.Invoke());
+        _hubConnection.On<IncomingCall>("IncomingCall", call => IncomingCallReceived?.Invoke(call));
+        _hubConnection.On<CallParticipantLeft>("CallParticipantLeft", change => CallParticipantLeft?.Invoke(change));
+
+        _hubConnection.On<ChatMessage>("ReceiveMessageInChat", async msg =>
         {
-            MessageReceived?.Invoke(msg);
+            if (msg.ConversationId != null) return;
+            MessageReceived?.Invoke(await _encryption.DecryptAsync(msg));
         });
 
         _hubConnection.On<List<RecipientDto>>("RecipientUpdated", recipients =>
         {
+            foreach (var recipient in recipients)
+                if (recipient.LastMessage?.StartsWith("FU1.", StringComparison.Ordinal) == true) recipient.LastMessage = "Encrypted message";
             RecipientsUpdated?.Invoke(recipients);
         });
 
@@ -108,9 +120,10 @@ public class ChatService : IChatService
             return Task.CompletedTask;
         };
 
-        _hubConnection.Reconnected += _ =>
+        _hubConnection.Reconnected += connectionId =>
         {
             ConnectionStateChanged?.Invoke(HubConnectionState.Connected);
+            _ = RefreshCurrentPresenceAsync();
             return Task.CompletedTask;
         };
 
@@ -135,6 +148,7 @@ public class ChatService : IChatService
 
     public async Task DisconnectAsync()
     {
+        _encryption.Lock();
         if (_hubConnection != null)
         {
             try
@@ -175,7 +189,7 @@ public class ChatService : IChatService
             {
                 Sender = currentUser.Id,
                 Receiver = receiverId,
-                Text = text,
+                Text = await _encryption.EncryptAsync(receiverId, text),
                 Attachments = null
             };
 
@@ -195,6 +209,7 @@ public class ChatService : IChatService
         if (currentUser == null)
             return false;
 
+        var prepared = new List<ChatEncryption.PreparedFile>();
         try
         {
             using var client = _authService.CreateAuthenticatedClient();
@@ -202,30 +217,27 @@ public class ChatService : IChatService
 
             form.Add(new StringContent(currentUser.Id.ToString()), "Sender");
             form.Add(new StringContent(receiverId.ToString()), "Receiver");
-            if (!string.IsNullOrEmpty(text))
-            {
-                form.Add(new StringContent(text), "Text");
-            }
+            foreach (var path in filePaths) prepared.Add(await ChatEncryption.PrepareFileAsync(path));
+            form.Add(new StringContent(await _encryption.EncryptAsync(receiverId, text, prepared.ConvertAll(x => x.Metadata).ToArray())), "Text");
 
             var openStreams = new List<FileStream>();
             try
             {
-                foreach (var path in filePaths)
+                foreach (var item in prepared)
                 {
+                    var path = item.Path;
                     if (File.Exists(path))
                     {
                         var stream = File.OpenRead(path);
                         openStreams.Add(stream);
                         var fileContent = new StreamContent(stream);
-                        var ext = Path.GetExtension(path).ToLowerInvariant();
-                        var mime = GetMimeType(ext);
-                        fileContent.Headers.ContentType = new MediaTypeHeaderValue(mime);
-                        form.Add(fileContent, "Attachments", Path.GetFileName(path));
+                        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+                        form.Add(fileContent, "Attachments", item.Metadata.Id + ".fua");
                     }
                 }
 
                 var url = $"{_configService.ServerUrl}/api/Chat/SendMessageWithAttachment";
-                var response = await client.PostAsync(url, form);
+                using var response = await client.PostAsync(url, form);
                 return response.IsSuccessStatusCode;
             }
             finally
@@ -238,6 +250,10 @@ public class ChatService : IChatService
         {
             Console.WriteLine($"Failed to send message with attachments: {ex.Message}");
             return false;
+        }
+        finally
+        {
+            foreach (var item in prepared) File.Delete(item.Path);
         }
     }
 
@@ -356,15 +372,13 @@ public class ChatService : IChatService
     {
         StopHeartbeat();
         _heartbeatTimer = new Timer(_ => _ = HeartbeatAsync(), null, TimeSpan.Zero, TimeSpan.FromSeconds(30));
-        _presenceTimer = new Timer(_ => _ = RefreshCurrentPresenceAsync(), null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(10));
+        _ = RefreshCurrentPresenceAsync();
     }
 
     private void StopHeartbeat()
     {
         _heartbeatTimer?.Dispose();
         _heartbeatTimer = null;
-        _presenceTimer?.Dispose();
-        _presenceTimer = null;
     }
 
     private async Task RefreshCurrentPresenceAsync()
@@ -441,16 +455,17 @@ public class ChatService : IChatService
         {
             using var client = _authService.CreateAuthenticatedClient();
             var url = $"{_configService.ServerUrl}/api/Chat/Receipients";
-            var response = await client.GetAsync(url);
+            using var response = await client.GetAsync(url);
             if (response.IsSuccessStatusCode)
             {
-                var result = await response.Content.ReadFromJsonAsync<List<RecipientDto>>(_jsonOptions);
-                return result ?? new List<RecipientDto>();
+                var result = await ApiPayload.ReadAsync<List<RecipientDto>>(response);
+                foreach (var recipient in result)
+                    if (recipient.LastMessage?.StartsWith("FU1.", StringComparison.Ordinal) == true) recipient.LastMessage = "Encrypted message";
+                return result;
             }
             else
             {
-                var err = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"Receipients API returned {response.StatusCode}: {err}");
+                Console.WriteLine($"Recipients API returned {response.StatusCode}");
                 return new List<RecipientDto>();
             }
         }
@@ -467,16 +482,16 @@ public class ChatService : IChatService
         {
             using var client = _authService.CreateAuthenticatedClient();
             var url = $"{_configService.ServerUrl}/api/Chat/ChatOf?ReceiverId={receiverId}&page={page}";
-            var response = await client.GetAsync(url);
+            using var response = await client.GetAsync(url);
             if (response.IsSuccessStatusCode)
             {
-                var result = await response.Content.ReadFromJsonAsync<List<ChatMessage>>(_jsonOptions);
-                return result ?? new List<ChatMessage>();
+                var result = await ApiPayload.ReadAsync<List<ChatMessage>>(response);
+                foreach (var message in result) await _encryption.DecryptAsync(message);
+                return result;
             }
             else
             {
-                var err = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"ChatOf API returned {response.StatusCode}: {err}");
+                Console.WriteLine($"Chat history API returned {response.StatusCode}");
                 return new List<ChatMessage>();
             }
         }
@@ -487,7 +502,9 @@ public class ChatService : IChatService
         }
     }
 
-    public async Task<bool> SaveAttachmentToFileAsync(Guid attachmentId, string destinationFilePath)
+    public Task UnlockChatAsync(string pin) => _encryption.UnlockAsync(pin);
+
+    public async Task<bool> SaveAttachmentToFileAsync(Guid attachmentId, string destinationFilePath, EncryptedFile? encryption = null)
     {
         try
         {
@@ -497,8 +514,17 @@ public class ChatService : IChatService
             using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
             if (response.IsSuccessStatusCode)
             {
-                using var fs = File.Create(destinationFilePath);
-                await response.Content.CopyToAsync(fs);
+                var temporary = destinationFilePath + "." + Guid.NewGuid().ToString("N") + ".partial";
+                try
+                {
+                    await using (var fs = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, true))
+                    {
+                        if (encryption == null) await response.Content.CopyToAsync(fs);
+                        else await ChatEncryption.TransformFileAsync(await response.Content.ReadAsStreamAsync(), fs, encryption, encrypt: false);
+                    }
+                    File.Move(temporary, destinationFilePath, overwrite: true);
+                }
+                finally { if (File.Exists(temporary)) File.Delete(temporary); }
                 return true;
             }
             return false;

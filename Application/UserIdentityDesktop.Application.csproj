@@ -7,6 +7,6 @@
     <ProjectReference Include="..\Core\UserIdentityDesktop.Core.csproj" />
     <ProjectReference Include="..\Data\UserIdentityDesktop.Data.csproj" />
     <ProjectReference Include="..\Service\UserIdentityDesktop.Service.csproj" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.13" />
   </ItemGroup>
 </Project>

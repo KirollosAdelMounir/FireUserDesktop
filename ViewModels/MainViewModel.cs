@@ -22,11 +22,14 @@ public partial class MainViewModel : ViewModelBase
     private readonly IFileService _fileService;
     private readonly INotificationService _notificationService;
     private ChatViewModel? _chatViewModel;
+    private WorkspaceViewModel? _workspace;
+    private readonly ICollaborationApi _collaboration;
+    private readonly INativeMediaSession _media;
 
     [ObservableProperty]
     private ViewModelBase _currentView;
 
-    public bool IsChatView => CurrentView is ChatViewModel;
+    public bool IsChatView => CurrentView is WorkspaceViewModel;
 
     public string IdentitySearchText
     {
@@ -50,7 +53,9 @@ public partial class MainViewModel : ViewModelBase
         IUserService userService,
         IImageService imageService,
         IFileService fileService,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        ICollaborationApi collaboration,
+        INativeMediaSession media)
     {
         _configService = configService;
         _authService = authService;
@@ -59,6 +64,8 @@ public partial class MainViewModel : ViewModelBase
         _imageService = imageService;
         _fileService = fileService;
         _notificationService = notificationService;
+        _collaboration = collaboration;
+        _media = media;
 
         _isDarkMode = _configService.IsDarkMode;
         ApplyTheme(_isDarkMode);
@@ -80,6 +87,8 @@ public partial class MainViewModel : ViewModelBase
         _userService = new UserService(_authService, _configService);
         _fileService = new FileService();
         _notificationService = new SystemNotificationService();
+        _collaboration = new CollaborationApi(_authService, _configService);
+        _media = new UserIdentityDesktop.Service.Media.NativeMediaSession();
 
         _isDarkMode = true;
         _currentView = new LoginViewModel(_authService, _configService);
@@ -103,12 +112,17 @@ public partial class MainViewModel : ViewModelBase
         chatVm.LogoutRequested += OnLogoutRequested;
         _chatViewModel = chatVm;
         _chatViewModel.PropertyChanged += OnChatPropertyChanged;
-        SetCurrentView(chatVm);
+        _workspace = new WorkspaceViewModel(chatVm, _collaboration, _media, _authService, _chatService);
+        chatVm.BeforeLogoutAsync = async () => { if (_workspace != null) await _workspace.DisposeAsync(); };
+        SetCurrentView(_workspace);
         _ = chatVm.InitializeAsync();
+        _ = _workspace.RefreshAsync();
     }
 
-    private void OnLogoutRequested()
+    private async void OnLogoutRequested()
     {
+        if (_workspace != null) await _workspace.DisposeAsync();
+        _workspace = null;
         var loginVm = new LoginViewModel(_authService, _configService);
         loginVm.LoginSucceeded += OnLoginSucceeded;
         if (_chatViewModel != null)
@@ -141,10 +155,18 @@ public partial class MainViewModel : ViewModelBase
 
     public async Task LogoutAsync()
     {
-        if (CurrentView is ChatViewModel chatViewModel)
+        if (_chatViewModel is { } chatViewModel)
         {
+            if (_workspace != null) await _workspace.DisposeAsync();
             await chatViewModel.LogoutAsync();
         }
+    }
+
+    public async Task ShutdownAsync()
+    {
+        if (_workspace != null) await _workspace.DisposeAsync();
+        await _chatService.DisconnectAsync();
+        await _userService.DisconnectAsync();
     }
 
     public async Task OpenConversationAsync(Guid userId)

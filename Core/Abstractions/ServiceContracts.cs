@@ -57,6 +57,9 @@ public interface IImageService
 
 public interface IChatService
 {
+    event Action? WorkplaceChanged;
+    event Action<IncomingCall>? IncomingCallReceived;
+    event Action<CallParticipantLeft>? CallParticipantLeft;
     HubConnectionState State { get; }
     event Action<ChatMessage>? MessageReceived;
     event Action<List<RecipientDto>>? RecipientsUpdated;
@@ -67,6 +70,7 @@ public interface IChatService
     event Action<HubConnectionState>? ConnectionStateChanged;
     Task ConnectAsync();
     Task DisconnectAsync();
+    Task UnlockChatAsync(string pin);
     Task<bool> SendMessageAsync(Guid receiverId, string text);
     Task<bool> SendMessageWithAttachmentsAsync(Guid receiverId, string? text, IEnumerable<string> filePaths);
     Task MarkSeenAsync(Guid receiverId);
@@ -78,7 +82,7 @@ public interface IChatService
     Task<UserPresence?> GetUserPresenceAsync(Guid userId);
     Task<List<RecipientDto>> GetRecipientsAsync();
     Task<List<ChatMessage>> GetChatHistoryAsync(Guid receiverId, int page = 0);
-    Task<bool> SaveAttachmentToFileAsync(Guid attachmentId, string destinationFilePath);
+    Task<bool> SaveAttachmentToFileAsync(Guid attachmentId, string destinationFilePath, EncryptedFile? encryption = null);
 }
 
 public interface IUserService

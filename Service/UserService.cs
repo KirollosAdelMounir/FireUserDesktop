@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.SignalR.Client;
 using UserIdentityDesktop.Core.Models;
 
 using UserIdentityDesktop.Core;
+using UserIdentityDesktop.Data;
 namespace UserIdentityDesktop.Service;
 
 public class UserService : IUserService
@@ -107,10 +108,10 @@ public class UserService : IUserService
         {
             using var client = _authService.CreateAuthenticatedClient();
             var url = $"{_configService.ServerUrl}/api/ProfileSettings/User?userId={userId}";
-            var response = await client.GetAsync(url);
+            using var response = await client.GetAsync(url);
             if (response.IsSuccessStatusCode)
             {
-                return await response.Content.ReadFromJsonAsync<ViewUserProfileDto>(_jsonOptions);
+                return await ApiPayload.ReadAsync<ViewUserProfileDto>(response);
             }
         }
         catch (Exception ex)

@@ -13,6 +13,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAuthService, AuthService>();
         services.AddSingleton<IImageService, ImageService>();
         services.AddSingleton<IChatService, ChatService>();
+        services.AddSingleton<ChatEncryption>();
+        services.AddSingleton<ICollaborationApi, CollaborationApi>();
+        services.AddSingleton<INativeMediaSession, UserIdentityDesktop.Service.Media.NativeMediaSession>();
         services.AddSingleton<IUserService, UserService>();
         services.AddSingleton<IFileService, FileService>();
         services.AddSingleton<SystemNotificationService>();

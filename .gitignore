@@ -360,3 +360,8 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/Native/build/
+/Native/sdk/
+/Native/artifacts/
+/Native/media/
+/artifacts/

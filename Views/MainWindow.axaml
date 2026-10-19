@@ -9,7 +9,7 @@
         Icon="/Assets/favicon.ico"
         Title="Fire User Connect"
         MinWidth="800" MinHeight="550"
-        Width="1100" Height="720"
+        Width="1280" Height="820" FontSize="13"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource ForgeBg}">
 
@@ -19,15 +19,14 @@
                 Background="{DynamicResource ForgeSurface}"
                 BorderBrush="{DynamicResource ForgeBorder}"
                 BorderThickness="0,0,0,1"
-                Padding="16,8">
+                Padding="20,10" Height="68">
             <Grid ColumnDefinitions="Auto,*,Auto">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                    <Image Source="/Assets/PageLogo.png" Width="24" Height="24" Stretch="Uniform" VerticalAlignment="Center" />
-                    <TextBlock Text="Fire User Connect"
-                               FontWeight="Bold"
-                               FontSize="14"
-                               Foreground="{DynamicResource ForgeTextPrimary}"
-                               VerticalAlignment="Center" />
+                    <Image Source="/Assets/PageLogo.png" Width="40" Height="40" Stretch="Uniform" VerticalAlignment="Center" />
+                    <StackPanel VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="Fire User" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource ForgePrimary}" />
+                        <TextBlock Text="CONNECT" FontSize="9" LetterSpacing="2" Foreground="{DynamicResource ForgeTextSecondary}" />
+                    </StackPanel>
                 </StackPanel>
 
                 <!-- People Search -->

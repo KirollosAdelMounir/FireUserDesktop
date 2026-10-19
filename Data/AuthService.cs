@@ -19,6 +19,7 @@ public class AuthService : IAuthService
     private readonly IConfigurationService _configService;
     private readonly HttpClient _httpClient;
     private Timer? _refreshTimer;
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
 
     public UserData? CurrentUser { get; private set; }
     public string? AccessToken { get; private set; }
@@ -28,10 +29,10 @@ public class AuthService : IAuthService
     public event Action<UserData?>? CurrentUserChanged;
     public event Action<bool>? AuthenticationStateChanged;
 
-    public AuthService(IConfigurationService configService)
+    public AuthService(IConfigurationService configService, HttpClient? httpClient = null)
     {
         _configService = configService;
-        _httpClient = new HttpClient();
+        _httpClient = httpClient ?? new HttpClient();
     }
 
     public async Task<(bool Success, string? ErrorMessage)> LoginAsync(string email, string password)
@@ -41,11 +42,11 @@ public class AuthService : IAuthService
             var url = $"{_configService.ServerUrl}/api/User/Login";
             var request = new LoginRequest { Email = email, Password = password };
 
-            var response = await _httpClient.PostAsJsonAsync(url, request);
+            using var response = await _httpClient.PostAsJsonAsync(url, request);
 
             if (response.IsSuccessStatusCode)
             {
-                var tokens = await response.Content.ReadFromJsonAsync<TokenResponse>();
+                var tokens = await ApiPayload.ReadAsync<TokenResponse>(response);
                 if (tokens != null && !string.IsNullOrEmpty(tokens.AccessToken))
                 {
                     SetTokens(tokens.AccessToken, tokens.RefreshToken);
@@ -56,12 +57,8 @@ public class AuthService : IAuthService
                 return (false, "Failed to parse login response.");
             }
 
-            var errorBody = await response.Content.ReadAsStringAsync();
-            if (string.IsNullOrWhiteSpace(errorBody))
-            {
-                errorBody = $"Server returned {(int)response.StatusCode}: {response.ReasonPhrase}";
-            }
-            return (false, errorBody);
+            await ApiPayload.ReadAsync<TokenResponse>(response);
+            return (false, "Sign in failed.");
         }
         catch (Exception ex)
         {
@@ -71,6 +68,13 @@ public class AuthService : IAuthService
 
     public async Task<bool> RefreshTokenAsync()
     {
+        await _refreshGate.WaitAsync();
+        try { return await RefreshCoreAsync(); }
+        finally { _refreshGate.Release(); }
+    }
+
+    private async Task<bool> RefreshCoreAsync()
+    {
         var refresh = RefreshToken ?? _configService.SavedRefreshToken;
         if (string.IsNullOrEmpty(refresh))
             return false;
@@ -78,17 +82,16 @@ public class AuthService : IAuthService
         try
         {
             var url = $"{_configService.ServerUrl}/api/User/RefreshToken";
-            var content = new StringContent(JsonSerializer.Serialize(refresh), Encoding.UTF8, "application/json");
+            using var content = new StringContent(JsonSerializer.Serialize(refresh), Encoding.UTF8, "application/json");
 
-            var response = await _httpClient.PostAsync(url, content);
+            using var response = await _httpClient.PostAsync(url, content);
             if (response.IsSuccessStatusCode)
             {
-                var newAccessToken = await response.Content.ReadAsStringAsync();
-                newAccessToken = newAccessToken?.Trim('"') ?? string.Empty;
-
-                if (!string.IsNullOrEmpty(newAccessToken))
+                var tokens = await ApiPayload.ReadAsync<TokenResponse>(response);
+                if (!string.IsNullOrEmpty(tokens.AccessToken) && !string.IsNullOrEmpty(tokens.RefreshToken))
                 {
-                    SetTokens(newAccessToken, refresh);
+                    _configService.SavedRefreshToken = tokens.RefreshToken;
+                    SetTokens(tokens.AccessToken, tokens.RefreshToken);
                     return true;
                 }
             }
@@ -112,8 +115,12 @@ public class AuthService : IAuthService
             try
             {
                 var url = $"{_configService.ServerUrl}/api/ProfileSettings/LogOut";
-                var content = new StringContent(JsonSerializer.Serialize(refresh), Encoding.UTF8, "application/json");
-                await _httpClient.PostAsync(url, content);
+                using var request = new HttpRequestMessage(HttpMethod.Post, url)
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(refresh), Encoding.UTF8, "application/json")
+                };
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", AccessToken);
+                using var response = await _httpClient.SendAsync(request);
             }
             catch
             {

@@ -35,6 +35,8 @@ public class UserPresence
 
 public class ChatAttachment
 {
+    [JsonIgnore]
+    public EncryptedFile? Encryption { get; set; }
     [JsonPropertyName("id")]
     public Guid Id { get; set; }
 
@@ -87,6 +89,7 @@ public class ChatAttachment
 
 public class ChatMessage
 {
+    public string? ConversationId { get; set; }
     [JsonPropertyName("id")]
     public JsonElement IdRaw { get; set; }
 
@@ -135,6 +138,8 @@ public class ChatMessage
 
 public class RecipientDto
 {
+    public bool IsGroup { get; set; }
+    public string? ConversationId { get; set; }
     [JsonPropertyName("receiverId")]
     public Guid ReceiverId { get; set; }
 

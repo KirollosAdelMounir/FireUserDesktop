@@ -16,51 +16,59 @@
             <converters:DateTimeFormatConverter x:Key="DateTimeFormatConverter" />
 
             <!-- Brand shared brushes -->
-            <SolidColorBrush x:Key="ForgePrimary" Color="#FF4500" />
-            <SolidColorBrush x:Key="ForgePrimaryHover" Color="#FF5722" />
+            <SolidColorBrush x:Key="ForgePrimary" Color="#E0531C" />
+            <SolidColorBrush x:Key="ForgePrimaryHover" Color="#EA602A" />
             <SolidColorBrush x:Key="ForgeAccentGold" Color="#FFB703" />
             <SolidColorBrush x:Key="ForgeSuccess" Color="#2EC4B6" />
             <SolidColorBrush x:Key="ForgeDanger" Color="#E63946" />
 
             <LinearGradientBrush x:Key="ForgePrimaryGradient" StartPoint="0%,0%" EndPoint="100%,100%">
-                <GradientStop Color="#FF3700" Offset="0.0" />
-                <GradientStop Color="#FF7700" Offset="0.5" />
-                <GradientStop Color="#FFA100" Offset="1.0" />
+                <GradientStop Color="#D84914" Offset="0.0" />
+                <GradientStop Color="#EB682B" Offset="0.5" />
+                <GradientStop Color="#F59E0B" Offset="1.0" />
             </LinearGradientBrush>
 
             <LinearGradientBrush x:Key="ForgePrimaryGradientSubtle" StartPoint="0%,0%" EndPoint="100%,100%">
-                <GradientStop Color="#33FF4500" Offset="0.0" />
-                <GradientStop Color="#22FF8C00" Offset="1.0" />
+                <GradientStop Color="#1AE0531C" Offset="0.0" />
+                <GradientStop Color="#1AF59E0B" Offset="1.0" />
             </LinearGradientBrush>
 
             <ResourceDictionary.ThemeDictionaries>
                 <!-- Obsidian / Magma Dark Theme -->
                 <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="ForgeBg" Color="#0C0808" />
-                    <SolidColorBrush x:Key="ForgeBgSecondary" Color="#140D0F" />
-                    <SolidColorBrush x:Key="ForgeSurface" Color="#171012" />
-                    <SolidColorBrush x:Key="ForgeSurfaceCard" Color="#1C1315" />
-                    <SolidColorBrush x:Key="ForgeSurfaceHover" Color="#26181B" />
-                    <SolidColorBrush x:Key="ForgeBorder" Color="#33FF5722" />
-                    <SolidColorBrush x:Key="ForgeBorderFocus" Color="#FF6B2B" />
-                    <SolidColorBrush x:Key="ForgeTextPrimary" Color="#FBF5F2" />
-                    <SolidColorBrush x:Key="ForgeTextSecondary" Color="#CFBCBA" />
-                    <SolidColorBrush x:Key="ForgeTextMuted" Color="#8E7876" />
-                    <SolidColorBrush x:Key="ForgeBubbleReceived" Color="#201518" />
+                    <SolidColorBrush x:Key="ForgePrimary" Color="#DD7036" />
+                    <SolidColorBrush x:Key="ForgePrimaryHover" Color="#E67E45" />
+                    <LinearGradientBrush x:Key="ForgePrimaryGradient" StartPoint="0%,0%" EndPoint="100%,100%">
+                        <GradientStop Color="#CF5C22" Offset="0" /><GradientStop Color="#DD7036" Offset="0.5" /><GradientStop Color="#E5A51A" Offset="1" />
+                    </LinearGradientBrush>
+                    <LinearGradientBrush x:Key="ForgePrimaryGradientSubtle" StartPoint="0%,0%" EndPoint="100%,100%">
+                        <GradientStop Color="#1ADD7036" Offset="0" /><GradientStop Color="#1AF59E0B" Offset="1" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="ForgeBg" Color="#121316" />
+                    <SolidColorBrush x:Key="ForgeBgSecondary" Color="#18191E" />
+                    <SolidColorBrush x:Key="ForgeSurface" Color="#1C1D23" />
+                    <SolidColorBrush x:Key="ForgeSurfaceCard" Color="#1A1B21" />
+                    <SolidColorBrush x:Key="ForgeSurfaceHover" Color="#262830" />
+                    <SolidColorBrush x:Key="ForgeBorder" Color="#17FFFFFF" />
+                    <SolidColorBrush x:Key="ForgeBorderFocus" Color="#DD7036" />
+                    <SolidColorBrush x:Key="ForgeTextPrimary" Color="#F0F2F5" />
+                    <SolidColorBrush x:Key="ForgeTextSecondary" Color="#B0B5BE" />
+                    <SolidColorBrush x:Key="ForgeTextMuted" Color="#7A808B" />
+                    <SolidColorBrush x:Key="ForgeBubbleReceived" Color="#24262E" />
                 </ResourceDictionary>
 
                 <!-- Warm Ash Light Theme -->
                 <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="ForgeBg" Color="#F8F4F0" />
-                    <SolidColorBrush x:Key="ForgeBgSecondary" Color="#F0EBE4" />
+                    <SolidColorBrush x:Key="ForgeBg" Color="#F5F4F0" />
+                    <SolidColorBrush x:Key="ForgeBgSecondary" Color="#EBE8E2" />
                     <SolidColorBrush x:Key="ForgeSurface" Color="#FFFFFF" />
                     <SolidColorBrush x:Key="ForgeSurfaceCard" Color="#FFFFFF" />
-                    <SolidColorBrush x:Key="ForgeSurfaceHover" Color="#FFF5EE" />
-                    <SolidColorBrush x:Key="ForgeBorder" Color="#33FF5A14" />
-                    <SolidColorBrush x:Key="ForgeBorderFocus" Color="#FF4500" />
-                    <SolidColorBrush x:Key="ForgeTextPrimary" Color="#1E1310" />
-                    <SolidColorBrush x:Key="ForgeTextSecondary" Color="#6E5852" />
-                    <SolidColorBrush x:Key="ForgeTextMuted" Color="#9E8A84" />
+                    <SolidColorBrush x:Key="ForgeSurfaceHover" Color="#F7F4EF" />
+                    <SolidColorBrush x:Key="ForgeBorder" Color="#1F322823" />
+                    <SolidColorBrush x:Key="ForgeBorderFocus" Color="#E0531C" />
+                    <SolidColorBrush x:Key="ForgeTextPrimary" Color="#1F242B" />
+                    <SolidColorBrush x:Key="ForgeTextSecondary" Color="#58606E" />
+                    <SolidColorBrush x:Key="ForgeTextMuted" Color="#8C93A0" />
                     <SolidColorBrush x:Key="ForgeBubbleReceived" Color="#FFFFFF" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
@@ -68,7 +76,13 @@
     </Application.Resources>
 
     <Application.Styles>
-        <FluentTheme />
+        <Style Selector="Window"><Setter Property="FontFamily" Value="fonts:Outfit#Outfit" /><Setter Property="FontSize" Value="13" /></Style>
+        <FluentTheme>
+            <FluentTheme.Palettes>
+                <ColorPaletteResources x:Key="Dark" Accent="#DD7036" />
+                <ColorPaletteResources x:Key="Light" Accent="#D83B00" />
+            </FluentTheme.Palettes>
+        </FluentTheme>
 
         <Style Selector="ProgressBar.forge-progress">
             <Setter Property="Foreground" Value="{DynamicResource ForgePrimaryGradient}" />

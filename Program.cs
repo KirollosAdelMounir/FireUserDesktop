@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using System;
 using System.Linq;
 using UserIdentityDesktop.Core;
@@ -71,6 +71,6 @@ sealed class Program
 #if DEBUG
             .WithDeveloperTools()
 #endif
-            .WithInterFont()
+            .WithInterFont().ConfigureFonts(DesktopFonts.Configure)
             .LogToTrace();
 }
