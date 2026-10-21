@@ -23,10 +23,17 @@ public sealed class CollaborationApi(IAuthService auth, IConfigurationService co
     private Task<T> Get<T>(string path, CancellationToken ct) => Send<T>(HttpMethod.Get, path, null, ct);
     private Task<T> Post<T>(string path, object? body, CancellationToken ct) => Send<T>(HttpMethod.Post, path, body, ct);
     private static string Segment(string value) => Uri.EscapeDataString(value);
+    public Task<VacationPreview> PreviewVacationAsync(Guid user, DateOnly start, int days, string reason, CancellationToken ct = default) => Post<VacationPreview>("Workplace/vacations/preview", new { userId = user, startDate = start, days, reason }, ct);
+    public async Task SubmitVacationAsync(Guid user, DateOnly start, int days, string reason, string token, CancellationToken ct = default) => await Post<object>("Workplace/vacations", new { userId = user, startDate = start, days, reason, previewToken = token }, ct);
+    public Task<VacationPage> VacationsAsync(int page, CancellationToken ct = default) => Get<VacationPage>($"Workplace/vacations?page={page}&size=100", ct);
+    public async Task DecideVacationAsync(VacationRequest request, string action, CancellationToken ct = default) => await Post<object>($"Workplace/vacations/{request.Id}/decision", new { version = request.Version, action }, ct);
     public async Task<bool> CallingEnabledAsync(CancellationToken ct = default) => (await Get<Capabilities>("SystemConfiguration/capabilities", ct)).CallingEnabled;
     private sealed record Capabilities(bool CallingEnabled);
     public Task<WorkplaceCatalog> CatalogAsync(CancellationToken ct = default) => Get<WorkplaceCatalog>("Workplace/catalog", ct);
     public Task<CallSession> CreateCallAsync(Guid peer, bool video, CancellationToken ct = default) => Post<CallSession>("Calls", new { participantIds = new[] { peer }, callType = video ? "video" : "audio" }, ct);
+    public Task<CallSession> CreateGroupCallAsync(string conversationId, bool video, CancellationToken ct = default) => Post<CallSession>("Calls", new { conversationId, callType = video ? "video" : "audio" }, ct);
+    public async Task InviteCallAsync(string callId, Guid user, CancellationToken ct = default) => await Send<CallSession>(HttpMethod.Put, $"Calls/{Segment(callId)}/Participants", new { participantIds = new[] { user } }, ct);
+    public Task<CallSession> CallContextAsync(string callId, CancellationToken ct = default) => Get<CallSession>($"Calls/{Segment(callId)}/Context", ct);
     public Task<MediaToken> CallTokenAsync(string id, CancellationToken ct = default) => Get<MediaToken>($"Calls/{Segment(id)}/Token", ct);
     public async Task LeaveCallAsync(string id, CancellationToken ct = default) => await Post<bool>($"Calls/{Segment(id)}/Leave", null, ct);
     public async Task DeclineCallAsync(string id, CancellationToken ct = default) => await Post<bool>($"Calls/{Segment(id)}/Decline", null, ct);

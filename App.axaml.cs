@@ -12,6 +12,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using UserIdentityDesktop.Application;
 using UserIdentityDesktop.Core;
+using UserIdentityDesktop.Core.Models;
 using UserIdentityDesktop.Service;
 using UserIdentityDesktop.ViewModels;
 using UserIdentityDesktop.Views;
@@ -33,6 +34,12 @@ public partial class App : Avalonia.Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        if (TryGetFeature(typeof(IActivatableLifetime)) is IActivatableLifetime activatable)
+            activatable.Activated += (_, args) =>
+            {
+                if (args is ProtocolActivatedEventArgs protocol)
+                    Dispatcher.UIThread.Post(async () => await HandleDeepLinkAsync(protocol.Uri.AbsoluteUri));
+            };
         var services = new ServiceCollection();
         services.AddUserIdentityApplication();
         services.AddSingleton<MainViewModel>();
@@ -42,14 +49,14 @@ public partial class App : Avalonia.Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var systemNotifications = Services.GetRequiredService<SystemNotificationService>();
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            if (!Program.StartupSmokeTest && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 systemNotifications.InitializeWindowsRegistration();
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            else if (!Program.StartupSmokeTest && RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
                 systemNotifications.InitializeLinuxRegistration();
                 systemNotifications.InitializeLinuxAutostart();
             }
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            else if (!Program.StartupSmokeTest && RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
                 systemNotifications.InitializeMacRegistration();
             }
@@ -59,7 +66,24 @@ public partial class App : Avalonia.Application
                 DataContext = Services.GetRequiredService<MainViewModel>(),
             };
             desktop.MainWindow = mainWindow;
+            var toasts = new ToastPresenter(mainWindow, () => Program.StartupSmokeTest || Environment.GetEnvironmentVariable("FIREUSER_REDUCED_MOTION") == "1" || (MainViewModelInstance?.CurrentView is WorkspaceViewModel { ReduceMotion: true }));
+            systemNotifications.TryShowForeground = (title, message, sender) =>
+            {
+                if (!mainWindow.IsActive || !mainWindow.IsVisible) return false;
+                toasts.Show(title, message, () => systemNotifications.Activate(sender));
+                return true;
+            };
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            if (Program.StartupSmokeTest)
+            {
+                mainWindow.Opened += (_, _) => DispatcherTimer.RunOnce(() =>
+                {
+                    Console.WriteLine("Startup smoke test: native window opened.");
+                    mainWindow.AllowClose = true;
+                    _shutdownPrepared = true;
+                    desktop.Shutdown();
+                }, TimeSpan.FromSeconds(1));
+            }
 
             MainViewModelInstance = (MainViewModel)mainWindow.DataContext;
             desktop.ShutdownRequested += async (_, args) =>
@@ -170,6 +194,16 @@ public partial class App : Avalonia.Application
             mainWindow.Activate();
         });
 
+        var meetingLocator = MeetingLink.Parse(uri);
+        if (meetingLocator != null)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (MainViewModelInstance == null) EnqueueDeepLink(uri);
+                else MainViewModelInstance.OpenMeeting(meetingLocator);
+            });
+            return;
+        }
         var userId = ParseDeepLinkUserId(uri);
         if (userId is null)
             return;
@@ -238,7 +272,7 @@ public partial class App : Avalonia.Application
         return candidate;
     }
 
-    private static Guid? ParseDeepLinkUserId(string uri)
+    internal static Guid? ParseDeepLinkUserId(string uri)
     {
         if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsed))
             return null;
@@ -246,7 +280,11 @@ public partial class App : Avalonia.Application
         if (!string.Equals(parsed.Scheme, "fireuserconnect", StringComparison.OrdinalIgnoreCase))
             return null;
 
+        if (string.Equals(parsed.Host, "meeting", StringComparison.OrdinalIgnoreCase)) return null;
         var path = parsed.AbsolutePath.Trim('/');
+        // In fireuserconnect://chat/{id}, "chat" is the authority, not a path segment.
+        if (string.Equals(parsed.Host, "chat", StringComparison.OrdinalIgnoreCase) && Guid.TryParse(path, out var chatUser))
+            return chatUser;
         if (path.StartsWith("chat", StringComparison.OrdinalIgnoreCase))
         {
             var value = path["chat".Length..].TrimStart('/');

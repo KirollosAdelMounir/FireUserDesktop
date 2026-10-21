@@ -40,3 +40,20 @@ Review the selected build's GPL obligations and corresponding source before
 public distribution; this script prepares a local developer runtime:
 https://www.gyan.dev/ffmpeg/builds/
 https://ffmpeg.org/legal.html
+
+Linux packages also include curl 8.23.0 built from the upstream release with
+OpenSSL and versioned symbols for LiveKit's CURL_OPENSSL_4 dependency. The build
+verifies SHA-256 and copies upstream COPYING as CURL-COPYING beside the library.
+https://github.com/curl/curl/releases/tag/curl-8_23_0
+https://curl.se/docs/copyright.html
+OpenSSL, zlib and platform libraries remain system dependencies. MinGW builds
+require a compatible SDK and include their compiler runtime DLLs under the
+respective MinGW/GCC runtime redistribution terms.
+
+Wayland screen sharing dynamically uses the distribution's GStreamer core/app,
+base plugins and PipeWire plugin; these remain system dependencies under their
+upstream licenses. The managed portal client uses Tmds.DBus.Protocol (MIT).
+macOS source capture links the system ScreenCaptureKit/CoreMedia/CoreVideo
+frameworks and does not bundle an alternative implementation of those frameworks.
+https://gstreamer.freedesktop.org/documentation/licensing.html
+https://github.com/tmds/Tmds.DBus

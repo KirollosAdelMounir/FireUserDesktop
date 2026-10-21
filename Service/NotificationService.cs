@@ -15,15 +15,13 @@ namespace UserIdentityDesktop.Service;
 public class SystemNotificationService : INotificationService
 {
     private string? _cachedIconPath;
-    private string? _notificationSoundPath;
-    private readonly object _notificationSoundLock = new();
+    private readonly Media.CallSounds notificationSound = new();
 
     public event Action<Guid>? NotificationActivated;
-
-    public SystemNotificationService()
-    {
-        Task.Run(EnsureIconExtracted);
-    }
+    // Called on Avalonia's UI thread. Return true when a foreground toast was shown.
+    public Func<string, string, Guid, bool>? TryShowForeground { get; set; }
+    private readonly System.Threading.SemaphoreSlim osNotificationGate = new(1, 1);
+    public void Activate(Guid senderId) => NotificationActivated?.Invoke(senderId);
 
     [SupportedOSPlatform("windows")]
     public void InitializeWindowsRegistration()
@@ -130,52 +128,11 @@ public class SystemNotificationService : INotificationService
         }
     }
 
-    [SupportedOSPlatform("osx")]
+    [SupportedOSPlatform("macos")]
     public void InitializeMacRegistration()
     {
-        try
-        {
-            var processPath = Environment.ProcessPath;
-            if (string.IsNullOrWhiteSpace(processPath))
-                throw new InvalidOperationException("The current executable path is unavailable.");
-
-            var bundleRoot = Path.GetDirectoryName(processPath);
-            if (!string.IsNullOrWhiteSpace(bundleRoot))
-            {
-                var infoPlistPath = Path.Combine(bundleRoot, "..", "..", "Info.plist");
-                var resolved = Path.GetFullPath(infoPlistPath);
-                if (File.Exists(resolved))
-                {
-                    var content = File.ReadAllText(resolved);
-                    if (!content.Contains("CFBundleURLSchemes", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var xml = """
-<key>CFBundleURLTypes</key>
-<array>
-    <dict>
-        <key>CFBundleURLName</key>
-        <string>Fire User Connect</string>
-        <key>CFBundleURLSchemes</key>
-        <array>
-            <string>fireuserconnect</string>
-        </array>
-    </dict>
-</array>
-""";
-                        var marker = "</dict>";
-                        if (content.Contains(marker, StringComparison.Ordinal))
-                        {
-                            content = content.Replace(marker, xml + marker, StringComparison.Ordinal);
-                            File.WriteAllText(resolved, content);
-                        }
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"macOS registration error: {ex}");
-        }
+        try { MacNotifications.Initialize(Activate); }
+        catch (Exception ex) { Console.WriteLine($"macOS notification registration: {ex.GetType().Name}"); }
     }
 
     private static void SetDesktopEntry(List<string> entries, string key, string value)
@@ -253,13 +210,25 @@ public class SystemNotificationService : INotificationService
 
     public void ShowNotification(string title, string message, Guid senderId)
     {
-        Task.Run(() =>
+        notificationSound.Play("NotificationSound", loop: false);
+        var cleanTitle = SanitizeText(title, 80);
+        var cleanMessage = SanitizeText(message, 200);
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
-            try
+            if (TryShowForeground?.Invoke(cleanTitle, cleanMessage, senderId) == true) return;
+            _ = PostSystemAsync(cleanTitle, cleanMessage, senderId);
+        });
+    }
+
+    private async Task PostSystemAsync(string cleanTitle, string cleanMessage, Guid senderId)
+    {
+        // Avoid spawning unbounded shell/audio processes during message bursts.
+        if (!await osNotificationGate.WaitAsync(0)) return;
+        try
+        {
+            await Task.Run(() =>
             {
-                PlayNotificationSound();
-                var cleanTitle = SanitizeText(title, 80);
-                var cleanMessage = SanitizeText(message, 200);
+                EnsureIconExtracted();
 
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
                 {
@@ -271,102 +240,15 @@ public class SystemNotificationService : INotificationService
                 }
                 else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
                 {
-                    ShowMacNotification(cleanTitle, cleanMessage);
+                    ShowMacNotification(cleanTitle, cleanMessage, senderId);
                 }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Failed to post OS notification: {ex.Message}");
-            }
-        });
-    }
-
-    private void PlayNotificationSound()
-    {
-        try
-        {
-            var soundPath = EnsureNotificationSoundExtracted();
-            if (string.IsNullOrWhiteSpace(soundPath) || !File.Exists(soundPath))
-                return;
-
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                PlayWindowsNotificationSound(soundPath);
-            }
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            {
-                StartAudioProcess("afplay", soundPath);
-            }
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-            {
-                if (!StartAudioProcess("ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", soundPath))
-                    StartAudioProcess("mpg123", "-q", soundPath);
-            }
+            });
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Notification sound error: {ex.Message}");
+            Console.WriteLine($"Failed to post OS notification: {ex.GetType().Name}");
         }
-    }
-
-    private string? EnsureNotificationSoundExtracted()
-    {
-        if (!string.IsNullOrWhiteSpace(_notificationSoundPath) && File.Exists(_notificationSoundPath))
-            return _notificationSoundPath;
-
-        lock (_notificationSoundLock)
-        {
-            if (!string.IsNullOrWhiteSpace(_notificationSoundPath) && File.Exists(_notificationSoundPath))
-                return _notificationSoundPath;
-
-            var appDirectory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "UserIdentityDesktop");
-            Directory.CreateDirectory(appDirectory);
-
-            var soundPath = Path.Combine(appDirectory, "NotificationSound.mp3");
-            var assetUri = new Uri("avares://UserIdentityDesktop/Assets/NotificationSound.mp3");
-            if (!AssetLoader.Exists(assetUri))
-                return null;
-
-            using var source = AssetLoader.Open(assetUri);
-            using var destination = File.Create(soundPath);
-            source.CopyTo(destination);
-            _notificationSoundPath = soundPath;
-            return soundPath;
-        }
-    }
-
-    [SupportedOSPlatform("windows")]
-    private static void PlayWindowsNotificationSound(string soundPath)
-    {
-        var safePath = soundPath.Replace("'", "''", StringComparison.Ordinal);
-        var script = $"Add-Type -AssemblyName PresentationCore; $player = New-Object System.Windows.Media.MediaPlayer; $player.Open([Uri]::new('{safePath}')); $player.Play(); Start-Sleep -Seconds 3; $player.Close();";
-        var encodedCommand = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
-
-        StartAudioProcess("powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encodedCommand);
-    }
-
-    private static bool StartAudioProcess(string fileName, params string[] arguments)
-    {
-        try
-        {
-            var processInfo = new ProcessStartInfo
-            {
-                FileName = fileName,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            foreach (var argument in arguments)
-                processInfo.ArgumentList.Add(argument);
-
-            return Process.Start(processInfo) != null;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
+        finally { osNotificationGate.Release(); }
     }
 
     private void ShowLinuxNotification(string title, string message, Guid senderId)
@@ -380,6 +262,10 @@ public class SystemNotificationService : INotificationService
                 UseShellExecute = false
             };
 
+            psi.ArgumentList.Add("--hint=string:desktop-entry:fire-user-connect");
+            psi.ArgumentList.Add("--hint=boolean:suppress-sound:true");
+            psi.ArgumentList.Add("--expire-time=6000");
+            psi.ArgumentList.Add("--wait");
             psi.ArgumentList.Add("-a");
             psi.ArgumentList.Add("Fire User Connect");
             psi.ArgumentList.Add("-u");
@@ -394,13 +280,14 @@ public class SystemNotificationService : INotificationService
                 psi.ArgumentList.Add(_cachedIconPath);
             }
 
+            psi.ArgumentList.Add("--");
             psi.ArgumentList.Add(title);
-            psi.ArgumentList.Add(message);
+            psi.ArgumentList.Add(System.Security.SecurityElement.Escape(message) ?? "");
 
             using var proc = Process.Start(psi);
             if (proc != null)
             {
-                proc.WaitForExit(3000);
+                if (!proc.WaitForExit(15000)) { proc.Kill(entireProcessTree: true); return; }
                 if (proc.StandardOutput.ReadToEnd().Trim() == "default")
                     Avalonia.Threading.Dispatcher.UIThread.Post(() => NotificationActivated?.Invoke(senderId));
             }
@@ -416,35 +303,17 @@ public class SystemNotificationService : INotificationService
     {
         try
         {
-            var safeTitle = title.Replace("'", "''");
-            var safeMessage = message.Replace("'", "''");
             var launchUri = $"fireuserconnect://chat/{senderId}";
-
-            var iconXml = "";
-            if (!string.IsNullOrEmpty(_cachedIconPath) && File.Exists(_cachedIconPath))
-            {
-                var safeIconPath = _cachedIconPath.Replace("'", "''");
-                iconXml = $"<image placement='appLogoOverride' src='file:///{safeIconPath}'/>";
-            }
-
+            var iconXml = string.IsNullOrEmpty(_cachedIconPath) || !File.Exists(_cachedIconPath) ? "" :
+                $"<image placement='appLogoOverride' src='{System.Security.SecurityElement.Escape(new Uri(_cachedIconPath).AbsoluteUri)}'/>";
+            var xmlText = $"<toast activationType='protocol' launch='{launchUri}'><visual><binding template='ToastGeneric'><text>{System.Security.SecurityElement.Escape(title)}</text><text>{System.Security.SecurityElement.Escape(message)}</text>{iconXml}</binding></visual><audio silent='true'/></toast>";
+            // Only Base64 crosses the script boundary; notification text is XML data.
+            var xmlPayload = Convert.ToBase64String(Encoding.UTF8.GetBytes(xmlText));
             var script = $@"
 [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
 [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
-$title = '{safeTitle}'
-$msg = '{safeMessage}'
-$xmlTemplate = @""
-<toast launch='{launchUri}'>
-    <visual>
-        <binding template='ToastGeneric'>
-            <text>$title</text>
-            <text>$msg</text>
-            {iconXml}
-        </binding>
-    </visual>
-</toast>
-""@
 $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
-$xml.LoadXml($xmlTemplate)
+$xml.LoadXml([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{xmlPayload}')))
 $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('UserIdentityDesktop.Desktop').Show($toast)
 ";
@@ -464,10 +333,7 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
             using var proc = Process.Start(psi);
             if (proc != null)
             {
-                proc.WaitForExit(4000);
-                var error = proc.StandardError.ReadToEnd().Trim();
-                if (!string.IsNullOrEmpty(error))
-                    Console.WriteLine($"Windows notification PowerShell error: {error}");
+                if (!proc.WaitForExit(4000)) { proc.Kill(entireProcessTree: true); return; }
                 if (proc.ExitCode != 0)
                     Console.WriteLine($"Windows notification exited with code {proc.ExitCode}.");
             }
@@ -625,32 +491,11 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
         }
     }
 
-    private void ShowMacNotification(string title, string message)
+    [SupportedOSPlatform("macos")]
+    private static void ShowMacNotification(string title, string message, Guid senderId)
     {
-        try
-        {
-            var safeTitle = title.Replace("\\", "\\\\").Replace("\"", "\\\"");
-            var safeMessage = message.Replace("\\", "\\\\").Replace("\"", "\\\"");
-
-            var script = $"display notification \"{safeMessage}\" with title \"Fire User Connect\" subtitle \"{safeTitle}\" sound name \"default\"";
-
-            var psi = new ProcessStartInfo
-            {
-                FileName = "osascript",
-                CreateNoWindow = true,
-                UseShellExecute = false
-            };
-
-            psi.ArgumentList.Add("-e");
-            psi.ArgumentList.Add(script);
-
-            using var proc = Process.Start(psi);
-            proc?.WaitForExit(3000);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"macOS notification error: {ex.Message}");
-        }
+        if (!MacNotifications.Show(title, message, senderId))
+            Console.WriteLine("macOS notifications require the packaged Fire User Connect.app bundle.");
     }
 
     private static string SanitizeText(string text, int maxLength)

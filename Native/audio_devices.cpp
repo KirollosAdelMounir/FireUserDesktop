@@ -1,5 +1,4 @@
 #define MINIAUDIO_IMPLEMENTATION
-#define MA_NO_DECODING
 #define MA_NO_ENCODING
 #define MA_NO_RESOURCE_MANAGER
 #define MA_NO_NODE_GRAPH
@@ -103,3 +102,38 @@ int fu_audio_write(void* handle, const uint8_t* pcm, int length) {
     return 0;
 }
 void fu_audio_close(void* handle) { delete static_cast<AudioDevice*>(handle); }
+
+namespace {
+struct Tone {
+    ma_decoder decoder{};
+    ma_device device{};
+    bool decoded = false, opened = false, loop = false;
+    ~Tone() { if (opened) ma_device_uninit(&device); if (decoded) ma_decoder_uninit(&decoder); }
+};
+void tone_callback(ma_device* device, void* output, const void*, ma_uint32 frames) {
+    auto& tone = *static_cast<Tone*>(device->pUserData);
+    auto* pcm = static_cast<int16_t*>(output);
+    std::memset(output, 0, frames * 2 * sizeof(int16_t));
+    ma_uint64 read = 0;
+    ma_decoder_read_pcm_frames(&tone.decoder, pcm, frames, &read);
+    if (read < frames && tone.loop && ma_decoder_seek_to_pcm_frame(&tone.decoder, 0) == MA_SUCCESS)
+        ma_decoder_read_pcm_frames(&tone.decoder, pcm + read * 2, frames - read, nullptr);
+}
+}
+void* fu_tone_open(const char* path, int loop) {
+    if (!path) return nullptr;
+    try {
+    auto tone = std::make_unique<Tone>(); tone->loop = loop != 0;
+    auto decoder_config = ma_decoder_config_init(ma_format_s16, 2, 48000);
+    if (ma_decoder_init_file(path, &decoder_config, &tone->decoder) != MA_SUCCESS) return nullptr;
+    tone->decoded = true;
+    auto config = ma_device_config_init(ma_device_type_playback);
+    config.playback.format = ma_format_s16; config.playback.channels = 2; config.sampleRate = 48000;
+    config.dataCallback = tone_callback; config.pUserData = tone.get();
+    if (ma_device_init(nullptr, &config, &tone->device) != MA_SUCCESS) return nullptr;
+    tone->opened = true;
+    if (ma_device_start(&tone->device) != MA_SUCCESS) return nullptr;
+    return tone.release();
+    } catch (...) { return nullptr; }
+}
+void fu_tone_close(void* handle) { delete static_cast<Tone*>(handle); }

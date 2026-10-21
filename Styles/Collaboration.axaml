@@ -1,0 +1,33 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Styles.Resources>
+    <StreamGeometry x:Key="Glyph.Organization">M2,22 L2,7 10,7 10,2 22,2 22,22 15,22 15,16 11,16 11,22 Z M5,10 L7,10 7,12 5,12 Z M5,15 L7,15 7,17 5,17 Z M13,5 L15,5 15,7 13,7 Z M18,5 L20,5 20,7 18,7 Z M13,10 L15,10 15,12 13,12 Z M18,10 L20,10 20,12 18,12 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.More">M4,10 A2,2 0 1 1 4,14 A2,2 0 1 1 4,10 M12,10 A2,2 0 1 1 12,14 A2,2 0 1 1 12,10 M20,10 A2,2 0 1 1 20,14 A2,2 0 1 1 20,10</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Chat">M3,3 L21,3 21,17 9,17 3,22 Z M6,7 L18,7 M6,11 L15,11</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Phone">M6,2 L10,6 8,9 C10,13 12,15 16,17 L19,15 23,19 21,23 C11,24 0,13 1,4 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Camera">M2,5 L16,5 16,19 2,19 Z M18,9 L23,6 23,18 18,15 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Send">M2,2 L23,12 2,22 6,13 17,12 6,11 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Attach">M8,16 L16,8 C20,4 24,10 20,14 L10,24 C3,30 -4,20 2,14 L14,2 16,4 4,16 C0,20 4,25 8,21 L18,11 C20,9 18,7 16,9 L9,17 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Close">M5,3 L12,10 19,3 21,5 14,12 21,19 19,21 12,14 5,21 3,19 10,12 3,5 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Plus">M11,3 L13,3 13,11 21,11 21,13 13,13 13,21 11,21 11,13 3,13 3,11 11,11 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.File">M5,2 L15,2 21,8 21,23 5,23 Z M14,4 L14,9 19,9 M8,13 L17,13 M8,17 L15,17</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Search">M10,2 A8,8 0 1 1 10,18 A8,8 0 1 1 10,2 M16,16 L23,23 21,25 14,18 Z</StreamGeometry>
+  </Styles.Resources>
+  <Style Selector="Button">
+    <Setter Property="Background" Value="{DynamicResource ForgeSurfaceCard}" /><Setter Property="Foreground" Value="{DynamicResource ForgeTextPrimary}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource ForgeBorder}" /><Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="9" /><Setter Property="Padding" Value="12,8" /><Setter Property="FontSize" Value="13" /><Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource ForgeSurfaceHover}" /></Style>
+  <Style Selector="Button.quiet"><Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" /><Setter Property="Foreground" Value="{DynamicResource ForgeTextSecondary}" /></Style>
+  <Style Selector="Button.square"><Setter Property="Width" Value="36" /><Setter Property="Height" Value="36" /><Setter Property="Padding" Value="9" /><Setter Property="CornerRadius" Value="10" /></Style>
+  <Style Selector="Button.danger"><Setter Property="Background" Value="{DynamicResource ForgeDanger}" /><Setter Property="Foreground" Value="White" /><Setter Property="BorderThickness" Value="0" /></Style>
+  <Style Selector="Button.danger:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource ForgeDanger}" /><Setter Property="Opacity" Value="0.85" /></Style>
+  <Style Selector="TextBox"><Setter Property="Background" Value="{DynamicResource ForgeBgSecondary}" /><Setter Property="Foreground" Value="{DynamicResource ForgeTextPrimary}" /><Setter Property="BorderBrush" Value="{DynamicResource ForgeBorder}" /><Setter Property="CornerRadius" Value="9" /><Setter Property="Padding" Value="11,9" /></Style>
+  <Style Selector="ComboBox"><Setter Property="Background" Value="{DynamicResource ForgeBgSecondary}" /><Setter Property="Foreground" Value="{DynamicResource ForgeTextPrimary}" /><Setter Property="BorderBrush" Value="{DynamicResource ForgeBorder}" /><Setter Property="CornerRadius" Value="9" /><Setter Property="Padding" Value="10,8" /></Style>
+  <Style Selector="ContextMenu"><Setter Property="Background" Value="{DynamicResource ForgeSurface}" /><Setter Property="BorderBrush" Value="{DynamicResource ForgeBorder}" /><Setter Property="BorderThickness" Value="1" /><Setter Property="CornerRadius" Value="12" /><Setter Property="Padding" Value="5" /><Setter Property="MinWidth" Value="210" /></Style>
+  <Style Selector="MenuItem"><Setter Property="FontSize" Value="13" /><Setter Property="Padding" Value="11,9" /><Setter Property="Foreground" Value="{DynamicResource ForgeTextPrimary}" /></Style>
+  <Style Selector="MenuItem.danger"><Setter Property="Foreground" Value="{DynamicResource ForgeDanger}" /></Style>
+  <Style Selector="TextBlock.caption"><Setter Property="FontSize" Value="11" /><Setter Property="Foreground" Value="{DynamicResource ForgeTextMuted}" /></Style>
+  <Style Selector="TextBlock.section-label"><Setter Property="FontSize" Value="11" /><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="{DynamicResource ForgeTextMuted}" /><Setter Property="LetterSpacing" Value="1" /></Style>
+  <Style Selector="Border.detail-card"><Setter Property="Background" Value="{DynamicResource ForgeBgSecondary}" /><Setter Property="CornerRadius" Value="12" /><Setter Property="Padding" Value="16" /><Setter Property="BorderBrush" Value="{DynamicResource ForgeBorder}" /><Setter Property="BorderThickness" Value="1" /></Style>
+</Styles>

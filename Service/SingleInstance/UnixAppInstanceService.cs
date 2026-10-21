@@ -12,16 +12,17 @@ public sealed class UnixAppInstanceService : IAppInstanceService
 {
     private readonly string _socketPath;
     private readonly string _lockPath;
-    private readonly FileStream _lockFile;
+    private FileStream? _lockFile;
     private readonly CancellationTokenSource _disposeCts = new();
     private readonly object _serverLock = new();
     private Task? _serverTask;
     private bool _disposed;
     private bool _isAcquired;
 
-    public UnixAppInstanceService()
+    public UnixAppInstanceService() : this(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)) { }
+
+    internal UnixAppInstanceService(string appDataRoot)
     {
-        var appDataRoot = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (string.IsNullOrWhiteSpace(appDataRoot))
             appDataRoot = Path.GetTempPath();
 
@@ -30,7 +31,6 @@ public sealed class UnixAppInstanceService : IAppInstanceService
 
         _socketPath = Path.Combine(appDirectory, "fireuserconnect.sock");
         _lockPath = _socketPath + ".lock";
-        _lockFile = new FileStream(_lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
     }
 
     public bool TryAcquire()
@@ -38,10 +38,12 @@ public sealed class UnixAppInstanceService : IAppInstanceService
         if (_disposed)
             return false;
 
+        if (_isAcquired) return true;
         try
         {
-            if (!OperatingSystem.IsMacOS())
-                _lockFile.Lock(0, 0);
+            // Opening with FileShare.None acquires the OS lock on both Unix platforms.
+            // Contention is an expected TryAcquire result, never a constructor failure.
+            _lockFile = new FileStream(_lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
 
             _isAcquired = true;
             return true;
@@ -125,42 +127,35 @@ public sealed class UnixAppInstanceService : IAppInstanceService
         if (_disposed)
             return;
 
-        try
+        if (!_isAcquired) return;
+        _disposeCts.Cancel();
+        // The listener removes its own socket before releasing ownership. A second
+        // instance must never unlink the active owner's endpoint.
+        if (_serverTask != null)
         {
-            if (!OperatingSystem.IsMacOS())
-                _lockFile.Unlock(0, 0);
+            _ = _serverTask.ContinueWith(_ => ReleaseLock(), TaskScheduler.Default);
         }
-        catch (Exception)
-        {
-            // Ignore if the lock is not active for this process.
-        }
+        else ReleaseLock();
+    }
 
-        if (File.Exists(_socketPath))
-        {
-            try
-            {
-                File.Delete(_socketPath);
-            }
-            catch (IOException)
-            {
-                // The socket may still be in use during shutdown.
-            }
-        }
+    private void ReleaseLock()
+    {
+        _lockFile?.Dispose();
+        _lockFile = null;
+        _isAcquired = false;
     }
 
     public void Dispose()
     {
-        if (_disposed)
-            return;
-
-        _disposed = true;
-        _disposeCts.Cancel();
+        if (_disposed) return;
         Release();
-        _lockFile.Dispose();
+        _disposed = true;
     }
 
     private async Task RunServerLoopAsync(CancellationToken cancellationToken, Func<string, Task> onMessageReceived)
     {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _disposeCts.Token);
+        var stop = linked.Token;
         try
         {
             if (File.Exists(_socketPath))
@@ -179,9 +174,9 @@ public sealed class UnixAppInstanceService : IAppInstanceService
             socket.Bind(new UnixDomainSocketEndPoint(_socketPath));
             socket.Listen(5);
 
-            while (!cancellationToken.IsCancellationRequested)
+            while (!stop.IsCancellationRequested)
             {
-                var accepted = await socket.AcceptAsync();
+                var accepted = await socket.AcceptAsync(stop);
                 _ = Task.Run(async () =>
                 {
                     try
@@ -189,7 +184,7 @@ public sealed class UnixAppInstanceService : IAppInstanceService
                         using var acceptedSocket = accepted;
                         using var networkStream = new NetworkStream(acceptedSocket, ownsSocket: true);
                         using var reader = new StreamReader(networkStream, Encoding.UTF8);
-                        var message = await reader.ReadToEndAsync();
+                        var message = await reader.ReadLineAsync(stop);
                         if (!string.IsNullOrWhiteSpace(message))
                             await onMessageReceived(message.Trim());
                     }

@@ -10,6 +10,8 @@ internal static class LiveKitNative
     [DllImport("fireuser_livekit", CallingConvention = CallingConvention.Cdecl)] internal static extern IntPtr fu_audio_open([MarshalAs(UnmanagedType.LPUTF8Str)] string name, int capture, int rate, int channels, PcmCallback? callback);
     [DllImport("fireuser_livekit", CallingConvention = CallingConvention.Cdecl)] internal static extern int fu_audio_write(IntPtr handle, byte[] data, int length);
     [DllImport("fireuser_livekit", CallingConvention = CallingConvention.Cdecl)] internal static extern void fu_audio_close(IntPtr handle);
+    [DllImport("fireuser_livekit", CallingConvention = CallingConvention.Cdecl)] internal static extern IntPtr fu_tone_open([MarshalAs(UnmanagedType.LPUTF8Str)] string path, int loop);
+    [DllImport("fireuser_livekit", CallingConvention = CallingConvention.Cdecl)] internal static extern void fu_tone_close(IntPtr handle);
     private const string Library = "fireuser_livekit";
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void VideoCallback(IntPtr identity, IntPtr data, int width, int height, int length);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void AudioCallback(IntPtr identity, IntPtr data, int length, int rate, int channels);

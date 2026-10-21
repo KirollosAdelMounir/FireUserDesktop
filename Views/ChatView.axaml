@@ -1,1078 +1,139 @@
-<UserControl xmlns="https://github.com/avaloniaui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="using:UserIdentityDesktop.ViewModels"
-             xmlns:m="using:UserIdentityDesktop.Models"
-             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="720"
-             x:Class="UserIdentityDesktop.Views.ChatView"
-             x:Name="RootChatView"
-             x:DataType="vm:ChatViewModel"
-             Background="{DynamicResource ForgeBg}">
-
-    <UserControl.Styles>
-        <Style Selector="ListBoxItem">
-            <Setter Property="Padding" Value="4,2" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="CornerRadius" Value="10" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="Transitions">
-                <Transitions>
-                    <DoubleTransition Property="Opacity" Duration="0:0:0.16" />
-                </Transitions>
-            </Setter>
-        </Style>
-        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
-            <Setter Property="Background" Value="{DynamicResource ForgePrimaryGradientSubtle}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource ForgeBorderFocus}" />
-            <Setter Property="BorderThickness" Value="1" />
-        </Style>
-        <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="{DynamicResource ForgeSurfaceHover}" />
-        </Style>
-
-        <Style Selector="Grid.msg-row.mine">
-            <Setter Property="HorizontalAlignment" Value="Right" />
-        </Style>
-        <Style Selector="Grid.msg-row.theirs">
-            <Setter Property="HorizontalAlignment" Value="Left" />
-        </Style>
-
-        <Style Selector="Grid.msg-row:pointerover">
-            <Setter Property="Opacity" Value="0.9" />
-        </Style>
-
-        <Style Selector="Grid.msg-row.incoming">
-            <Setter Property="Opacity" Value="0" />
-            <Setter Property="Transitions">
-                <Transitions>
-                    <DoubleTransition Property="Opacity" Duration="0:0:0.24" />
-                </Transitions>
-            </Setter>
-        </Style>
-
-        <Style Selector="TextBlock.typing-dots">
-            <Style.Animations>
-                <Animation Duration="0:0:1.1" IterationCount="INFINITE">
-                    <KeyFrame Cue="0%">
-                        <Setter Property="Opacity" Value="0.35" />
-                    </KeyFrame>
-                    <KeyFrame Cue="50%">
-                        <Setter Property="Opacity" Value="1" />
-                    </KeyFrame>
-                    <KeyFrame Cue="100%">
-                        <Setter Property="Opacity" Value="0.35" />
-                    </KeyFrame>
-                </Animation>
-            </Style.Animations>
-        </Style>
-
-        <Style Selector="Border.msg-bubble.mine">
-            <Setter Property="Background" Value="{DynamicResource ForgePrimaryGradient}" />
-            <Setter Property="BorderThickness" Value="0" />
-        </Style>
-        <Style Selector="Border.msg-bubble.mine TextBlock">
-            <Setter Property="Foreground" Value="White" />
-        </Style>
-
-        <Style Selector="Border.msg-bubble.theirs">
-            <Setter Property="Background" Value="{DynamicResource ForgeBubbleReceived}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource ForgeBorder}" />
-            <Setter Property="BorderThickness" Value="1" />
-        </Style>
-        <Style Selector="Border.msg-bubble.theirs TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource ForgeTextPrimary}" />
-        </Style>
-
-    </UserControl.Styles>
-
-    <Panel>
-        <!-- ========================================================= -->
-        <!-- MAIN APPLICATION LAYOUT (Sidebar + Chat / Search)       -->
-        <!-- ========================================================= -->
-        <Grid ColumnDefinitions="320,*">
-            <!-- ===================================================== -->
-            <!-- 1. SIDEBAR                                            -->
-            <!-- ===================================================== -->
-            <Border Grid.Column="0"
-                    Background="{DynamicResource ForgeSurface}"
-                    BorderBrush="{DynamicResource ForgeBorder}"
-                    BorderThickness="0,0,1.5,0">
-                <Grid RowDefinitions="64,Auto,Auto,*,Auto">
-                    <Grid Margin="20,0" ColumnDefinitions="Auto,*" VerticalAlignment="Center">
-                        <PathIcon Width="20" Height="20" Foreground="{DynamicResource ForgePrimary}" Data="M2,3 L22,3 22,17 8,17 2,22 Z M5,6 L19,6 19,14 7,14 5,16 Z" />
-                        <TextBlock Grid.Column="1" Text="Conversations" FontSize="17" FontWeight="SemiBold" Margin="10,0,0,0" />
-                    </Grid>
-                    <!-- User Profile Header -->
-                    <Border Grid.Row="4"
-                            Padding="16,12"
-                            BorderBrush="{DynamicResource ForgeBorder}"
-                            BorderThickness="0,0,0,1">
-                        <Grid ColumnDefinitions="Auto,*,Auto">
-                            <!-- User Avatar -->
-                            <Panel Grid.Column="0" Width="40" Height="40">
-                                <Border CornerRadius="20"
-                                        Background="{DynamicResource ForgePrimaryGradient}">
-                                    <TextBlock Text="{Binding CurrentUser.Initials}"
-                                               Foreground="White"
-                                               FontWeight="Bold"
-                                               FontSize="14"
-                                               HorizontalAlignment="Center"
-                                               VerticalAlignment="Center" />
-                                </Border>
-                                <Border CornerRadius="20"
-                                        ClipToBounds="True"
-                                        IsVisible="{Binding MyAvatar, Converter={StaticResource NullToBoolConverter}}">
-                                    <Image Source="{Binding MyAvatar}" Stretch="UniformToFill" />
-                                </Border>
-                            </Panel>
-
-                            <!-- Name and Status -->
-                            <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding CurrentUser.DisplayName}"
-                                           FontWeight="Bold"
-                                           FontSize="13"
-                                           Foreground="{DynamicResource ForgeTextPrimary}"
-                                           TextTrimming="CharacterEllipsis" />
-                                <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,0,0">
-                                    <Ellipse Width="8" Height="8"
-                                             Fill="{Binding CurrentStatusColor}"
-                                             VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding CurrentStatusLabel}"
-                                               FontSize="11"
-                                               Foreground="{DynamicResource ForgeTextMuted}" />
-                                </StackPanel>
-                                <TextBlock Text="{Binding ConnectionStatusText}"
-                                           FontSize="10"
-                                           Foreground="{DynamicResource ForgeTextMuted}" />
-                            </StackPanel>
-
-                            <!-- Account status and sign-out menu -->
-                            <Button Grid.Column="2"
-                                    Classes="icon-btn"
-                                    ToolTip.Tip="Account menu"
-                                    Padding="6">
-                                <TextBlock Text="⋮" FontSize="21" Foreground="{DynamicResource ForgeTextSecondary}" />
-                                <Button.Flyout>
-                                    <Flyout Placement="BottomEdgeAlignedRight">
-                                        <Border Background="{DynamicResource ForgeSurfaceCard}"
-                                                BorderBrush="{DynamicResource ForgeBorder}"
-                                                BorderThickness="1"
-                                                CornerRadius="10"
-                                                Padding="12">
-                                            <StackPanel Spacing="6" MinWidth="190">
-                                                <Button HorizontalContentAlignment="Left"
-                                                        Classes="secondary-btn"
-                                                        Padding="10,8">
-                                                    <StackPanel Orientation="Horizontal" Spacing="9">
-                                                        <Ellipse Width="9" Height="9"
-                                                                 Fill="{Binding CurrentStatusColor}"
-                                                                 VerticalAlignment="Center" />
-                                                        <TextBlock Text="Status"
-                                                                   VerticalAlignment="Center" />
-                                                        <TextBlock Text="›"
-                                                                   FontSize="17"
-                                                                   Foreground="{DynamicResource ForgeTextMuted}" />
-                                                    </StackPanel>
-                                                    <Button.Flyout>
-                                                        <Flyout Placement="RightEdgeAlignedTop">
-                                                            <Border Background="{DynamicResource ForgeSurfaceCard}"
-                                                                    BorderBrush="{DynamicResource ForgeBorder}"
-                                                                    BorderThickness="1"
-                                                                    CornerRadius="10"
-                                                                    Padding="8">
-                                                                <ItemsControl ItemsSource="{Binding StatusOptions}">
-                                                                    <ItemsControl.ItemTemplate>
-                                                                        <DataTemplate x:DataType="vm:StatusOption"
-                                                                                     x:CompileBindings="False">
-                                                                            <Button HorizontalContentAlignment="Left"
-                                                                                    Classes="secondary-btn"
-                                                                                    Padding="10,7"
-                                                                                    Click="StatusButton_Click">
-                                                                                <StackPanel Orientation="Horizontal" Spacing="9">
-                                                                                    <Ellipse Width="9" Height="9"
-                                                                                             Fill="{Binding Color}"
-                                                                                             VerticalAlignment="Center" />
-                                                                                    <TextBlock Text="{Binding Label}" />
-                                                                                </StackPanel>
-                                                                            </Button>
-                                                                        </DataTemplate>
-                                                                    </ItemsControl.ItemTemplate>
-                                                                </ItemsControl>
-                                                            </Border>
-                                                        </Flyout>
-                                                    </Button.Flyout>
-                                                </Button>
-                                                <Button Content="Sign out"
-                                                        HorizontalContentAlignment="Left"
-                                                        Foreground="{DynamicResource ForgeDanger}"
-                                                        Classes="secondary-btn"
-                                                        Command="{Binding LogoutCommand}" />
-                                            </StackPanel>
-                                        </Border>
-                                    </Flyout>
-                                </Button.Flyout>
-                            </Button>
-                        </Grid>
-                    </Border>
-
-                    <!-- Filter Conversations Bar -->
-                    <Border Grid.Row="1" Padding="12,8" BorderBrush="{DynamicResource ForgeBorder}" BorderThickness="0,0,0,1">
-                        <TextBox Classes="fire-input"
-                                 Text="{Binding SearchText, Mode=TwoWay}"
-                                 PlaceholderText="Filter conversations..."
-                                 Height="34"
-                                 CornerRadius="17"
-                                 Padding="12,4"
-                                 FontSize="12" />
-                    </Border>
-
-                    <!-- Recipients Loading Indicator -->
-                    <ProgressBar Grid.Row="2"
-                                 Classes="forge-progress"
-                                 IsIndeterminate="True"
-                                 IsVisible="{Binding IsLoadingRecipients}" />
-
-                    <!-- Conversations List -->
-                    <ListBox Grid.Row="3"
-                             ItemsSource="{Binding FilteredRecipients}"
-                             SelectedItem="{Binding SelectedRecipient, Mode=TwoWay}"
-                             Background="Transparent"
-                             BorderThickness="0"
-                             Padding="6,6">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate x:DataType="vm:RecipientItemViewModel">
-                                <Grid ColumnDefinitions="Auto,*" Margin="4,4">
-                                    <!-- Avatar -->
-                                    <Panel Grid.Column="0" Width="42" Height="42">
-                                        <Border CornerRadius="21"
-                                                Background="{DynamicResource ForgePrimaryGradientSubtle}"
-                                                BorderBrush="{DynamicResource ForgeBorder}"
-                                                BorderThickness="1">
-                                            <TextBlock Text="{Binding Initials}"
-                                                       Foreground="{DynamicResource ForgePrimary}"
-                                                       FontWeight="Bold"
-                                                       FontSize="14"
-                                                       HorizontalAlignment="Center"
-                                                       VerticalAlignment="Center" />
-                                        </Border>
-                                        <Border CornerRadius="21"
-                                                ClipToBounds="True"
-                                                IsVisible="{Binding Avatar, Converter={StaticResource NullToBoolConverter}}">
-                                            <Image Source="{Binding Avatar}" Stretch="UniformToFill" />
-                                        </Border>
-
-                                        <!-- Typing Beacon Indicator -->
-                                        <Border Width="11" Height="11"
-                                                CornerRadius="6"
-                                                Background="{DynamicResource ForgePrimary}"
-                                                BorderBrush="{DynamicResource ForgeSurface}"
-                                                BorderThickness="2"
-                                                HorizontalAlignment="Right"
-                                                VerticalAlignment="Bottom"
-                                                IsVisible="{Binding IsTyping}" />
-                                    </Panel>
-
-                                    <!-- Recipient Details -->
-                                    <Grid Grid.Column="1" RowDefinitions="Auto,Auto,Auto" Margin="10,0,0,0">
-                                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
-                                            <TextBlock Grid.Column="0"
-                                                       Text="{Binding ReceiverName}"
-                                                       FontWeight="SemiBold"
-                                                       FontSize="13"
-                                                       Foreground="{DynamicResource ForgeTextPrimary}"
-                                                       TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Grid.Column="1"
-                                                       Text="{Binding LastSent, Converter={StaticResource DateTimeFormatConverter}}"
-                                                       FontSize="10"
-                                                       Foreground="{DynamicResource ForgeTextMuted}" />
-                                        </Grid>
-
-                                        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="5" Margin="0,3,0,0">
-                                            <Ellipse Width="7" Height="7"
-                                                     Fill="{Binding StatusColor}"
-                                                     VerticalAlignment="Center" />
-                                            <TextBlock Text="{Binding StatusLabel}"
-                                                       FontSize="10"
-                                                       Foreground="{Binding StatusColor}"
-                                                       TextTrimming="CharacterEllipsis" />
-                                        </StackPanel>
-
-                                        <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,2,0,0">
-                                            <!-- Last Message or Typing Indicator -->
-                                            <Panel Grid.Column="0">
-                                                <TextBlock Text="typing..."
-                                                           FontSize="11"
-                                                           FontWeight="SemiBold"
-                                                           Foreground="{DynamicResource ForgePrimary}"
-                                                           IsVisible="{Binding IsTyping}" />
-                                                <TextBlock Text="{Binding LastMessage, FallbackValue='No messages yet'}"
-                                                           FontSize="11"
-                                                           Foreground="{DynamicResource ForgeTextSecondary}"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           IsVisible="{Binding !IsTyping}" />
-                                            </Panel>
-
-                                            <!-- Unread Badge -->
-                                            <Border Grid.Column="1"
-                                                    Background="{DynamicResource ForgePrimary}"
-                                                    CornerRadius="7"
-                                                    Padding="5,1"
-                                                    IsVisible="{Binding !IsSeen}">
-                                                <TextBlock Text="NEW"
-                                                           Foreground="White"
-                                                           FontSize="8"
-                                                           FontWeight="Bold" />
-                                            </Border>
-                                        </Grid>
-                                    </Grid>
-                                </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:UserIdentityDesktop.ViewModels" xmlns:views="using:UserIdentityDesktop.Views" x:Class="UserIdentityDesktop.Views.ChatView"
+             x:Name="RootChatView" x:DataType="vm:ChatViewModel" Background="{DynamicResource ForgeBg}"
+             Foreground="{DynamicResource ForgeTextPrimary}" Classes.reduced-motion="{Binding Workspace.ReduceMotion}">
+  <UserControl.Styles>
+    <Style Selector="ListBox"><Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" /></Style>
+    <Style Selector="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="Padding" Value="0" /><Setter Property="Margin" Value="0,2" /><Setter Property="CornerRadius" Value="12" /></Style>
+    <Style Selector="ListBoxItem:selected /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource ForgePrimaryGradientSubtle}" /></Style>
+    <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource ForgeSurfaceHover}" /></Style>
+    <Style Selector="ListBox.message-stream"><Setter Property="Padding" Value="28,20" /></Style>
+    <Style Selector="ListBox.message-stream ListBoxItem:selected /template/ ContentPresenter, ListBox.message-stream ListBoxItem:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="Transparent" /></Style>
+    <Style Selector="Grid.msg-row.mine"><Setter Property="HorizontalAlignment" Value="Right" /></Style>
+    <Style Selector="Grid.msg-row.theirs"><Setter Property="HorizontalAlignment" Value="Left" /></Style>
+    <Style Selector="Grid.msg-row.call"><Setter Property="HorizontalAlignment" Value="Center" /></Style>
+    <Style Selector="Border.msg-bubble"><Setter Property="Background" Value="{DynamicResource ForgeBubbleReceived}" /><Setter Property="BorderBrush" Value="{DynamicResource ForgeBorder}" /><Setter Property="BorderThickness" Value="1" /><Setter Property="CornerRadius" Value="4,15,15,15" /><Setter Property="Padding" Value="14,10" /></Style>
+    <Style Selector="Border.msg-bubble.mine"><Setter Property="Background" Value="{DynamicResource ForgeBubbleSent}" /><Setter Property="BorderBrush" Value="{DynamicResource ForgeBubbleSentBorder}" /><Setter Property="CornerRadius" Value="15,4,15,15" /></Style>
+    <Style Selector="Button.message-more"><Setter Property="Opacity" Value="0.15" /><Setter Property="Width" Value="28" /><Setter Property="Height" Value="28" /><Setter Property="Padding" Value="6" /><Setter Property="Margin" Value="4,3" /></Style>
+    <Style Selector="Grid.msg-row:pointerover Button.message-more, Button.message-more:focus"><Setter Property="Opacity" Value="1" /></Style>
+    <Style Selector="Border.recipient-row Button.recipient-more"><Setter Property="Opacity" Value="0" /></Style>
+    <Style Selector="Border.recipient-row:pointerover Button.recipient-more, Button.recipient-more:focus"><Setter Property="Opacity" Value="1" /></Style>
+    <Style Selector="TextBox.composer"><Setter Property="BorderThickness" Value="0" /><Setter Property="Background" Value="Transparent" /><Setter Property="Padding" Value="8,10" /></Style>
+    <Style Selector="TabControl.details-tabs TabItem"><Setter Property="FontSize" Value="12" /><Setter Property="Padding" Value="9,8" /><Setter Property="MinHeight" Value="36" /></Style>
+  </UserControl.Styles>
+  <Panel>
+    <Grid x:Name="ChatLayout" ColumnDefinitions="300,*">
+      <Border Background="{DynamicResource ForgeSurface}" BorderBrush="{DynamicResource ForgeBorder}" BorderThickness="0,0,1,0">
+        <Grid RowDefinitions="Auto,Auto,*,Auto">
+          <Grid ColumnDefinitions="*,Auto" Margin="22,22,16,14">
+            <StackPanel Spacing="4"><TextBlock Text="Chats" FontSize="24" FontWeight="SemiBold" /><TextBlock Classes="caption" Text="{Binding FilteredRecipients.Count, StringFormat='{}{0} conversations'}" /></StackPanel>
+            <Button x:Name="FindPeopleButton" Grid.Column="1" Classes="quiet square" VerticalAlignment="Center" ToolTip.Tip="New conversation" AutomationProperties.Name="New conversation">
+              <PathIcon Data="{StaticResource Glyph.Plus}" Width="18" Height="18" />
+              <Button.Flyout><Flyout Placement="BottomEdgeAlignedLeft"><StackPanel Width="320" Spacing="12">
+                <TextBlock Text="Find a colleague" FontSize="17" FontWeight="SemiBold" />
+                <TextBox Text="{Binding IdentitySearchText}" PlaceholderText="Search by name or email" AutomationProperties.Name="Find people" />
+                <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsSearching}" Height="2" />
+                <ScrollViewer MaxHeight="320"><ItemsControl x:Name="PeopleSearchResults" ItemsSource="{Binding SearchResults}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:UserSearchItemViewModel">
+                  <Button Classes="quiet" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Command="{Binding #RootChatView.((vm:ChatViewModel)DataContext).StartChatFromSearchCommand}" CommandParameter="{Binding}" Click="SearchResult_Click">
+                    <StackPanel Orientation="Horizontal" Spacing="12"><Border Width="34" Height="34" CornerRadius="17" Background="{DynamicResource ForgePrimaryGradientSubtle}"><TextBlock Text="{Binding Initials}" Foreground="{DynamicResource ForgePrimary}" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border><TextBlock Text="{Binding FullName}" VerticalAlignment="Center" /></StackPanel>
+                  </Button>
+                </DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer>
+              </StackPanel></Flyout></Button.Flyout>
+            </Button>
+          </Grid>
+          <TextBox Grid.Row="1" Text="{Binding SearchText}" PlaceholderText="Search conversations" Margin="16,0,16,14" AutomationProperties.Name="Search conversations" />
+          <ListBox Grid.Row="2" ItemsSource="{Binding FilteredRecipients}" SelectedItem="{Binding SelectedRecipient}" Margin="10,0" Padding="0,0,0,12">
+            <ListBox.ItemTemplate><DataTemplate x:DataType="vm:RecipientItemViewModel">
+              <Border Classes="recipient-row" Padding="12,14" ContextRequested="Recipient_ContextRequested">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                  <Panel Width="42" Height="42"><Border CornerRadius="21" Background="{DynamicResource ForgePrimaryGradientSubtle}"><TextBlock Text="{Binding Initials}" FontSize="14" Foreground="{DynamicResource ForgePrimary}" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border><Border CornerRadius="21" ClipToBounds="True" IsVisible="{Binding Avatar, Converter={StaticResource NullToBoolConverter}}"><Image Source="{Binding Avatar}" Stretch="UniformToFill" /></Border><Ellipse Width="10" Height="10" Fill="{Binding StatusColor}" Stroke="{DynamicResource ForgeSurface}" StrokeThickness="2" HorizontalAlignment="Right" VerticalAlignment="Bottom" /></Panel>
+                  <StackPanel Grid.Column="1" Margin="12,2,6,0" Spacing="5"><TextBlock Text="{Binding ReceiverName}" FontWeight="SemiBold" FontSize="13" TextTrimming="CharacterEllipsis" /><TextBlock Text="{Binding LastMessage}" FontSize="12" Foreground="{DynamicResource ForgeTextMuted}" TextTrimming="CharacterEllipsis" /></StackPanel>
+                  <StackPanel Grid.Column="2" Spacing="6" HorizontalAlignment="Right"><TextBlock Classes="caption" Text="{Binding LastSent, Converter={StaticResource DateTimeFormatConverter}}" /><Button Classes="quiet recipient-more" Width="24" Height="22" Padding="4" Click="RecipientMenu_Click" AutomationProperties.Name="Conversation actions"><PathIcon Data="{StaticResource Glyph.More}" Width="15" Height="15" /></Button><Ellipse Width="6" Height="6" Fill="{DynamicResource ForgePrimary}" IsVisible="{Binding !IsSeen}" /></StackPanel>
                 </Grid>
-            </Border>
-
-            <!-- ===================================================== -->
-            <!-- 2. MAIN CHAT & IDENTITY SEARCH SECTION                -->
-            <!-- ===================================================== -->
-            <Grid x:Name="ConversationSurface" Grid.Column="1" RowDefinitions="Auto,*">
-                <!-- Conversation Header -->
-                <Border Grid.Row="0"
-                        Background="{DynamicResource ForgeSurface}"
-                        BorderBrush="{DynamicResource ForgeBorder}"
-                        BorderThickness="0,0,0,1.5"
-                        Padding="16,10">
-                    <Grid ColumnDefinitions="*,Auto">
-                        <!-- Left: Recipient Header Info (or Brand Placeholder) -->
-                        <Panel Grid.Column="0" MinWidth="180">
-                            <!-- When a recipient is selected -->
-                            <StackPanel Orientation="Horizontal" Spacing="10"
-                                        IsVisible="{Binding SelectedRecipient, Converter={StaticResource NullToBoolConverter}}">
-                                <Panel Width="38" Height="38">
-                                    <Border CornerRadius="19"
-                                            Background="{DynamicResource ForgePrimaryGradientSubtle}"
-                                            BorderBrush="{DynamicResource ForgePrimary}"
-                                            BorderThickness="1">
-                                        <TextBlock Text="{Binding SelectedRecipientInitials}"
-                                                   Foreground="{DynamicResource ForgePrimary}"
-                                                   FontWeight="Bold"
-                                                   FontSize="13"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center" />
-                                    </Border>
-                                    <Border CornerRadius="19"
-                                            ClipToBounds="True"
-                                            IsVisible="{Binding SelectedRecipientAvatar, Converter={StaticResource NullToBoolConverter}}">
-                                        <Image Source="{Binding SelectedRecipientAvatar}" Stretch="UniformToFill" />
-                                    </Border>
-                                    <!-- Online indicator -->
-                                    <Ellipse Width="9" Height="9"
-                                             Fill="{Binding SelectedRecipient.StatusColor}"
-                                             Stroke="{DynamicResource ForgeSurface}"
-                                             StrokeThickness="1.5"
-                                             HorizontalAlignment="Right"
-                                             VerticalAlignment="Bottom" />
-                                </Panel>
-
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding SelectedRecipientName}"
-                                               FontWeight="Bold"
-                                               FontSize="14"
-                                               Foreground="{DynamicResource ForgeTextPrimary}"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <Panel Margin="0,1,0,0">
-                                        <TextBlock Text="typing a message..."
-                                                   Classes="typing-dots"
-                                                   FontSize="11"
-                                                   FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource ForgePrimary}"
-                                                   IsVisible="{Binding IsOtherPartyTyping}" />
-                                        <TextBlock Text="{Binding SelectedRecipient.StatusLabel}"
-                                                   FontSize="11"
-                                                   Foreground="{Binding SelectedRecipient.StatusColor}"
-                                                   IsVisible="{Binding !IsOtherPartyTyping}" />
-                                    </Panel>
-                                </StackPanel>
-                            </StackPanel>
-
-                            <!-- When no recipient is selected -->
-                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
-                                        IsVisible="{Binding SelectedRecipient, Converter={StaticResource NullToBoolConverter}, ConverterParameter='invert'}">
-                                <TextBlock Text="💬" FontSize="18" VerticalAlignment="Center" />
-                                <TextBlock Text="Conversations"
-                                           FontWeight="Bold"
-                                           FontSize="15"
-                                           Foreground="{DynamicResource ForgeTextPrimary}"
-                                           VerticalAlignment="Center" />
-                            </StackPanel>
-                        </Panel>
-
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" IsVisible="{Binding SelectedRecipient, Converter={StaticResource NullToBoolConverter}}" IsEnabled="{Binding Workspace.CanStartCall}">
-                            <Button Classes="icon-btn" Command="{Binding Workspace.StartVoiceCommand}" ToolTip.Tip="Voice call" AutomationProperties.Name="Voice call" Width="38" Height="38"><PathIcon Width="20" Height="20" Data="M6,2 L10,6 8,9 C10,13 12,15 16,17 L19,15 23,19 21,23 C11,24 0,13 1,4 Z" /></Button>
-                            <Button Classes="icon-btn" Command="{Binding Workspace.StartVideoCommand}" ToolTip.Tip="Video call" AutomationProperties.Name="Video call" Width="38" Height="38"><PathIcon Width="21" Height="20" Data="M2,5 L16,5 16,19 2,19 Z M18,9 L23,6 23,18 18,15 Z" /></Button>
-                        </StackPanel>
-                    </Grid>
-                </Border>
-
-                <!-- Identity Search Results Dropdown Panel (Overlay anchored below search bar) -->
-                <Border Grid.Row="1"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Top"
-                        Width="420"
-                        MaxHeight="360"
-                    Margin="0,-72,0,0"
-                        ZIndex="200"
-                        Background="{DynamicResource ForgeSurfaceCard}"
-                        BorderBrush="{DynamicResource ForgeBorderFocus}"
-                        BorderThickness="1.5"
-                        CornerRadius="12"
-                        IsVisible="{Binding ShowSearchDropdown}">
-                    <Grid RowDefinitions="Auto,Auto,*">
-                        <!-- Dropdown Header -->
-                        <Border Grid.Row="0" Padding="14,10" BorderBrush="{DynamicResource ForgeBorder}" BorderThickness="0,0,0,1">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Text="IDENTITY RESULTS"
-                                           FontSize="11"
-                                           FontWeight="Bold"
-                                           Foreground="{DynamicResource ForgePrimary}" />
-                                <Button Grid.Column="1"
-                                        Classes="icon-btn"
-                                        Command="{Binding CloseSearchDropdownCommand}"
-                                        Padding="2"
-                                        ToolTip.Tip="Close Results">
-                                    <TextBlock Text="✕" FontSize="11" Foreground="{DynamicResource ForgeTextMuted}" />
-                                </Button>
-                            </Grid>
-                        </Border>
-
-                        <!-- Searching Loader -->
-                        <Border Grid.Row="1" Padding="14,10" IsVisible="{Binding IsSearching}">
-                            <StackPanel Spacing="6">
-                                <ProgressBar Classes="forge-progress" IsIndeterminate="True" />
-                                <TextBlock Text="Searching members..."
-                                           FontSize="11"
-                                           Foreground="{DynamicResource ForgeTextMuted}"
-                                           HorizontalAlignment="Center" />
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Results List or Empty State -->
-                        <ScrollViewer Grid.Row="2" MaxHeight="280">
-                            <Panel>
-                                <!-- Results Items -->
-                                <ItemsControl ItemsSource="{Binding SearchResults}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:UserSearchItemViewModel">
-                                            <Button Classes="recipient-item"
-                                                    Command="{Binding #RootChatView.((vm:ChatViewModel)DataContext).OpenUserProfileCommand}"
-                                                    CommandParameter="{Binding}"
-                                                    HorizontalAlignment="Stretch"
-                                                    HorizontalContentAlignment="Stretch"
-                                                    Padding="12,8">
-                                                <Grid ColumnDefinitions="Auto,*,110">
-                                                    <!-- Avatar -->
-                                                    <Panel Grid.Column="0" Width="38" Height="38">
-                                                        <Border CornerRadius="19"
-                                                                Background="{DynamicResource ForgePrimaryGradientSubtle}"
-                                                                BorderBrush="{DynamicResource ForgeBorder}"
-                                                                BorderThickness="1">
-                                                            <TextBlock Text="{Binding Initials}"
-                                                                       Foreground="{DynamicResource ForgePrimary}"
-                                                                       FontWeight="Bold"
-                                                                       FontSize="13"
-                                                                       HorizontalAlignment="Center"
-                                                                       VerticalAlignment="Center" />
-                                                        </Border>
-                                                        <Border CornerRadius="19"
-                                                                ClipToBounds="True"
-                                                                IsVisible="{Binding Avatar, Converter={StaticResource NullToBoolConverter}}">
-                                                            <Image Source="{Binding Avatar}" Stretch="UniformToFill" />
-                                                        </Border>
-                                                    </Panel>
-
-                                                    <!-- Name -->
-                                                    <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center">
-                                                        <TextBlock Text="{Binding FullName}"
-                                                                   FontWeight="SemiBold"
-                                                                   FontSize="13"
-                                                                   Foreground="{DynamicResource ForgeTextPrimary}"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                    </StackPanel>
-
-                                                    <!-- View Profile Action Link -->
-                                                    <TextBlock Grid.Column="2"
-                                                               Text="View Profile →"
-                                                               FontSize="11"
-                                                               FontWeight="SemiBold"
-                                                               Foreground="{DynamicResource ForgePrimary}"
-                                                               HorizontalAlignment="Right"
-                                                               TextAlignment="Right"
-                                                               VerticalAlignment="Center" />
-                                                </Grid>
-                                            </Button>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-
-                                <!-- No Results State -->
-                                <Border Padding="20"
-                                        IsVisible="{Binding !IsSearching, Converter={StaticResource NullToBoolConverter}}">
-                                    <TextBlock Text="No matching identity found"
-                                               FontSize="12"
-                                               Foreground="{DynamicResource ForgeTextMuted}"
-                                               HorizontalAlignment="Center"
-                                               IsVisible="{Binding !SearchResults.Count}" />
-                                </Border>
-                            </Panel>
-                        </ScrollViewer>
-                    </Grid>
-                </Border>
-
-                <!-- Active Chat Stream or Empty State -->
-                <Panel Grid.Row="1">
-                    <!-- ================================================= -->
-                    <!-- Active Chat Screen                                -->
-                    <!-- ================================================= -->
-                      <Grid RowDefinitions="*,Auto,Auto"
-                          IsVisible="{Binding SelectedRecipient, Converter={StaticResource NullToBoolConverter}}">
-
-                        <!-- Main Chat Area (Loader or Messages) -->
-                        <Panel Grid.Row="0">
-                            <!-- 1. Central Backend Call Loader (when loading messages) -->
-                            <Border HorizontalAlignment="Center"
-                                    VerticalAlignment="Center"
-                                    IsVisible="{Binding IsLoadingMessages}">
-                                <StackPanel Spacing="12" HorizontalAlignment="Center">
-                                    <Border Width="56" Height="56"
-                                            CornerRadius="28"
-                                            Background="{DynamicResource ForgePrimaryGradientSubtle}"
-                                            BorderBrush="{DynamicResource ForgeBorder}"
-                                            BorderThickness="1"
-                                            HorizontalAlignment="Center">
-                                        <TextBlock Text="🔥" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                    </Border>
-                                    <ProgressBar Classes="forge-progress"
-                                                 IsIndeterminate="True"
-                                                 Width="220"
-                                                 HorizontalAlignment="Center" />
-                                    <TextBlock Text="Loading conversation..."
-                                               FontWeight="SemiBold"
-                                               FontSize="14"
-                                               Foreground="{DynamicResource ForgeTextPrimary}"
-                                               HorizontalAlignment="Center" />
-                                    <TextBlock Text="Retrieving encrypted chat history..."
-                                               FontSize="11"
-                                               Foreground="{DynamicResource ForgeTextMuted}"
-                                               HorizontalAlignment="Center" />
-                                </StackPanel>
-                            </Border>
-
-                            <!-- 2. Chat Messages Stream -->
-                            <ScrollViewer x:Name="ChatMessagesScrollViewer"
-                                          Padding="24,14"
-                                          HorizontalScrollBarVisibility="Disabled"
-                                          IsVisible="{Binding !IsLoadingMessages}">
-                                <StackPanel Spacing="12">
-                                    <!-- Pagination Loader -->
-                                    <ProgressBar Classes="forge-progress"
-                                                 IsIndeterminate="True"
-                                                 IsVisible="{Binding IsLoadingMore}"
-                                                 Margin="0,0,0,8" />
-
-                                    <!-- Load Earlier Messages Button -->
-                                    <Button Classes="secondary-btn"
-                                            Command="{Binding LoadMoreMessagesCommand}"
-                                            IsVisible="{Binding HasMoreMessages}"
-                                            HorizontalAlignment="Center"
-                                            Padding="14,5"
-                                            Margin="0,0,0,6">
-                                        <TextBlock Text="Load earlier messages" FontSize="11" />
-                                    </Button>
-
-                                    <!-- Messages Collection -->
-                                    <ItemsControl ItemsSource="{Binding Messages}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate x:DataType="vm:ChatMessageItemViewModel">
-                                                <Grid Classes="msg-row"
-                                                      Classes.mine="{Binding IsMine}"
-                                                      Classes.theirs="{Binding !IsMine}"
-                                                    Classes.incoming="{Binding IsIncoming}"
-                                                      Margin="0,3">
-
-                                                    <Border Classes="msg-bubble"
-                                                            Classes.mine="{Binding IsMine}"
-                                                            Classes.theirs="{Binding !IsMine}"
-                                                            MaxWidth="520"
-                                                            CornerRadius="14"
-                                                            Padding="12,8">
-
-                                                        <StackPanel Spacing="4">
-                                                            <!-- Message Text -->
-                                                            <TextBlock Text="{Binding Text}"
-                                                                       Foreground="{DynamicResource ForgeTextPrimary}"
-                                                                       FontSize="13"
-                                                                       TextWrapping="Wrap"
-                                                                       IsVisible="{Binding HasText}" />
-
-                                                            <!-- Attachments -->
-                                                            <ItemsControl ItemsSource="{Binding Attachments}"
-                                                                          IsVisible="{Binding HasAttachments}">
-                                                                <ItemsControl.ItemTemplate>
-                                                                    <DataTemplate x:DataType="vm:ChatAttachmentItemViewModel">
-                                                                        <Border Margin="0,3"
-                                                                                CornerRadius="8"
-                                                                                ClipToBounds="True"
-                                                                                Background="#15000000">
-                                                                            <Panel>
-                                                                                <!-- Image Preview -->
-                                                                                <StackPanel IsVisible="{Binding IsImage}">
-                                                                                    <Border CornerRadius="6" ClipToBounds="True" Margin="4">
-                                                                                        <Image Source="{Binding Thumbnail}"
-                                                                                               MaxHeight="200"
-                                                                                               Stretch="Uniform" />
-                                                                                    </Border>
-                                                                                    <Button Classes="secondary-btn"
-                                                                                            Command="{Binding DownloadCommand}"
-                                                                                            HorizontalAlignment="Stretch"
-                                                                                            Margin="4"
-                                                                                            Padding="6,4">
-                                                                                        <TextBlock Text="💾 Save Image" FontSize="11" HorizontalAlignment="Center" />
-                                                                                    </Button>
-                                                                                </StackPanel>
-
-                                                                                <!-- Non-Image Attachment -->
-                                                                                <Button Classes="secondary-btn"
-                                                                                        Command="{Binding DownloadCommand}"
-                                                                                        IsVisible="{Binding !IsImage}"
-                                                                                        HorizontalAlignment="Stretch"
-                                                                                        Padding="8">
-                                                                                    <Grid ColumnDefinitions="Auto,*,Auto">
-                                                                                        <TextBlock Grid.Column="0" Text="📁" FontSize="16" VerticalAlignment="Center" />
-                                                                                        <StackPanel Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center">
-                                                                                            <TextBlock Text="{Binding FileName}"
-                                                                                                       FontWeight="SemiBold"
-                                                                                                       FontSize="11"
-                                                                                                       TextTrimming="CharacterEllipsis" />
-                                                                                            <TextBlock Text="{Binding FormattedFileSize}"
-                                                                                                       FontSize="9"
-                                                                                                       Foreground="{DynamicResource ForgeTextMuted}" />
-                                                                                        </StackPanel>
-                                                                                        <TextBlock Grid.Column="2" Text="⬇" FontSize="13" VerticalAlignment="Center" Margin="6,0,0,0" />
-                                                                                    </Grid>
-                                                                                </Button>
-                                                                            </Panel>
-                                                                        </Border>
-                                                                    </DataTemplate>
-                                                                </ItemsControl.ItemTemplate>
-                                                            </ItemsControl>
-
-                                                            <!-- Time & Seen Status -->
-                                                            <StackPanel Orientation="Horizontal"
-                                                                        HorizontalAlignment="Right"
-                                                                        Spacing="4"
-                                                                        Margin="0,2,0,0">
-                                                                <TextBlock Text="{Binding TimeSent, Converter={StaticResource DateTimeFormatConverter}}"
-                                                                           FontSize="10"
-                                                                           Foreground="{DynamicResource ForgeTextMuted}" />
-                                                                <!-- Seen Status (only for my messages) -->
-                                                                <TextBlock Text="✓✓"
-                                                                           FontSize="10"
-                                                                           FontWeight="Bold"
-                                                                           Foreground="{DynamicResource ForgeAccentGold}"
-                                                                           IsVisible="{Binding Seen}" />
-                                                                <TextBlock Text="✓"
-                                                                           FontSize="10"
-                                                                           Foreground="{DynamicResource ForgeTextMuted}"
-                                                                           IsVisible="{Binding !Seen}" />
-                                                            </StackPanel>
-                                                        </StackPanel>
-                                                    </Border>
-                                                </Grid>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-
-                                    <!-- Typing Indicator Bubble in Stream -->
-                                    <Border HorizontalAlignment="Left"
-                                            Background="{DynamicResource ForgeBubbleReceived}"
-                                            BorderBrush="{DynamicResource ForgeBorder}"
-                                            BorderThickness="1"
-                                            CornerRadius="14"
-                                            Padding="12,8"
-                                            IsVisible="{Binding IsOtherPartyTyping}">
-                                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
-                                            <TextBlock Text="•••"
-                                                       Classes="typing-dots"
-                                                       FontSize="14"
-                                                       FontWeight="Bold"
-                                                       Foreground="{DynamicResource ForgePrimary}" />
-                                            <TextBlock Text=" typing..." FontSize="11" Foreground="{DynamicResource ForgePrimary}" Margin="4,0,0,0" />
-                                        </StackPanel>
-                                    </Border>
-                                </StackPanel>
-                            </ScrollViewer>
-                        </Panel>
-
-                        <!-- Attachment Upload Preview Strip -->
-                        <Border Grid.Row="1"
-                                Background="{DynamicResource ForgeSurface}"
-                                BorderBrush="{DynamicResource ForgeBorder}"
-                                BorderThickness="0,1,0,0"
-                                Padding="12,6"
-                                IsVisible="{Binding PendingAttachments.Count}">
-                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                                <ItemsControl ItemsSource="{Binding PendingAttachments}">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <StackPanel Orientation="Horizontal" Spacing="8" />
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:PendingAttachmentViewModel">
-                                            <Border Background="{DynamicResource ForgeSurfaceCard}"
-                                                    BorderBrush="{DynamicResource ForgeBorder}"
-                                                    BorderThickness="1"
-                                                    CornerRadius="8"
-                                                    Padding="6,4">
-                                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                                    <TextBlock Text="📎" VerticalAlignment="Center" />
-                                                    <StackPanel VerticalAlignment="Center">
-                                                        <TextBlock Text="{Binding FileName}"
-                                                                   FontSize="11"
-                                                                   FontWeight="SemiBold"
-                                                                   MaxWidth="130"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                        <TextBlock Text="{Binding FormattedFileSize}"
-                                                                   FontSize="9"
-                                                                   Foreground="{DynamicResource ForgeTextMuted}" />
-                                                    </StackPanel>
-                                                    <Button Classes="icon-btn"
-                                                            Command="{Binding #RootChatView.((vm:ChatViewModel)DataContext).RemovePendingAttachmentCommand}"
-                                                            CommandParameter="{Binding}"
-                                                            Padding="2">
-                                                        <TextBlock Text="✕" FontSize="10" Foreground="{DynamicResource ForgeDanger}" />
-                                                    </Button>
-                                                </StackPanel>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
-                        </Border>
-
-                        <!-- Chat Composer Bar -->
-                        <Border Grid.Row="2"
-                                Background="{DynamicResource ForgeSurface}"
-                                BorderBrush="{DynamicResource ForgeBorder}"
-                                BorderThickness="0,1.5,0,0"
-                                Padding="14,10">
-                            <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
-                                <!-- Attachment Button -->
-                                <Button Grid.Column="0"
-                                        Classes="icon-btn"
-                                        Command="{Binding AttachFilesCommand}"
-                                        ToolTip.Tip="Attach Files"
-                                        Width="38" Height="38"
-                                        Margin="0,0,6,0">
-                                    <TextBlock Text="📎" FontSize="17" Foreground="{DynamicResource ForgePrimary}" />
-                                </Button>
-
-                                <!-- Input Text Box -->
-                                <TextBox Grid.Column="1"
-                                         x:Name="MessageInputBox"
-                                         Classes="fire-input"
-                                         Text="{Binding MessageDraft, Mode=TwoWay}"
-                                         PlaceholderText="Type a fiery message..."
-                                         CornerRadius="19"
-                                         Padding="14,8"
-                                         VerticalContentAlignment="Center"
-                                         FontSize="13" />
-
-                                <!-- Send Button -->
-                                <Button Grid.Column="2"
-                                        Classes="fire-btn"
-                                        Command="{Binding SendMessageCommand}"
-                                        ToolTip.Tip="Send Message (Enter)"
-                                        Width="38" Height="38"
-                                        CornerRadius="19"
-                                        Padding="0"
-                                        Margin="8,0,0,0"
-                                        IsEnabled="{Binding !IsSendingMessage}">
-                                    <TextBlock Text="➤" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                </Button>
-                                <TextBlock Grid.Row="1" Grid.ColumnSpan="3" Text="{Binding SendError}" TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource ForgeDanger}" Margin="0,6,0,0" IsVisible="{Binding SendError, Converter={StaticResource NullToBoolConverter}}" />
-                            </Grid>
-                        </Border>
-                    </Grid>
-
-                    <!-- ================================================= -->
-                    <!-- Empty Conversation Placeholder                    -->
-                    <!-- ================================================= -->
-                    <Border HorizontalAlignment="Center"
-                            VerticalAlignment="Center"
-                            IsVisible="{Binding SelectedRecipient, Converter={StaticResource NullToBoolConverter}, ConverterParameter='invert'}">
-                        <StackPanel Spacing="14" HorizontalAlignment="Center" MaxWidth="380">
-                            <Border Width="72" Height="72"
-                                    CornerRadius="36"
-                                    Background="{DynamicResource ForgePrimaryGradientSubtle}"
-                                    BorderBrush="{DynamicResource ForgeBorder}"
-                                    BorderThickness="1.5"
-                                    HorizontalAlignment="Center">
-                                <Image Source="/Assets/PageLogo.png"
-                                       Width="42" Height="42"
-                                       Stretch="Uniform"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center" />
-                            </Border>
-                            <TextBlock Text="Select a Conversation"
-                                       FontSize="18"
-                                       FontWeight="Bold"
-                                       HorizontalAlignment="Center"
-                                       Foreground="{DynamicResource ForgeTextPrimary}" />
-                            <TextBlock Text="Pick a member from the sidebar or search for users above to start a real-time conversation."
-                                       FontSize="12"
-                                       TextWrapping="Wrap"
-                                       TextAlignment="Center"
-                                       Foreground="{DynamicResource ForgeTextSecondary}" />
-                        </StackPanel>
-                    </Border>
-                </Panel>
+              </Border>
+            </DataTemplate></ListBox.ItemTemplate>
+          </ListBox>
+          <Border Grid.Row="3" BorderBrush="{DynamicResource ForgeBorder}" BorderThickness="0,1,0,0" Padding="16,14">
+            <Grid ColumnDefinitions="Auto,*,Auto"><Border Width="36" Height="36" CornerRadius="18" Background="{DynamicResource ForgePrimaryGradientSubtle}"><TextBlock Text="{Binding CurrentUser.Initials}" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource ForgePrimary}" /></Border><StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Center" Spacing="3"><TextBlock Text="{Binding CurrentUser.DisplayName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" /><StackPanel Orientation="Horizontal" Spacing="6"><Ellipse Width="6" Height="6" Fill="{Binding CurrentStatusColor}" /><TextBlock Classes="caption" Text="{Binding CurrentStatusLabel}" /></StackPanel></StackPanel>
+              <Button Grid.Column="2" Classes="quiet square" Click="AccountMenu_Click" AutomationProperties.Name="Account menu"><PathIcon Data="{StaticResource Glyph.More}" Width="18" Height="18" /></Button>
             </Grid>
+          </Border>
         </Grid>
-
-        <!-- ========================================================= -->
-        <!-- 3. VIEW PROFILE & QUICK MESSAGE MODAL OVERLAY             -->
-        <!-- ========================================================= -->
-        <Border Background="#88000000"
-                IsVisible="{Binding IsProfileOverlayOpen}"
-                ZIndex="500">
-            <Border Background="{DynamicResource ForgeSurfaceCard}"
-                    BorderBrush="{DynamicResource ForgeBorder}"
-                    BorderThickness="1.5"
-                    CornerRadius="16"
-                    Width="460"
-                    MaxWidth="500"
-                    MaxHeight="620"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
-                    Padding="0">
-                <Grid RowDefinitions="Auto,Auto,*">
-                    <!-- Modal Header -->
-                    <Border Grid.Row="0"
-                            Padding="18,14"
-                            BorderBrush="{DynamicResource ForgeBorder}"
-                            BorderThickness="0,0,0,1">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                <TextBlock Text="👤" FontSize="18" VerticalAlignment="Center" />
-                                <TextBlock Text="{Binding ProfileUserName}"
-                                           FontWeight="Bold"
-                                           FontSize="16"
-                                           Foreground="{DynamicResource ForgeTextPrimary}"
-                                           VerticalAlignment="Center" />
-                            </StackPanel>
-
-                            <Button Grid.Column="1"
-                                    Classes="icon-btn"
-                                    Command="{Binding CloseUserProfileCommand}"
-                                    Padding="4">
-                                <TextBlock Text="✕" FontSize="14" Foreground="{DynamicResource ForgeTextMuted}" />
-                            </Button>
-                        </Grid>
-                    </Border>
-
-                    <!-- Loading Progress Indicator -->
-                    <ProgressBar Grid.Row="1"
-                                 Classes="forge-progress"
-                                 IsIndeterminate="True"
-                                 IsVisible="{Binding IsLoadingProfile}" />
-
-                    <!-- Modal Body Content -->
-                    <ScrollViewer Grid.Row="2" Padding="20">
-                        <StackPanel Spacing="16">
-                            <!-- Hero Card: Avatar, Name, Email, Quick Message -->
-                            <Border Background="{DynamicResource ForgeSurface}"
-                                    BorderBrush="{DynamicResource ForgeBorder}"
-                                    BorderThickness="1"
-                                    CornerRadius="12"
-                                    Padding="16">
-                                <StackPanel Spacing="14">
-                                    <Grid ColumnDefinitions="Auto,*">
-                                        <!-- Avatar with Click to Zoom -->
-                                        <Button Grid.Column="0"
-                                                Classes="icon-btn"
-                                                Command="{Binding OpenImagePreviewCommand}"
-                                                Padding="0"
-                                                ToolTip.Tip="Click to enlarge">
-                                            <Panel Width="64" Height="64">
-                                                <Border CornerRadius="32"
-                                                        Background="{DynamicResource ForgePrimaryGradientSubtle}"
-                                                        BorderBrush="{DynamicResource ForgePrimary}"
-                                                        BorderThickness="2">
-                                                    <TextBlock Text="👤"
-                                                               FontSize="24"
-                                                               HorizontalAlignment="Center"
-                                                               VerticalAlignment="Center" />
-                                                </Border>
-                                                <Border CornerRadius="32"
-                                                        ClipToBounds="True"
-                                                        IsVisible="{Binding ProfileAvatar, Converter={StaticResource NullToBoolConverter}}">
-                                                    <Image Source="{Binding ProfileAvatar}" Stretch="UniformToFill" />
-                                                </Border>
-                                            </Panel>
-                                        </Button>
-
-                                        <!-- User Name & Email -->
-                                        <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding ProfileUserName}"
-                                                       FontWeight="Bold"
-                                                       FontSize="16"
-                                                       Foreground="{DynamicResource ForgeTextPrimary}"
-                                                       TextTrimming="CharacterEllipsis" />
-                                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,3,0,0">
-                                                <TextBlock Text="✉" FontSize="12" Foreground="{DynamicResource ForgeTextMuted}" />
-                                                <TextBlock Text="{Binding ProfileEmailText}"
-                                                           FontSize="12"
-                                                           Foreground="{DynamicResource ForgeTextSecondary}"
-                                                           TextTrimming="CharacterEllipsis" />
-                                            </StackPanel>
-                                        </StackPanel>
-                                    </Grid>
-
-                                    <!-- Quick Message Composer -->
-                                    <Border Background="{DynamicResource ForgeBgSecondary}"
-                                            BorderBrush="{DynamicResource ForgeBorder}"
-                                            BorderThickness="1"
-                                            CornerRadius="10"
-                                            Padding="12,10">
-                                        <StackPanel Spacing="8">
-                                            <TextBlock Text="QUICK FLAME MESSAGE"
-                                                       FontSize="10"
-                                                       FontWeight="Bold"
-                                                       Foreground="{DynamicResource ForgePrimary}" />
-
-                                            <Grid ColumnDefinitions="*,Auto">
-                                                <TextBox Classes="fire-input"
-                                                         Text="{Binding QuickMessageText, Mode=TwoWay}"
-                                                         PlaceholderText="Send a quick flame message..."
-                                                         Height="36"
-                                                         CornerRadius="18"
-                                                         Padding="12,6"
-                                                         FontSize="12" />
-
-                                                <Button Grid.Column="1"
-                                                        Classes="fire-btn"
-                                                        Command="{Binding SendQuickMessageCommand}"
-                                                        Margin="8,0,0,0"
-                                                        Width="36" Height="36"
-                                                        CornerRadius="18"
-                                                        Padding="0"
-                                                        ToolTip.Tip="Send Quick Message"
-                                                        IsEnabled="{Binding !IsSendingQuickMessage}">
-                                                    <TextBlock Text="➤" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                </Button>
-                                            </Grid>
-
-                                            <!-- Quick Message Feedback Status -->
-                                            <TextBlock Text="{Binding QuickMessageStatus}"
-                                                       FontSize="11"
-                                                       FontWeight="SemiBold"
-                                                       Foreground="{DynamicResource ForgeAccentGold}"
-                                                       IsVisible="{Binding QuickMessageStatus, Converter={StaticResource NullToBoolConverter}}" />
-                                        </StackPanel>
-                                    </Border>
-                                </StackPanel>
-                            </Border>
-
-                            <!-- Details Cards Grid: Phone & Address -->
-                            <Grid ColumnDefinitions="*,*" Margin="0,4,0,0">
-                                <!-- Phone Card -->
-                                <Border Grid.Column="0"
-                                        Background="{DynamicResource ForgeSurface}"
-                                        BorderBrush="{DynamicResource ForgeBorder}"
-                                        BorderThickness="1"
-                                        CornerRadius="10"
-                                        Padding="12"
-                                        Margin="0,0,6,0">
-                                    <StackPanel Spacing="6">
-                                        <StackPanel Orientation="Horizontal" Spacing="6">
-                                            <TextBlock Text="📞" FontSize="13" />
-                                            <TextBlock Text="Phone Number"
-                                                       FontSize="11"
-                                                       FontWeight="Bold"
-                                                       Foreground="{DynamicResource ForgeTextPrimary}" />
-                                        </StackPanel>
-                                        <TextBlock Text="{Binding ProfilePhoneText}"
-                                                   FontSize="12"
-                                                   Foreground="{DynamicResource ForgeTextSecondary}"
-                                                   TextWrapping="Wrap" />
-                                    </StackPanel>
-                                </Border>
-
-                                <!-- Address Card -->
-                                <Border Grid.Column="1"
-                                        Background="{DynamicResource ForgeSurface}"
-                                        BorderBrush="{DynamicResource ForgeBorder}"
-                                        BorderThickness="1"
-                                        CornerRadius="10"
-                                        Padding="12"
-                                        Margin="6,0,0,0">
-                                    <StackPanel Spacing="6">
-                                        <StackPanel Orientation="Horizontal" Spacing="6">
-                                            <TextBlock Text="📍" FontSize="13" />
-                                            <TextBlock Text="Address"
-                                                       FontSize="11"
-                                                       FontWeight="Bold"
-                                                       Foreground="{DynamicResource ForgeTextPrimary}" />
-                                        </StackPanel>
-                                        <TextBlock Text="{Binding ProfileAddressText}"
-                                                   FontSize="12"
-                                                   Foreground="{DynamicResource ForgeTextSecondary}"
-                                                   TextWrapping="Wrap" />
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
-
-                            <!-- Action: Start Full Chat -->
-                            <Button Classes="fire-btn"
-                                    Command="{Binding StartChatFromProfileCommand}"
-                                    HorizontalAlignment="Stretch"
-                                    Height="40"
-                                    Margin="0,4,0,0">
-                                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
-                                    <TextBlock Text="💬" FontSize="14" VerticalAlignment="Center" />
-                                    <TextBlock Text="Open Full Conversation" FontSize="13" FontWeight="Bold" VerticalAlignment="Center" />
-                                </StackPanel>
-                            </Button>
-                        </StackPanel>
-                    </ScrollViewer>
+      </Border>
+      <Grid Grid.Column="1" x:Name="ConversationSurface" ColumnDefinitions="*,Auto">
+        <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding SelectedRecipient, Converter={StaticResource NullToBoolConverter}}">
+          <Border Background="{DynamicResource ForgeSurface}" BorderBrush="{DynamicResource ForgeBorder}" BorderThickness="0,0,0,1" Padding="24,16">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+              <Button x:Name="ConversationProfileButton" Grid.ColumnSpan="2" Classes="quiet" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="HeaderProfile_Click" AutomationProperties.Name="View conversation profile"><Grid ColumnDefinitions="Auto,*"><Border Width="40" Height="40" CornerRadius="20" Background="{DynamicResource ForgePrimaryGradientSubtle}"><Panel><TextBlock Text="{Binding SelectedRecipientInitials}" Foreground="{DynamicResource ForgePrimary}" HorizontalAlignment="Center" VerticalAlignment="Center" /><Image Source="{Binding SelectedRecipientAvatar}" Stretch="UniformToFill" /></Panel></Border><StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="3"><TextBlock Text="{Binding SelectedRecipientName}" FontWeight="SemiBold" FontSize="16" /><TextBlock Text="{Binding SelectedRecipientStatusLabel}" Classes="caption" /></StackPanel></Grid></Button>
+              <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <Button Classes="quiet square" Command="{Binding Workspace.StartVoiceCommand}" IsEnabled="{Binding Workspace.CanStartCall}" ToolTip.Tip="Voice call" AutomationProperties.Name="Voice call"><PathIcon Data="{StaticResource Glyph.Phone}" Width="18" Height="18" /></Button>
+                <Button Classes="quiet square" Command="{Binding Workspace.StartVideoCommand}" IsEnabled="{Binding Workspace.CanStartCall}" ToolTip.Tip="Video call" AutomationProperties.Name="Video call"><PathIcon Data="{StaticResource Glyph.Camera}" Width="19" Height="19" /></Button>
+                <Button Classes="quiet square" Click="ConversationMenu_Click" ToolTip.Tip="Conversation details" AutomationProperties.Name="Conversation actions"><PathIcon Data="{StaticResource Glyph.More}" Width="19" Height="19" /></Button>
+              </StackPanel>
+            </Grid>
+          </Border>
+          <Grid Grid.Row="1" RowDefinitions="Auto,*,Auto">
+            <Button Content="Earlier messages" Classes="quiet" Command="{Binding LoadMoreMessagesCommand}" IsVisible="{Binding HasMoreMessages}" HorizontalAlignment="Center" Margin="0,8" />
+            <ListBox x:Name="MessageStream" Grid.Row="1" Classes="message-stream" ItemsSource="{Binding Messages}" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+              <ListBox.ItemTemplate><DataTemplate x:DataType="vm:ChatMessageItemViewModel">
+                <Grid Classes="msg-row" Classes.mine="{Binding IsMine}" Classes.theirs="{Binding !IsMine}" Classes.call="{Binding IsCall}" ColumnDefinitions="*,Auto" Margin="0,5" MaxWidth="560" ContextRequested="Message_ContextRequested">
+                  <Border Classes="msg-bubble" Classes.mine="{Binding IsMine}" IsVisible="{Binding !IsCall}">
+                    <StackPanel Spacing="6">
+                      <Border BorderBrush="{DynamicResource ForgePrimary}" BorderThickness="2,0,0,0" Padding="9,3" IsVisible="{Binding HasReply}"><TextBlock Text="{Binding ReplyLabel}" FontSize="11" Foreground="{DynamicResource ForgeTextSecondary}" /></Border>
+                      <TextBlock Text="{Binding Text}" FontSize="14" TextWrapping="Wrap" LineHeight="21" IsVisible="{Binding HasText}" />
+                      <ItemsControl ItemsSource="{Binding Attachments}" IsVisible="{Binding HasAttachments}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:ChatAttachmentItemViewModel">
+                        <Button Command="{Binding DownloadCommand}" IsEnabled="{Binding !IsDownloading}" Classes="quiet" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="10" Margin="0,3" AutomationProperties.Name="{Binding FileName}">
+                          <StackPanel Spacing="8"><Image Source="{Binding Thumbnail}" IsVisible="{Binding Thumbnail, Converter={StaticResource NullToBoolConverter}}" MaxHeight="200" MaxWidth="320" Stretch="Uniform" /><Grid ColumnDefinitions="Auto,*"><Border Background="{DynamicResource ForgePrimaryGradientSubtle}" Width="36" Height="40" CornerRadius="8"><PathIcon Data="{StaticResource Glyph.File}" Width="18" Height="22" Foreground="{DynamicResource ForgePrimary}" /></Border><StackPanel Grid.Column="1" Margin="10,2,0,0" Spacing="4"><TextBlock Text="{Binding FileName}" FontWeight="SemiBold" MaxWidth="310" TextTrimming="CharacterEllipsis" /><TextBlock Text="{Binding FormattedFileSize}" Classes="caption" /></StackPanel></Grid></StackPanel>
+                        </Button>
+                      </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                      <TextBlock Text="{Binding ReactionLabel}" IsVisible="{Binding HasReactions}" FontSize="15" FontFamily="Noto Color Emoji, Segoe UI Emoji, Apple Color Emoji" Margin="0,3" />
+                      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="6"><TextBlock Text="Edited" IsVisible="{Binding Edited}" Classes="caption" /><TextBlock Text="{Binding TimeSent, Converter={StaticResource DateTimeFormatConverter}}" Classes="caption" /><TextBlock Text="✓✓" IsVisible="{Binding Seen}" Foreground="{DynamicResource ForgePrimary}" FontSize="10" /></StackPanel>
+                    </StackPanel>
+                  </Border>
+                  <Border IsVisible="{Binding IsCall}" Background="{DynamicResource ForgeSurfaceCard}" BorderBrush="{DynamicResource ForgeBorder}" BorderThickness="1" CornerRadius="14" Padding="18,14" MinWidth="260">
+                    <Grid ColumnDefinitions="Auto,*"><Border Width="40" Height="40" CornerRadius="12" Background="{DynamicResource ForgePrimaryGradientSubtle}"><PathIcon Data="{StaticResource Glyph.Phone}" Width="18" Height="18" Foreground="{DynamicResource ForgePrimary}" /></Border><StackPanel Grid.Column="1" Margin="12,0,0,0" Spacing="7"><TextBlock Text="{Binding CallLabel}" FontWeight="SemiBold" TextWrapping="Wrap" /><TextBlock Text="{Binding TimeSent, Converter={StaticResource DateTimeFormatConverter}}" Classes="caption" /><Button Content="Join call" Classes="fire-btn" IsVisible="{Binding CanJoinCall}" Click="JoinCall_Click" /></StackPanel></Grid>
+                  </Border>
+                  <Button Grid.Column="1" Classes="quiet message-more" VerticalAlignment="Top" Click="MessageMenu_Click" AutomationProperties.Name="Message actions"><PathIcon Data="{StaticResource Glyph.More}" Width="16" Height="16" /></Button>
                 </Grid>
-            </Border>
+              </DataTemplate></ListBox.ItemTemplate>
+            </ListBox>
+            <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsLoadingMessages}" VerticalAlignment="Top" Height="2" Grid.Row="1" />
+            <TextBlock Grid.Row="2" Text="Typing…" Classes="caption" Margin="28,4,0,8" IsVisible="{Binding IsOtherPartyTyping}" />
+          </Grid>
+          <StackPanel Grid.Row="2" Margin="24,10,24,18" Spacing="8">
+            <Border IsVisible="{Binding HasMessageAction}" BorderBrush="{DynamicResource ForgePrimary}" BorderThickness="2,0,0,0" Background="{DynamicResource ForgeSurface}" CornerRadius="8" Padding="12,9"><Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding MessageActionLabel}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" /><Button Grid.Column="1" Classes="quiet square" Command="{Binding CancelMessageActionCommand}" AutomationProperties.Name="Cancel reply or edit"><PathIcon Data="{StaticResource Glyph.Close}" Width="12" Height="12" /></Button></Grid></Border>
+            <ItemsControl ItemsSource="{Binding PendingAttachments}" IsVisible="{Binding PendingAttachments.Count}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:PendingAttachmentViewModel"><Border Classes="detail-card" Padding="10,6" Margin="0,0,6,4"><StackPanel Orientation="Horizontal" Spacing="8"><TextBlock Text="{Binding FileName}" MaxWidth="160" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" /><Button Classes="quiet square" Command="{Binding #RootChatView.((vm:ChatViewModel)DataContext).RemovePendingAttachmentCommand}" CommandParameter="{Binding}" AutomationProperties.Name="Remove attachment"><PathIcon Data="{StaticResource Glyph.Close}" Width="10" Height="10" /></Button></StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+            <Border Background="{DynamicResource ForgeSurface}" BorderBrush="{DynamicResource ForgeBorder}" BorderThickness="1" CornerRadius="14" Padding="7"><Grid ColumnDefinitions="Auto,*,Auto">
+              <Button Classes="quiet square" Command="{Binding AttachFilesCommand}" VerticalAlignment="Bottom" ToolTip.Tip="Attach files" AutomationProperties.Name="Attach files"><PathIcon Data="{StaticResource Glyph.Attach}" Width="17" Height="20" /></Button>
+              <TextBox Grid.Column="1" x:Name="MessageInputBox" Classes="composer" Text="{Binding MessageDraft}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="38" MaxHeight="120" PlaceholderText="Write a message…" AutomationProperties.Name="Message" />
+              <Button Grid.Column="2" Classes="fire-btn square" Command="{Binding SendMessageCommand}" IsEnabled="{Binding !IsSendingMessage}" VerticalAlignment="Bottom" ToolTip.Tip="Send · Enter" AutomationProperties.Name="Send message"><PathIcon Data="{StaticResource Glyph.Send}" Width="18" Height="18" /></Button>
+            </Grid></Border>
+            <TextBlock Text="{Binding SendError}" TextWrapping="Wrap" Foreground="{DynamicResource ForgeDanger}" FontSize="12" IsVisible="{Binding SendError, Converter={StaticResource NullToBoolConverter}}" />
+          </StackPanel>
+        </Grid>
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" MaxWidth="340" IsVisible="{Binding SelectedRecipient, Converter={StaticResource NullToBoolConverter}, ConverterParameter=invert}"><Border Width="72" Height="72" CornerRadius="22" Background="{DynamicResource ForgePrimaryGradientSubtle}" HorizontalAlignment="Center"><PathIcon Data="{StaticResource Glyph.Chat}" Width="30" Height="30" Foreground="{DynamicResource ForgePrimary}" /></Border><TextBlock Text="A place for your conversations" FontSize="21" FontWeight="SemiBold" TextAlignment="Center" /><TextBlock Text="Choose a chat or find a colleague to start talking." Foreground="{DynamicResource ForgeTextMuted}" TextWrapping="Wrap" TextAlignment="Center" /></StackPanel>
+        <Border Grid.Column="1" x:Name="ConversationDrawer" Width="310" IsVisible="{Binding ShowConversationDetails}" Background="{DynamicResource ForgeSurface}" BorderBrush="{DynamicResource ForgeBorder}" BorderThickness="1,0,0,0" Padding="18">
+          <Grid RowDefinitions="Auto,*"><Grid ColumnDefinitions="*,Auto" Margin="0,0,0,16"><StackPanel Spacing="4"><TextBlock Text="Conversation details" FontSize="17" FontWeight="SemiBold" /><TextBlock Text="{Binding SelectedRecipientName}" Classes="caption" TextTrimming="CharacterEllipsis" /></StackPanel><Button Grid.Column="1" Classes="quiet square" Command="{Binding CloseConversationDetailsCommand}" AutomationProperties.Name="Close conversation details"><PathIcon Data="{StaticResource Glyph.Close}" Width="13" Height="13" /></Button></Grid>
+            <TabControl Grid.Row="1" Classes="details-tabs" SelectedIndex="{Binding ConversationDetailsTab}" FontSize="12">
+              <TabItem Header="Files"><Grid RowDefinitions="Auto,*,Auto"><Button Content="Refresh files" Classes="quiet" Command="{Binding LoadAttachmentsCommand}" HorizontalAlignment="Left" /><ListBox Grid.Row="1" ItemsSource="{Binding AllAttachments}" Margin="0,12"><ListBox.ItemTemplate><DataTemplate x:DataType="vm:ChatAttachmentItemViewModel"><Button Classes="quiet" Command="{Binding DownloadCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"><StackPanel Spacing="5"><TextBlock Text="{Binding FileName}" MaxWidth="230" TextTrimming="CharacterEllipsis" /><TextBlock Text="{Binding FormattedFileSize}" Classes="caption" /></StackPanel></Button></DataTemplate></ListBox.ItemTemplate></ListBox><Button Grid.Row="2" Content="Load more" Classes="quiet" Command="{Binding MoreAttachmentsCommand}" /></Grid></TabItem>
+              <TabItem Header="Members"><StackPanel Spacing="14" Margin="0,16"><TextBlock Text="Add a colleague" FontWeight="SemiBold" /><ComboBox ItemsSource="{Binding Workspace.People}" SelectedItem="{Binding SelectedNewMember}" PlaceholderText="Choose a colleague" HorizontalAlignment="Stretch"><ComboBox.ItemTemplate><DataTemplate x:DataType="vm:PersonSelection"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox><Button Content="Add to conversation" Classes="fire-btn" Command="{Binding AddMemberCommand}" /><TextBlock Text="Adding someone to a direct chat creates a separate group conversation." Classes="caption" TextWrapping="Wrap" /></StackPanel></TabItem>
+              <TabItem Header="Security"><ScrollViewer><StackPanel Spacing="12" Margin="0,16"><TextBlock Text="Chat security" FontSize="16" FontWeight="SemiBold" /><TextBlock Text="{Binding SecurityStatus}" Classes="caption" TextWrapping="Wrap" /><Button Content="Refresh status" Classes="quiet" Command="{Binding LoadSecurityCommand}" /><TextBox Text="{Binding Workspace.ChatPin}" PasswordChar="●" PlaceholderText="Your six-digit PIN" MaxLength="6" /><Button Content="Unlock this device" Classes="fire-btn" Command="{Binding Workspace.UnlockChatCommand}" />
+                <Expander Header="Manage PIN"><StackPanel Spacing="10" Margin="0,12,0,0"><TextBox Text="{Binding SecurityPin}" PasswordChar="●" PlaceholderText="Current or new PIN" MaxLength="6" /><TextBox Text="{Binding SecurityConfirmation}" PasswordChar="●" PlaceholderText="Confirm new PIN" MaxLength="6" /><Button Content="Set PIN" Command="{Binding ChangeSecurityCommand}" CommandParameter="Set" /><TextBox Text="{Binding SecurityPassword}" PasswordChar="●" PlaceholderText="Account password" /><Button Content="Disable PIN" Command="{Binding ChangeSecurityCommand}" CommandParameter="Disable" /></StackPanel></Expander>
+                <Expander Header="Recover access"><StackPanel Spacing="10" Margin="0,12,0,0"><Button Content="Email recovery code" Command="{Binding ChangeSecurityCommand}" CommandParameter="Recovery" /><TextBox Text="{Binding SecurityOtp}" PasswordChar="●" PlaceholderText="Emailed code" /><TextBox Text="{Binding SecurityPin}" PasswordChar="●" PlaceholderText="New PIN" MaxLength="6" /><Button Content="Reset PIN" Command="{Binding ChangeSecurityCommand}" CommandParameter="Reset" /></StackPanel></Expander>
+              </StackPanel></ScrollViewer></TabItem>
+            </TabControl>
+          </Grid>
         </Border>
-
-        <!-- ========================================================= -->
-        <!-- 4. IMAGE PREVIEW ZOOM MODAL                               -->
-        <!-- ========================================================= -->
-        <Border Background="#AA000000"
-                IsVisible="{Binding IsImagePreviewOpen}"
-                ZIndex="600">
-            <Panel HorizontalAlignment="Center" VerticalAlignment="Center">
-                <Button Classes="icon-btn"
-                        Command="{Binding CloseImagePreviewCommand}"
-                        HorizontalAlignment="Right"
-                        VerticalAlignment="Top"
-                        Margin="0,-40,0,0">
-                    <TextBlock Text="✕ Close" FontSize="13" Foreground="White" />
-                </Button>
-                <Border CornerRadius="12"
-                        ClipToBounds="True"
-                        BorderBrush="{DynamicResource ForgeBorderFocus}"
-                        BorderThickness="2"
-                        MaxWidth="400" MaxHeight="400">
-                    <Image Source="{Binding ProfileAvatar}" Stretch="Uniform" />
-                </Border>
-            </Panel>
-        </Border>
-    </Panel>
+      </Grid>
+    </Grid>
+    <Border x:Name="ProfileOverlay" Background="#99000000" IsVisible="{Binding IsProfileOverlayOpen}">
+      <Border x:Name="ProfileCard" MaxWidth="720" MaxHeight="760" Margin="24" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="{DynamicResource ForgeSurface}" CornerRadius="20" BorderBrush="{DynamicResource ForgeBorder}" BorderThickness="1" Padding="26">
+        <Grid RowDefinitions="Auto,*,Auto"><Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,24"><Button Classes="quiet" Padding="0" Command="{Binding OpenImagePreviewCommand}"><Border Width="64" Height="64" CornerRadius="32" Background="{DynamicResource ForgePrimaryGradientSubtle}" ClipToBounds="True"><Panel><TextBlock Text="{Binding ProfileInitials}" FontSize="22" Foreground="{DynamicResource ForgePrimary}" HorizontalAlignment="Center" VerticalAlignment="Center" /><Image Source="{Binding ProfileAvatar}" Stretch="UniformToFill" /></Panel></Border></Button><StackPanel Grid.Column="1" Margin="16,0" VerticalAlignment="Center" Spacing="6"><TextBlock Text="{Binding ProfileUserName}" FontSize="22" FontWeight="SemiBold" /><TextBlock Text="{Binding ProfileEmailText}" Foreground="{DynamicResource ForgeTextSecondary}" /></StackPanel><Button Grid.Column="2" Classes="quiet square" Command="{Binding CloseUserProfileCommand}" VerticalAlignment="Top" AutomationProperties.Name="Close profile"><PathIcon Data="{StaticResource Glyph.Close}" Width="14" Height="14" /></Button></Grid>
+          <ScrollViewer Grid.Row="1"><StackPanel Spacing="18"><ProgressBar IsIndeterminate="True" IsVisible="{Binding IsLoadingProfile}" Height="2" /><TextBlock Text="ORGANIZATION DIRECTORY" Classes="section-label" /><TextBlock Text="Organization information is unavailable." Foreground="{DynamicResource ForgeTextSecondary}" IsVisible="{Binding !HasProfileOrganization}" TextWrapping="Wrap" /><ContentControl Content="{Binding ProfileOrganization}"><ContentControl.ContentTemplate><DataTemplate x:DataType="vm:ProfileOrganizationViewModel"><views:ProfileOrganizationView /></DataTemplate></ContentControl.ContentTemplate></ContentControl><TextBlock Text="CONTACT" Classes="section-label" /><Grid ColumnDefinitions="*,*" ColumnSpacing="18"><StackPanel Spacing="7"><TextBlock Text="Phone" Classes="caption" /><TextBlock Text="{Binding ProfilePhoneText}" TextWrapping="Wrap" /></StackPanel><StackPanel Grid.Column="1" Spacing="7"><TextBlock Text="Address" Classes="caption" /><TextBlock Text="{Binding ProfileAddressText}" TextWrapping="Wrap" /></StackPanel></Grid></StackPanel></ScrollViewer>
+          <StackPanel Grid.Row="2" Spacing="10" Margin="0,24,0,0"><TextBox Text="{Binding QuickMessageText}" PlaceholderText="Send a quick message…" /><Grid ColumnDefinitions="*,Auto" ColumnSpacing="10"><Button Content="Open conversation" Classes="quiet" Command="{Binding StartChatFromProfileCommand}" /><Button Grid.Column="1" Content="Send message" Classes="fire-btn" Command="{Binding SendQuickMessageCommand}" IsEnabled="{Binding !IsSendingQuickMessage}" /></Grid><TextBlock Text="{Binding QuickMessageStatus}" Classes="caption" /></StackPanel>
+        </Grid>
+      </Border>
+    </Border>
+    <Border Background="#E6101114" IsVisible="{Binding IsImagePreviewOpen}" Padding="30"><Grid RowDefinitions="Auto,*"><Button Content="Close preview" Classes="quiet" Command="{Binding CloseImagePreviewCommand}" HorizontalAlignment="Right" /><Image Grid.Row="1" Source="{Binding ProfileAvatar}" Stretch="Uniform" /></Grid></Border>
+  </Panel>
 </UserControl>

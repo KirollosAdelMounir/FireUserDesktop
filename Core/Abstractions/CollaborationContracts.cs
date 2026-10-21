@@ -8,9 +8,16 @@ namespace UserIdentityDesktop.Core;
 
 public interface ICollaborationApi
 {
+    Task<VacationPreview> PreviewVacationAsync(Guid user, DateOnly start, int days, string reason, CancellationToken ct = default);
+    Task SubmitVacationAsync(Guid user, DateOnly start, int days, string reason, string token, CancellationToken ct = default);
+    Task<VacationPage> VacationsAsync(int page, CancellationToken ct = default);
+    Task DecideVacationAsync(VacationRequest request, string action, CancellationToken ct = default);
     Task<bool> CallingEnabledAsync(CancellationToken ct = default);
     Task<WorkplaceCatalog> CatalogAsync(CancellationToken ct = default);
     Task<CallSession> CreateCallAsync(Guid peer, bool video, CancellationToken ct = default);
+    Task<CallSession> CreateGroupCallAsync(string conversationId, bool video, CancellationToken ct = default);
+    Task InviteCallAsync(string callId, Guid user, CancellationToken ct = default);
+    Task<CallSession> CallContextAsync(string callId, CancellationToken ct = default);
     Task<MediaToken> CallTokenAsync(string callId, CancellationToken ct = default);
     Task LeaveCallAsync(string callId, CancellationToken ct = default);
     Task DeclineCallAsync(string callId, CancellationToken ct = default);
@@ -39,6 +46,8 @@ public interface INativeMediaSession : IAsyncDisposable
     bool Connected { get; }
     event Action<VideoPicture>? VideoReceived;
     event Action<string>? ParticipantLeft;
+    event Action<MediaParticipant>? ParticipantJoined;
+    event Action<MediaParticipantUpdate>? ParticipantUpdated;
     event Action<string>? Error;
     event Action<string>? CaptureStopped;
     event Action<RemoteControlStatus>? RemoteControlChanged;
@@ -50,5 +59,6 @@ public interface INativeMediaSession : IAsyncDisposable
     Task SetMicrophoneAsync(bool enabled, MediaDevices devices, CancellationToken ct = default);
     Task SetCameraAsync(bool enabled, MediaDevices devices, CancellationToken ct = default);
     Task SetScreenAsync(bool enabled, MediaDevices devices, CancellationToken ct = default);
+    Task<System.Collections.Generic.IReadOnlyList<ScreenShareSource>> GetScreenSourcesAsync(CancellationToken ct = default);
     Task DisconnectAsync();
 }

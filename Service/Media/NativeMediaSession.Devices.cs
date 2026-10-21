@@ -12,6 +12,7 @@ namespace UserIdentityDesktop.Service.Media;
 
 public sealed partial class NativeMediaSession
 {
+    public Task<IReadOnlyList<ScreenShareSource>> GetScreenSourcesAsync(CancellationToken ct = default) => ScreenSources.DiscoverAsync(ct);
     public async Task<MediaDeviceCatalog> GetDevicesAsync(CancellationToken ct = default)
     {
         var microphones = await Task.Run(() => NativeAudio.Devices(true), ct);

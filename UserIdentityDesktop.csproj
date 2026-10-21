@@ -6,7 +6,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets/favicon.ico</ApplicationIcon>
     <NativeRuntimeIdentifier Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</NativeRuntimeIdentifier>
-    <NativeRuntimeIdentifier Condition="'$(NativeRuntimeIdentifier)' == ''">$(NETCoreSdkRuntimeIdentifier)</NativeRuntimeIdentifier>
+    <NativeRuntimeIdentifier Condition="'$(NativeRuntimeIdentifier)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</NativeRuntimeIdentifier>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,6 +16,7 @@
     <Compile Remove="Service\**" />
     <Compile Remove="Tests\**" />
     <AvaloniaResource Include="Assets\**" />
+    <Content Include="sounds/*.mp3" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
@@ -39,16 +40,24 @@
     <NativeBridgeFile Condition="$([System.String]::Copy('$(NativeRuntimeIdentifier)').StartsWith('win-'))">fireuser_livekit.dll</NativeBridgeFile>
     <NativeBridgeFile Condition="$([System.String]::Copy('$(NativeRuntimeIdentifier)').StartsWith('linux-'))">libfireuser_livekit.so</NativeBridgeFile>
     <NativeBridgeFile Condition="$([System.String]::Copy('$(NativeRuntimeIdentifier)').StartsWith('osx-'))">libfireuser_livekit.dylib</NativeBridgeFile>
+    <NativeToolchain Condition="'$(NativeToolchain)' == ''">Auto</NativeToolchain>
     <PowerShellExe Condition="'$(PowerShellExe)' == '' and '$(OS)' == 'Windows_NT'">powershell</PowerShellExe>
     <PowerShellExe Condition="'$(PowerShellExe)' == ''">pwsh</PowerShellExe>
   </PropertyGroup>
-  <ItemGroup><NativeBridgeInput Include="Native/*.cpp;Native/*.h;Native/CMakeLists.txt;scripts/build-native.ps1" /></ItemGroup>
+  <PropertyGroup>
+    <NativeWindowsSdkArgument Condition="'$(LiveKitSdkPath)' != ''">-SdkPath &quot;$(LiveKitSdkPath)&quot;</NativeWindowsSdkArgument>
+    <NativeSdkArgument Condition="'$(LiveKitSdkPath)' != ''">--sdk &quot;$(LiveKitSdkPath)&quot;</NativeSdkArgument>
+    <PythonExe Condition="'$(PythonExe)' == ''">python3</PythonExe>
+  </PropertyGroup>
+  <ItemGroup><NativeBridgeInput Include="Native/*.cpp;Native/*.mm;Native/*.h;Native/CMakeLists.txt;scripts/build-native.ps1;scripts/build-native.py;scripts/native-runtimes.json" /></ItemGroup>
   <Target Name="BuildNativeBridge" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true'" Inputs="@(NativeBridgeInput)" Outputs="Native/artifacts/$(NativeRuntimeIdentifier)/$(NativeBridgeFile)">
-    <Exec Command="$(PowerShellExe) -NoProfile -File &quot;$(MSBuildProjectDirectory)/scripts/build-native.ps1&quot; -RuntimeIdentifier $(NativeRuntimeIdentifier)" />
+    <Exec Condition="'$(OS)' == 'Windows_NT'" Command="$(PowerShellExe) -NoProfile -File &quot;$(MSBuildProjectDirectory)/scripts/build-native.ps1&quot; -RuntimeIdentifier $(NativeRuntimeIdentifier) -Toolchain $(NativeToolchain) $(NativeWindowsSdkArgument)" />
+    <Exec Condition="'$(OS)' != 'Windows_NT'" Command="&quot;$(PythonExe)&quot; &quot;$(MSBuildProjectDirectory)/scripts/build-native.py&quot; --rid $(NativeRuntimeIdentifier) $(NativeSdkArgument)" />
     <Touch Files="Native/artifacts/$(NativeRuntimeIdentifier)/$(NativeBridgeFile)" AlwaysCreate="false" />
   </Target>
   <Target Name="PrepareMediaRuntime" BeforeTargets="AssignTargetPaths" Condition="'$(DesignTimeBuild)' != 'true'">
-    <Exec Command="$(PowerShellExe) -NoProfile -File &quot;$(MSBuildProjectDirectory)/scripts/setup-media.ps1&quot; -RuntimeIdentifier $(NativeRuntimeIdentifier)" />
+    <Exec Condition="'$(OS)' == 'Windows_NT'" Command="$(PowerShellExe) -NoProfile -File &quot;$(MSBuildProjectDirectory)/scripts/setup-media.ps1&quot; -RuntimeIdentifier $(NativeRuntimeIdentifier)" />
+    <Exec Condition="'$(OS)' != 'Windows_NT'" Command="&quot;$(PythonExe)&quot; &quot;$(MSBuildProjectDirectory)/scripts/build-native.py&quot; --rid $(NativeRuntimeIdentifier) --media-only" />
     <ItemGroup>
       <_NativeArtifacts Include="Native/artifacts/$(NativeRuntimeIdentifier)/*" />
       <_MediaRuntime Include="Native/media/$(NativeRuntimeIdentifier)/**/*" />

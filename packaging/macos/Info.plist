@@ -6,6 +6,10 @@
   <key>CFBundleExecutable</key><string>UserIdentityDesktop</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.0.0</string>
+  <key>CFBundleURLTypes</key><array><dict>
+    <key>CFBundleURLName</key><string>Fire User Connect</string>
+    <key>CFBundleURLSchemes</key><array><string>fireuserconnect</string></array>
+  </dict></array>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSCameraUsageDescription</key><string>Use your camera when you explicitly enable video in a call.</string>
   <key>NSMicrophoneUsageDescription</key><string>Use your microphone when you explicitly enable voice in a call.</string>

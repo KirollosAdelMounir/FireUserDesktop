@@ -1,81 +1,12 @@
-<Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="using:UserIdentityDesktop.ViewModels"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="720"
-        x:Class="UserIdentityDesktop.Views.MainWindow"
-        x:DataType="vm:MainViewModel"
-        Icon="/Assets/favicon.ico"
-        Title="Fire User Connect"
-        MinWidth="800" MinHeight="550"
-        Width="1280" Height="820" FontSize="13"
-        WindowStartupLocation="CenterScreen"
-        Background="{DynamicResource ForgeBg}">
-
-    <Grid RowDefinitions="Auto,*">
-        <!-- Top App Navigation / Title Header -->
-        <Border Grid.Row="0"
-                Background="{DynamicResource ForgeSurface}"
-                BorderBrush="{DynamicResource ForgeBorder}"
-                BorderThickness="0,0,0,1"
-                Padding="20,10" Height="68">
-            <Grid ColumnDefinitions="Auto,*,Auto">
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                    <Image Source="/Assets/PageLogo.png" Width="40" Height="40" Stretch="Uniform" VerticalAlignment="Center" />
-                    <StackPanel VerticalAlignment="Center" Spacing="2">
-                        <TextBlock Text="Fire User" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource ForgePrimary}" />
-                        <TextBlock Text="CONNECT" FontSize="9" LetterSpacing="2" Foreground="{DynamicResource ForgeTextSecondary}" />
-                    </StackPanel>
-                </StackPanel>
-
-                <!-- People Search -->
-                <Grid Grid.Column="1"
-                      HorizontalAlignment="Center"
-                      Width="420"
-                      IsVisible="{Binding IsChatView}">
-                    <Grid ColumnDefinitions="*,Auto">
-                        <TextBox Classes="fire-input"
-                                 Text="{Binding IdentitySearchText, Mode=TwoWay}"
-                                 PlaceholderText="Search members &amp; identity..."
-                                 Height="36"
-                                 CornerRadius="18"
-                                 Padding="14,6"
-                                 FontSize="12" />
-                        <Button Grid.Column="1"
-                                Classes="icon-btn"
-                                Command="{Binding ClearIdentitySearchCommand}"
-                                IsVisible="{Binding IdentitySearchText, Converter={StaticResource NullToBoolConverter}}"
-                                Margin="-34,0,0,0"
-                                Width="30" Height="30"
-                                ToolTip.Tip="Clear search">
-                            <TextBlock Text="✕" FontSize="11" Foreground="{DynamicResource ForgeTextMuted}" />
-                        </Button>
-                    </Grid>
-                </Grid>
-
-                <!-- Theme Toggle Button -->
-                <Button Grid.Column="2"
-                        Classes="icon-btn"
-                        Command="{Binding ToggleThemeCommand}"
-                        ToolTip.Tip="Toggle Dark/Light Mode"
-                        Width="32" Height="32"
-                        Padding="0">
-                    <Panel>
-                        <TextBlock Text="☀" FontSize="14"
-                                   IsVisible="{Binding IsDarkMode}"
-                                   HorizontalAlignment="Center"
-                                   VerticalAlignment="Center" />
-                        <TextBlock Text="🌙" FontSize="14"
-                                   IsVisible="{Binding !IsDarkMode}"
-                                   HorizontalAlignment="Center"
-                                   VerticalAlignment="Center" />
-                    </Panel>
-                </Button>
-            </Grid>
-        </Border>
-
-        <!-- Current View Host (LoginView or ChatView) -->
-        <ContentControl Grid.Row="1" Content="{Binding CurrentView}" />
-    </Grid>
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:UserIdentityDesktop.ViewModels"
+        x:Class="UserIdentityDesktop.Views.MainWindow" x:DataType="vm:MainViewModel" Icon="/Assets/favicon.ico" Title="Fire User Connect"
+        MinWidth="800" MinHeight="550" Width="1280" Height="820" FontSize="13" WindowStartupLocation="CenterScreen" Background="{DynamicResource ForgeBg}">
+  <Grid RowDefinitions="Auto,*">
+    <Border Background="{DynamicResource ForgeSurface}" BorderBrush="{DynamicResource ForgeBorder}" BorderThickness="0,0,0,1" Padding="20,10">
+      <Grid ColumnDefinitions="Auto,*,Auto"><Image Source="/Assets/PageLogo.png" Width="28" Height="28" Stretch="Uniform" /><TextBlock Grid.Column="1" Text="Fire User Connect" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource ForgeTextPrimary}" VerticalAlignment="Center" Margin="10,0" />
+        <Button Grid.Column="2" Classes="quiet square" Command="{Binding ToggleThemeCommand}" ToolTip.Tip="Switch appearance" AutomationProperties.Name="Switch light or dark theme"><PathIcon Width="17" Height="17" Data="M12,2 A10,10 0 1 0 22,12 C15,17 7,9 12,2 Z" /></Button>
+      </Grid>
+    </Border>
+    <ContentControl Grid.Row="1" Content="{Binding CurrentView}" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+  </Grid>
 </Window>

@@ -121,7 +121,7 @@ public sealed partial class NativeMediaSession
         {
             var oldController = control.Controller;
             RevokeLocal(); control.Sharing(sharing);
-            canHost = sharing && string.IsNullOrWhiteSpace(devices.Screen) && LiveKitNative.fu_input_supported() == 1 && LiveKitNative.fu_desktop_bounds(out desktopWidth, out desktopHeight) == 0;
+            canHost = sharing && devices.ShareSource == null && string.IsNullOrWhiteSpace(devices.Screen) && LiveKitNative.fu_input_supported() == 1 && LiveKitNative.fu_desktop_bounds(out desktopWidth, out desktopHeight) == 0;
             if (oldController != null) QueuePacket(oldController, new RemotePacket("revoke"));
             SendHello(); RemoteControlChanged?.Invoke(control.Status);
         }

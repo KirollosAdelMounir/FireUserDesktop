@@ -21,10 +21,9 @@ Conversation lists have their own heading and filter; the account menu stays
 in the footer. Voice/video actions are inside the conversation header. Global
 member search, existing message/file behavior and profile actions are retained.
 
-## Owned call window
+## Independent call window
 
-Connecting or accepting a call opens a nonmodal `CallWindow` owned by the main
-application window. The main workspace remains usable. The call window has a
+Connecting or accepting a call opens an independent nonmodal `CallWindow`. The main workspace and call window minimize independently; application exit still closes the call. The call window has a
 header/device menu, video/presentation stage and fixed bottom media controls.
 Closing it leaves the call; leaving/signing out/application exit closes it and
 cleans up local media even if the backend leave request fails. Call errors are
@@ -46,7 +45,9 @@ files into Debug/Release/publish output. The native SDK/miniaudio source and
 media archives are cached in ignored directories. End users do not install
 FFmpeg/FFplay, edit PATH, type device IDs or install machine-wide VC runtimes.
 Windows builds package app-local compiler redistributables. Developer machines
-still need the .NET/C++/CMake/PowerShell toolchain.
+still need .NET 10, CMake 3.24+ and a C++20 compiler. Windows uses
+PowerShell; Linux/macOS use Python 3.12+ and do not require PowerShell.
+Linux additionally needs X11/XTest and OpenSSL development files.
 
 `scripts/media-runtimes.json` pins archive URLs and SHA-256 for Windows x64,
 Linux x64/ARM64 and macOS Intel/Apple Silicon. Windows uses Gyan essentials;
@@ -96,13 +97,153 @@ speaker or remote-input test was run against the user's desktop.
 
 Windows native compilation/ABI smoke tests, packaged runtime resolution,
 Windows/macOS camera-list parsing, device-selection behavior without capture,
-owned-call-window cleanup, remote-control gating and headless light/dark views
+independent-call-window cleanup, remote-control gating and headless light/dark views
 are covered. Screenshots include expanded keyboard navigation and the call
 window. Debug and Release output must both include `media/ffmpeg.exe` and the
 native bridge/runtime DLLs.
 
 Linux/macOS device execution and permission flows have not been exercised on
-those operating systems here. Wayland portal capture/control, acoustic echo
+those operating systems here. Real compositor capture, Wayland remote control, acoustic echo
 cancellation, browser-equivalent application bandwidth budgeting and the wider
 frontend feature-parity backlog remain documented work. Source paths and CI
 targets do not establish real device compatibility or sustained 1080p/60 quality.
+
+
+## Native collaboration screens and performance
+
+Calendar now uses a Sunday-first, six-week native month grid, category-colored
+chips (up to three per day), previous/next/today controls, arrow-key day selection,
+and a bounded 24-hour agenda. Creating from a free slot fills the selected local
+date/time in the existing review-before-save editor. The snapshot covers the
+visible 42-day range. Day changes inside the same month filter locally;
+SignalR invalidations and reconnects reload the snapshot. There is no polling.
+
+The meetings screen shows a join panel, scheduled meetings from the loaded
+calendar range, and a create-schedule action. Announcement cards include category,
+expiry and per-card acknowledgement. The composer supports the Angular categories,
+publication/expiry dates and email preference. Server permission checks and
+calendar conflict review remain authoritative. Narrow windows place editors below
+the browser pane instead of clipping them beside it.
+
+Message history uses a ListBox with its virtualizing panel and its own scroll
+viewport. The 1,000-message regression verifies a bounded realized item count and
+that the final message can be scrolled into view. Reduced motion also stops the
+chat typing animation and message transitions. This is behavior verification,
+not a latency/frame-rate benchmark.
+
+## Notifications
+
+Foreground notifications use native Avalonia notification cards with Fire User
+colors/branding, six-second expiry and at most three active cards. Clicking opens
+the conversation. When the window is inactive, delivery goes to the system:
+
+- Windows: ToastGeneric, app logo, registered application identity and protocol
+  activation. XML is escaped and passed as Base64 data to the bounded PowerShell
+  delivery process. It is not inserted into executable script source.
+- Linux: libnotify's `notify-send` on the user desktop notification bus, with
+  desktop-entry identity, icon, message sound hint and an Open action. The command
+  has a bounded wait and arguments are passed without a shell. `notify-send` must
+  be installed (Fedora: libnotify; Ubuntu: libnotify-bin). The compositor owns
+  notification history, expiry and action support.
+- macOS: a small Objective-C++ bridge uses UserNotifications, permission requests
+  and native click callbacks. Run the packaged `.app` with its bundle identity;
+  notification authorization and signing/notarization must be validated on macOS.
+  Startup does not rewrite a signed bundle's Info.plist.
+
+The OS owns background toast layout and appearance. Custom foreground cards do
+not override system Do Not Disturb or attempt to replace the OS notification
+center. External audio-player processes are no longer launched for notifications;
+the OS handles background notification sounds.
+
+## Linux startup and compiler verification
+
+The default build uses `NETCoreSdkPortableRuntimeIdentifier`, so Fedora resolves
+`linux-x64` rather than passing `fedora.44-x64` to the native archive selector.
+`scripts/build-native.py` shares the pinned SDK manifest with the Windows script,
+verifies archives, builds the bridge, runs CTest and prepares media automatically.
+The XTest CMake check uses the imported target. Unix instance contention is handled
+inside TryAcquire; the secondary process waits for activation delivery and never
+removes the owning instance's socket. Cancellation closes the listener before its
+ownership lock is released.
+
+The official Ubuntu SDK references `CURL_OPENSSL_4`, which Fedora's system curl
+does not export. Linux packages therefore include a checksum-pinned curl 8.23.0
+built with OpenSSL and versioned symbols, along with its license. OpenSSL, zlib,
+glibc and platform windowing/audio dependencies remain system libraries. Build
+release packages on the oldest supported Linux distribution; a Fedora-built
+binary is not evidence of compatibility with older glibc/OpenSSL versions.
+
+Local verification on Fedora 44 x64: GCC bridge compilation, CTest ABI lifecycle,
+loading the packaged library without LD_LIBRARY_PATH, native window startup and
+headless rendering in both themes. `--startup-smoke-test` skips OS registration
+and closes after the native window opens. Run it with isolated XDG config/data
+paths so saved accounts are not loaded. CI includes an Xvfb startup check.
+No microphone/camera/screen capture, remote input or authenticated server session
+was used for these checks.
+
+### MinGW
+
+Prefer a matching MinGW SDK when available:
+
+```powershell
+pwsh ./scripts/build-native.ps1 -Toolchain MinGW -SdkPath C:/sdk/livekit-mingw
+# The same selection is available in the ordinary automatic build:
+dotnet build UserIdentityDesktop.csproj -c Release -p:NativeToolchain=MinGW -p:LiveKitSdkPath=C:/sdk/livekit-mingw
+```
+
+MinGW uses its own build directory and packages its compiler runtime DLLs.
+`Auto` selects MinGW when the supplied SDK contains `lib/liblivekit.dll.a`;
+otherwise it retains the supported MSVC Windows archive. The SDK and all its C++
+dependencies must be compiled with a compatible MinGW ABI and supplied with
+working LiveKit CMake configuration. A `.dll.a` filename is an eligibility check,
+not proof of ABI compatibility; CTest must pass before packaging.
+The official Windows SDK is MSVC-based and cannot safely be linked into a MinGW
+C++ bridge. No matching SDK/toolchain is available here, so MinGW execution and
+Windows/macOS compilation remain unverified. This does not claim an all-MinGW
+Windows distribution has been produced.
+
+## Remaining Angular parity
+
+These changes align the native collaboration layouts, typography, colors,
+calendar navigation and existing motion; they do not establish complete visual
+or functional Angular parity. Meeting-specific encrypted chat, guest admission and recording management, recurring/imported/shared calendar management and expanded
+announcement audience/withdrawal/history workflows remain in the existing native
+collaboration backlog. Preserve the API/security contracts when adding those
+surfaces. Native Wayland remote control, real device paths and full
+Windows/macOS notification integration still need platform validation.
+
+
+## Regression evidence for this change
+
+| Requirement | Evidence |
+| --- | --- |
+| Native UI and motion | `Workspace_RendersEveryTab_InBothThemes`, `NavigationMotion_RapidChangesCancelWithoutLeavingInvisibleContent`, `MonthCalendar_MapsOvernightEventsAndClearsStaleChips` |
+| Message performance | `MessageHistory_VirtualizesLongConversations` verifies virtualization with 1,000 messages and scrolling to the final item |
+| Unix instance ownership | `ContendingInstance_HandsOffActivationWithoutRemovingOwnersSocket` |
+| Toast branding, bounds, reduced motion, activation | `ForegroundToast_BoundsVisibleCardsAndRendersBranding` (both motion settings), `ForegroundToast_RoutesSanitizedContentAndActivationOnUiThread`, `NotificationActivation_OpensStandardAndLegacyChatLinks` |
+| Publication fields and validation | `AnnouncementPublication_UsesChosenDatesCategoryAndEmailPreference`, `AnnouncementPublication_RejectsExpiryBeforePublication` |
+| Native Linux runtime | GCC build and `bridge_abi_lifecycle` CTest pass; isolated native window startup exits 0 |
+| Full managed suite | `dotnet test Tests/UserIdentityDesktop.Tests.csproj -c Release`: Passed 66, Failed 0, Skipped 2 (opt-in network media cases) |
+| MinGW and other OS execution | Toolchain selection implemented; matching MinGW SDK unavailable; Windows/macOS runs remain unverified |
+
+
+## Meeting protocol activation
+
+`fireuserconnect://meeting/{locator}` opens the Meetings join screen and fills
+its code. The public locator is case-sensitive; only ASCII letters/digits,
+hyphen and underscore (1–32 characters) are accepted. Additional path segments,
+query parameters, fragments, credentials, ports and encoded separators are
+rejected. Protocol URLs never supply a backend URL or authentication credential.
+
+Windows/Linux reuse the existing single-instance IPC handler. macOS also handles
+Avalonia's native protocol-activation event for an already-running bundle. A
+signed-out client keeps the latest meeting destination and consumes it on normal
+login completion without polling or a short login timeout. Opening a link never
+joins a call, enables devices or leaves the existing call automatically. The
+existing Join meeting command continues to obtain admission/token decisions
+from the configured backend. Emails provide a separate browser fallback because
+mail clients cannot reliably detect a running app and may block custom schemes.
+
+Regression evidence: `MeetingProtocol_ParsesPublicLocatorWithoutChangingCase`,
+`MeetingProtocol_RejectsNonMeetingRoutesAndCredentialParameters`, and
+`MeetingLink_SurvivesSignInAndReusesOpenWorkspaceWithoutStartingMedia`.

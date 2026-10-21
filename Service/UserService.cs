@@ -111,7 +111,14 @@ public class UserService : IUserService
             using var response = await client.GetAsync(url);
             if (response.IsSuccessStatusCode)
             {
-                return await ApiPayload.ReadAsync<ViewUserProfileDto>(response);
+                var profile = await ApiPayload.ReadAsync<ViewUserProfileDto>(response);
+                try
+                {
+                    using var directory = await client.GetAsync($"{_configService.ServerUrl}/api/Organization/users/{userId}");
+                    if (directory.IsSuccessStatusCode) profile.Organization = await ApiPayload.ReadAsync<EmployeeOrganization>(directory);
+                }
+                catch { /* The profile remains usable if directory access is unavailable. */ }
+                return profile;
             }
         }
         catch (Exception ex)

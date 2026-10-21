@@ -1,6 +1,7 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="using:UserIdentityDesktop"
+             xmlns:views="using:UserIdentityDesktop.Views"
              xmlns:converters="using:UserIdentityDesktop.Converters"
              x:Class="UserIdentityDesktop.App"
              RequestedThemeVariant="Dark">
@@ -15,6 +16,25 @@
             <converters:NullToBoolConverter x:Key="NullToBoolConverter" />
             <converters:DateTimeFormatConverter x:Key="DateTimeFormatConverter" />
 
+            <ControlTheme x:Key="FireToastCardTheme" TargetType="NotificationCard">
+                <Setter Property="Width" Value="350" />
+                <Setter Property="Template"><ControlTemplate><Border Margin="5,5,5,10" CornerRadius="12" BoxShadow="0 4 12 0 #28000000"><ContentPresenter Content="{TemplateBinding Content}" /></Border></ControlTemplate></Setter>
+                <Style Selector="^[IsClosing=false]:not(.reduced-motion)">
+                    <Style.Animations><Animation Duration="0:0:0.24" FillMode="Forward"><Animation.Easing><views:AngularNavigationEasing /></Animation.Easing>
+                        <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0" /><Setter Property="TranslateTransform.Y" Value="10" /></KeyFrame>
+                        <KeyFrame Cue="100%"><Setter Property="Opacity" Value="1" /><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
+                    </Animation></Style.Animations>
+                </Style>
+                <Style Selector="^[IsClosing=true]:not(.reduced-motion)">
+                    <Style.Animations><Animation Duration="0:0:0.24" FillMode="Forward">
+                        <KeyFrame Cue="0%"><Setter Property="Opacity" Value="1" /></KeyFrame>
+                        <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0" /><Setter Property="IsClosed" Value="True" /></KeyFrame>
+                    </Animation></Style.Animations>
+                </Style>
+                <Style Selector="^[IsClosing=true].reduced-motion">
+                    <Style.Animations><Animation Duration="0:0:0.001" FillMode="Forward"><KeyFrame Cue="100%"><Setter Property="IsClosed" Value="True" /></KeyFrame></Animation></Style.Animations>
+                </Style>
+            </ControlTheme>
             <!-- Brand shared brushes -->
             <SolidColorBrush x:Key="ForgePrimary" Color="#E0531C" />
             <SolidColorBrush x:Key="ForgePrimaryHover" Color="#EA602A" />
@@ -54,7 +74,9 @@
                     <SolidColorBrush x:Key="ForgeTextPrimary" Color="#F0F2F5" />
                     <SolidColorBrush x:Key="ForgeTextSecondary" Color="#B0B5BE" />
                     <SolidColorBrush x:Key="ForgeTextMuted" Color="#7A808B" />
-                    <SolidColorBrush x:Key="ForgeBubbleReceived" Color="#24262E" />
+                    <SolidColorBrush x:Key="ForgeBubbleReceived" Color="#22242B" />
+                    <SolidColorBrush x:Key="ForgeBubbleSent" Color="#3D2C25" />
+                    <SolidColorBrush x:Key="ForgeBubbleSentBorder" Color="#66503A" />
                 </ResourceDictionary>
 
                 <!-- Warm Ash Light Theme -->
@@ -70,12 +92,23 @@
                     <SolidColorBrush x:Key="ForgeTextSecondary" Color="#58606E" />
                     <SolidColorBrush x:Key="ForgeTextMuted" Color="#8C93A0" />
                     <SolidColorBrush x:Key="ForgeBubbleReceived" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="ForgeBubbleSent" Color="#FFF0E6" />
+                    <SolidColorBrush x:Key="ForgeBubbleSentBorder" Color="#F0D5C0" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>
     </Application.Resources>
 
     <Application.Styles>
+        <Style Selector="Button.fire-toast-action"><Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" /><Setter Property="Padding" Value="0" /><Setter Property="HorizontalContentAlignment" Value="Stretch" /></Style>
+        <Style Selector="Button.fire-toast-action:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="Transparent" /></Style>
+        <Style Selector="Border.fire-toast">
+            <Setter Property="Background" Value="{DynamicResource ForgeSurfaceCard}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ForgePrimary}" />
+            <Setter Property="BorderThickness" Value="3,0,0,0" />
+            <Setter Property="CornerRadius" Value="12" /><Setter Property="Padding" Value="16" />
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource ForgeTextPrimary}" />
+        </Style>
         <Style Selector="Window"><Setter Property="FontFamily" Value="fonts:Outfit#Outfit" /><Setter Property="FontSize" Value="13" /></Style>
         <FluentTheme>
             <FluentTheme.Palettes>
@@ -89,6 +122,8 @@
             <Setter Property="Background" Value="#22FF4500" />
             <Setter Property="Height" Value="3" />
         </Style>
+
+        <StyleInclude Source="/Styles/Collaboration.axaml" />
 
         <!-- Fire Button Style -->
         <Style Selector="Button.fire-btn">

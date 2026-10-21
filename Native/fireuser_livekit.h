@@ -14,8 +14,10 @@ extern "C" {
 // Copy data before returning. No managed exception may cross this ABI.
 typedef void (*fu_video_callback)(const char* identity, const uint8_t* rgba, int width, int height, int length);
 typedef void (*fu_audio_callback)(const char* identity, const uint8_t* pcm, int length, int rate, int channels);
-typedef void (*fu_event_callback)(int kind, const char* identity); // 1 participant left; 2 disconnected; 3 pipeline error
+typedef void (*fu_event_callback)(int kind, const char* identity); // 1 participant left; 2 disconnected; 3 pipeline error; 4 native peer joined; 5 video removed; 6 participant identity/name; 7 participant state
 typedef void (*fu_data_callback)(const char* sender, const uint8_t* data, int length);
+FU_API void* fu_tone_open(const char* path, int loop);
+FU_API void fu_tone_close(void* handle);
 FU_API int fu_abi_version(void);
 FU_API void* fu_create(fu_video_callback video, fu_audio_callback audio, fu_event_callback event, fu_data_callback data);
 FU_API int fu_connect(void* session, const char* url, const char* token);

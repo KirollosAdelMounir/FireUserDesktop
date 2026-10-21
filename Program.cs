@@ -9,13 +9,15 @@ namespace UserIdentityDesktop;
 sealed class Program
 {
     public static IAppInstanceService? AppInstanceService { get; private set; }
+    public static bool StartupSmokeTest { get; private set; }
 
     // Initialization code. Don't use any Avalonia, third-party APIs or any
     // SynchronizationContext-reliant code before AppMain is called: things aren't initialized
     // yet and stuff might break.
     [STAThread]
-    public static void Main(string[] args)
+    public static int Main(string[] args)
     {
+        StartupSmokeTest = args.Contains("--startup-smoke-test", StringComparer.Ordinal);
         var deepLink = ParseDeepLinkArgument(args);
         App.PendingDeepLink = deepLink;
 
@@ -23,14 +25,16 @@ sealed class Program
         if (AppInstanceService != null && !AppInstanceService.TryAcquire())
         {
             if (!string.IsNullOrWhiteSpace(deepLink))
-                _ = AppInstanceService.SendToExistingInstanceAsync(deepLink);
+                AppInstanceService.SendToExistingInstanceAsync(deepLink).GetAwaiter().GetResult();
             else
-                _ = AppInstanceService.SendToExistingInstanceAsync("fireuserconnect://activate");
+                AppInstanceService.SendToExistingInstanceAsync("fireuserconnect://activate").GetAwaiter().GetResult();
 
-            return;
+            AppInstanceService.Dispose();
+            return 0;
         }
 
-        BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        try { return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args); }
+        finally { AppInstanceService?.Dispose(); }
     }
 
     private static IAppInstanceService? CreateInstanceService()

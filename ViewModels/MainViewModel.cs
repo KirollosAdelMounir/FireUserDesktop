@@ -7,6 +7,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using UserIdentityDesktop.Core;
+using UserIdentityDesktop.Core.Models;
 using UserIdentityDesktop.Data;
 using UserIdentityDesktop.Service;
 
@@ -23,6 +24,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly INotificationService _notificationService;
     private ChatViewModel? _chatViewModel;
     private WorkspaceViewModel? _workspace;
+    private string? _pendingMeetingLocator;
     private readonly ICollaborationApi _collaboration;
     private readonly INativeMediaSession _media;
 
@@ -115,6 +117,7 @@ public partial class MainViewModel : ViewModelBase
         _workspace = new WorkspaceViewModel(chatVm, _collaboration, _media, _authService, _chatService);
         chatVm.BeforeLogoutAsync = async () => { if (_workspace != null) await _workspace.DisposeAsync(); };
         SetCurrentView(_workspace);
+        OpenPendingMeeting();
         _ = chatVm.InitializeAsync();
         _ = _workspace.RefreshAsync();
     }
@@ -167,6 +170,22 @@ public partial class MainViewModel : ViewModelBase
         if (_workspace != null) await _workspace.DisposeAsync();
         await _chatService.DisconnectAsync();
         await _userService.DisconnectAsync();
+    }
+
+    public void OpenMeeting(string locator)
+    {
+        if (!MeetingLink.IsValidLocator(locator)) return;
+        // Keep only the latest navigation while sign-in is required. No polling or
+        // credentials are needed; ordinary login completion consumes it once.
+        _pendingMeetingLocator = locator;
+        OpenPendingMeeting();
+    }
+
+    private void OpenPendingMeeting()
+    {
+        if (_workspace == null || _pendingMeetingLocator == null) return;
+        var locator = _pendingMeetingLocator; _pendingMeetingLocator = null;
+        _workspace.OpenMeeting(locator);
     }
 
     public async Task OpenConversationAsync(Guid userId)

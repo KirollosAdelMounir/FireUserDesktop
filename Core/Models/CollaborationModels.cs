@@ -21,18 +21,35 @@ public sealed record CalendarWrite(Guid? Id, long Version, int Kind, string Titl
 public sealed record CalendarConflict(Guid UserId, string Kind, string Title, DateTime StartUtc, DateTime EndUtc, bool Tentative);
 public sealed record CalendarReview(List<CalendarConflict> Conflicts, string Token);
 public sealed record SavedCalendar(Guid Id, long Version);
-public sealed record WorkplacePerson(Guid Id, string Name);
+public sealed record WorkplacePerson(Guid Id, string Name, Guid? OrganizationId = null, int? CountryId = null, int ReportingDistance = 0);
 public sealed record WorkplaceCatalog(List<WorkplacePerson> People);
 public sealed record AnnouncementTarget(string Kind, Guid TargetId, bool IncludeDescendants = false);
 public sealed record AnnouncementWrite(Guid? Id, long Version, string Title, string Body, string Category,
     DateTime PublishUtc, DateTime ExpiresUtc, bool Important, bool RequiresAcknowledgement,
     System.Collections.Generic.IReadOnlyList<AnnouncementTarget> Targets, bool SendEmail = true);
 public sealed record Announcement(Guid Id, string Title, string Body, string Category, DateTime PublishUtc,
-    DateTime ExpiresUtc, bool Important, bool RequiresAcknowledgement, long Version, bool Acknowledged);
-public sealed record MeetingDetail(Guid Id, string Locator, string Title, bool Online, string Location, int State, bool IsHost);
+    DateTime ExpiresUtc, bool Important, bool RequiresAcknowledgement, long Version, bool Acknowledged)
+{
+    public bool CanAcknowledge => RequiresAcknowledgement && !Acknowledged;
+}
+public sealed record MeetingDetail(Guid Id, string Locator, string Title, bool Online, string Location, int State, bool IsHost, bool InvitationPending = false, Guid CalendarEntryId = default, long CalendarVersion = 0, DateTime StartUtc = default, DateTime EndUtc = default);
 public sealed record MeetingCredentials(Guid Id, string Locator, string Password, string MeetingLink);
-public sealed record MediaDevices(string Microphone, string Camera, string Screen);
+public enum ScreenShareKind { Screen, Window }
+public enum ScreenCaptureBackend { Windows, X11, Portal, MacOS }
+public sealed record ScreenShareSource(string Id, string Name, ScreenShareKind Kind, ScreenCaptureBackend Backend, int X = 0, int Y = 0, int Width = 0, int Height = 0);
+public sealed record MediaDevices(string Microphone, string Camera, string Screen, ScreenShareSource? ShareSource = null);
 public sealed record MediaDeviceOption(string Id, string Name);
 public sealed record MediaDeviceCatalog(MediaDeviceOption[] Microphones, MediaDeviceOption[] Speakers, MediaDeviceOption[] Cameras, string? Warning = null);
+public sealed record MediaParticipantUpdate(string Identity, string Kind, string Value);
+public sealed record MediaParticipant(string Identity, string Name);
 public sealed record VideoPicture(string Identity, int Width, int Height, byte[] Rgba);
 public sealed record EncryptedFile(string Id, string Name, string MimeType, long Size, int ChunkSize, string Key, string NoncePrefix);
+
+public sealed record VacationShift(DateOnly AnchorDate, DateTime StartUtc, DateTime EndUtc, decimal Days)
+{ public string Label => $"{AnchorDate:ddd, d MMM} · {StartUtc.ToLocalTime():HH:mm} – {EndUtc.ToLocalTime():HH:mm}"; }
+public sealed record VacationBalance(int Year, decimal Available, decimal Pending, decimal Approved)
+{ public string Label => $"{Year}: {Available:0.##} days available · {Pending:0.##} pending · {Approved:0.##} approved"; }
+public sealed record VacationPreview(System.Collections.Generic.List<VacationShift> Shifts, string PreviewToken, System.Collections.Generic.List<VacationBalance> Balances);
+public sealed record VacationRequest(Guid Id, Guid UserId, int State, string Reason, decimal RequestedDays, long Version)
+{ public string StateLabel => State switch { 0 => "Submitted", 1 => "Approved", 2 => "Rejected", 3 => "Withdrawn", 4 => "Cancellation requested", 5 => "Cancelled", _ => "Unknown" }; }
+public sealed record VacationPage(System.Collections.Generic.List<VacationRequest> Requests, bool HasMore, int Page);

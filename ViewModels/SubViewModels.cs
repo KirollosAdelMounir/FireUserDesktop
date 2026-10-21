@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using Avalonia.Media;
@@ -179,7 +180,17 @@ public partial class ChatMessageItemViewModel : ObservableObject
     public string Id => Message.Id;
     public Guid Sender => Message.Sender;
     public Guid Receiver => Message.Receiver;
-    public string? Text => Message.Text;
+    public string? Text => Message.IsDeleted == true ? "Message deleted" : Message.CallSummary != null ? null : Message.Text;
+    public bool IsCall => Message.CallSummary != null;
+    public bool CanJoinCall => Message.CallSummary?.IsActive == true;
+    public string CallLabel => Message.CallSummary is { } call ? $"☎ {call.CallType} call · {call.Status}" + (call.DurationSeconds is {} seconds ? $" · {TimeSpan.FromSeconds(seconds):mm\\:ss}" : "") : "";
+    public bool CanEdit => CanModify && !Message.IsLocked;
+    public bool CanModify => IsMine && !IsCall && Message.IsDeleted != true;
+    public string ReplyLabel => Message.ReplyToMessageId != null ? "↩ Reply to " + (Message.ReplyToSenderName ?? "message") : "";
+    public bool HasReply => Message.ReplyToMessageId != null;
+    public bool HasReactions => Message.Reactions?.Count > 0;
+    public string ReactionLabel => string.Join("  ", Message.Reactions?.GroupBy(x => x.Emoji).Select(x => x.Key + " " + x.Count()) ?? Array.Empty<string>());
+    public bool Edited => Message.IsEdited == true;
     public DateTime TimeSent => Message.TimeSent;
     public bool HasText => !string.IsNullOrWhiteSpace(Text);
     public bool HasAttachments => Attachments.Count > 0;

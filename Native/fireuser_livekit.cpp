@@ -59,16 +59,27 @@ public:
     void onParticipantDisconnected(Room&, const ParticipantDisconnectedEvent& e) override {
         if (e.participant) signal(1, e.participant->identity());
     }
-    void onParticipantConnected(Room&, const ParticipantConnectedEvent& e) override { if (e.participant) signal(4, e.participant->identity()); }
+    void onParticipantConnected(Room&, const ParticipantConnectedEvent& e) override { if (e.participant) { signal(4, e.participant->identity()); signal(6, e.participant->identity() + "\n" + e.participant->name()); } }
     void onUserPacketReceived(Room&, const UserDataPacketEvent& e) override {
         if (!stopping && data && e.participant && e.topic == "fireuser.native.v1" && !e.data.empty() && e.data.size() <= 4096)
             data(e.participant->identity().c_str(), e.data.data(), static_cast<int>(e.data.size()));
     }
     void onDisconnected(Room&, const DisconnectedEvent&) override { signal(2); }
+    void onConnectionQualityChanged(Room&, const ConnectionQualityChangedEvent& e) override {
+        if (e.participant) signal(7, e.participant->identity() + "\nquality\n" + std::to_string(static_cast<int>(e.quality)));
+    }
+    void onTrackMuted(Room&, const TrackMutedEvent& e) override {
+        if (e.participant && e.publication && (e.publication->source() == TrackSource::SOURCE_MICROPHONE || e.publication->source() == TrackSource::SOURCE_CAMERA)) signal(7, e.participant->identity() + "\n" + (e.publication->source() == TrackSource::SOURCE_MICROPHONE ? "microphone" : "camera") + "\n0");
+    }
+    void onTrackUnmuted(Room&, const TrackUnmutedEvent& e) override {
+        if (e.participant && e.publication && (e.publication->source() == TrackSource::SOURCE_MICROPHONE || e.publication->source() == TrackSource::SOURCE_CAMERA)) signal(7, e.participant->identity() + "\n" + (e.publication->source() == TrackSource::SOURCE_MICROPHONE ? "microphone" : "camera") + "\n1");
+    }
     void onTrackSubscribed(Room&, const TrackSubscribedEvent& e) override {
         if (stopping || !e.track || !e.participant) return;
         const auto source = e.publication ? std::optional<TrackSource>(e.publication->source()) : e.track->source();
         const auto key = e.participant->identity() + (source == TrackSource::SOURCE_SCREENSHARE ? " · screen · " : " · camera · ") + e.track->sid();
+        if (source == TrackSource::SOURCE_MICROPHONE || source == TrackSource::SOURCE_CAMERA)
+            signal(7, e.participant->identity() + "\n" + (source == TrackSource::SOURCE_MICROPHONE ? "microphone" : "camera") + "\n1");
         const auto sid = e.track->sid();
         auto reader = std::make_shared<Reader>();
         std::lock_guard lock(readers_mutex);
@@ -108,7 +119,9 @@ public:
     void onTrackUnsubscribed(Room&, const TrackUnsubscribedEvent& e) override {
         if (!e.track) return;
         const auto source = e.publication ? std::optional<TrackSource>(e.publication->source()) : e.track->source();
-        if (e.participant) signal(5, e.participant->identity() + (source == TrackSource::SOURCE_SCREENSHARE ? " · screen · " : " · camera · ") + e.track->sid());
+        if (e.participant && e.track->kind() == TrackKind::KIND_VIDEO) signal(5, e.participant->identity() + (source == TrackSource::SOURCE_SCREENSHARE ? " · screen · " : " · camera · ") + e.track->sid());
+        if (e.participant && (source == TrackSource::SOURCE_MICROPHONE || source == TrackSource::SOURCE_CAMERA))
+            signal(7, e.participant->identity() + "\n" + (source == TrackSource::SOURCE_MICROPHONE ? "microphone" : "camera") + "\n0");
         std::lock_guard lock(readers_mutex);
         auto it = readers.find(e.track->sid());
         if (it != readers.end()) {
@@ -135,7 +148,13 @@ int fu_connect(void* handle, const char* url, const char* token) {
         // Use the established dual-PC transport for deployment compatibility.
         options.single_peer_connection = false;
         options.join_retries = 1; options.connect_timeout = std::chrono::seconds(10);
-        return static_cast<Session*>(handle)->room.connect(url, token, options) ? 0 : -1;
+        auto& session = *static_cast<Session*>(handle);
+        if (!session.room.connect(url, token, options)) return -1;
+        // A late joiner needs the existing participants, including audio-only peers.
+        for (const auto& weak : session.room.remoteParticipants()) if (auto peer = weak.lock()) {
+            session.signal(4, peer->identity()); session.signal(6, peer->identity() + "\n" + peer->name());
+        }
+        return 0;
     } catch (...) { return -1; }
 }
 int fu_publish(void* handle, int kind, int width, int height) {

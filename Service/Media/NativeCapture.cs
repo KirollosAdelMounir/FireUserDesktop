@@ -30,8 +30,28 @@ public static class NativeCapture
     public static IReadOnlyList<string> Input(string kind, MediaDevices devices, string platform, string? display, bool wayland, int screenWidth = 0, int screenHeight = 0)
     {
         var device = kind == "microphone" ? devices.Microphone : kind == "camera" ? devices.Camera : devices.Screen;
-        if (kind == "screen" && platform == "linux" && wayland)
-            throw new NotSupportedException("Screen sharing on Wayland requires a portal capture provider. Use an X11 session for this capture provider.");
+        if (kind == "screen")
+        {
+            if (wayland) throw new InvalidOperationException("Wayland screen sharing requires the system ScreenCast portal; X11 capture is not a fallback.");
+            var source = devices.ShareSource ?? throw new InvalidOperationException("Choose a screen or window before sharing.");
+            if (source.Backend is ScreenCaptureBackend.Portal or ScreenCaptureBackend.MacOS) throw new InvalidOperationException("This screen source requires its native capture provider.");
+            if (platform == "windows" && source.Backend != ScreenCaptureBackend.Windows || platform == "linux" && source.Backend != ScreenCaptureBackend.X11) throw new InvalidOperationException("The selected screen source belongs to another platform.");
+            var selected = new List<string> { "-f", platform == "windows" ? "gdigrab" : "x11grab", "-framerate", "60" };
+            if (source.Kind == ScreenShareKind.Window)
+            {
+                if (!ulong.TryParse(source.Id, out var window) || window == 0) throw new InvalidOperationException("The selected window is invalid.");
+                if (platform == "windows") selected.AddRange(new[] { "-i", "hwnd=" + window });
+                else { if (string.IsNullOrWhiteSpace(display)) throw new InvalidOperationException("No X11 display is available."); selected.AddRange(new[] { "-window_id", window.ToString(), "-i", display }); }
+            }
+            else
+            {
+                if (source.Width <= 0 || source.Height <= 0) throw new InvalidOperationException("The selected screen has no valid dimensions.");
+                selected.AddRange(new[] { "-video_size", $"{source.Width}x{source.Height}" });
+                if (platform == "windows") selected.AddRange(new[] { "-offset_x", source.X.ToString(), "-offset_y", source.Y.ToString(), "-i", "desktop" });
+                else { if (string.IsNullOrWhiteSpace(display)) throw new InvalidOperationException("No X11 display is available."); selected.AddRange(new[] { "-i", $"{display}+{source.X},{source.Y}" }); }
+            }
+            return selected;
+        }
         if (platform == "windows")
         {
             if (kind == "screen") return new[] { "-f", "gdigrab", "-framerate", "60", "-i", "desktop" };

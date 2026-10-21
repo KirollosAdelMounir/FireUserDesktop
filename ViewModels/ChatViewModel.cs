@@ -31,6 +31,7 @@ public partial class ChatViewModel : ViewModelBase
     private bool _isCurrentlyTypingNotified;
     private bool _isRefreshingRecipientList;
     private long _searchVersion;
+    private long _profileLoadVersion;
 
     [ObservableProperty]
     private UserData _currentUser;
@@ -142,6 +143,11 @@ public partial class ChatViewModel : ViewModelBase
     public string SelectedRecipientInitials => SelectedRecipient?.Initials ?? "?";
     public Bitmap? SelectedRecipientAvatar => SelectedRecipient?.Avatar;
     public string SelectedRecipientName => SelectedRecipient?.ReceiverName ?? string.Empty;
+    public string SelectedRecipientStatusLabel => SelectedRecipient?.StatusLabel ?? string.Empty;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasProfileOrganization))] private ProfileOrganizationViewModel? _profileOrganization;
+    public bool HasProfileOrganization => ProfileOrganization != null;
+    public string ProfileInitials => string.Concat(ProfileUserName.Split(' ',StringSplitOptions.RemoveEmptyEntries).Take(2).Select(x=>x[0])).ToUpperInvariant();
+    partial void OnProfileUserNameChanged(string value) => OnPropertyChanged(nameof(ProfileInitials));
     public string ProfileEmailText => ProfileData?.Email ?? "Loading...";
     public string ProfilePhoneText => ProfileData?.FormattedPhone ?? "Not specified";
     public string ProfileAddressText => ProfileData?.FormattedAddress ?? "Not specified";
@@ -170,14 +176,12 @@ public partial class ChatViewModel : ViewModelBase
         _currentUser = _authService.CurrentUser ?? new UserData();
 
         RegisterEvents();
+
     }
 
     public async Task InitializeAsync()
     {
-        await LoadMyAvatarAsync();
-
-        await _chatService.ConnectAsync();
-        await _userService.ConnectAsync();
+        await Task.WhenAll(LoadMyAvatarAsync(), _chatService.ConnectAsync(), _userService.ConnectAsync());
 
         var presence = await _chatService.GetUserPresenceAsync(CurrentUser.Id);
         if (presence != null)
@@ -189,6 +193,7 @@ public partial class ChatViewModel : ViewModelBase
     private void RegisterEvents()
     {
         _chatService.MessageReceived += OnMessageReceived;
+        _chatService.MessageUpdated += OnMessageUpdated; _chatService.MessageDeleted += OnMessageDeleted;
         _chatService.RecipientsUpdated += OnRecipientsUpdated;
         _chatService.MessageSeen += OnMessageSeen;
         _chatService.TypingReceived += OnTypingReceived;
@@ -201,6 +206,7 @@ public partial class ChatViewModel : ViewModelBase
     public void UnregisterEvents()
     {
         _chatService.MessageReceived -= OnMessageReceived;
+        _chatService.MessageUpdated -= OnMessageUpdated; _chatService.MessageDeleted -= OnMessageDeleted;
         _chatService.RecipientsUpdated -= OnRecipientsUpdated;
         _chatService.MessageSeen -= OnMessageSeen;
         _chatService.TypingReceived -= OnTypingReceived;
@@ -391,9 +397,13 @@ public partial class ChatViewModel : ViewModelBase
 
     partial void OnSelectedRecipientChanged(RecipientItemViewModel? oldValue, RecipientItemViewModel? newValue)
     {
+        if (oldValue != null) oldValue.PropertyChanged -= OnSelectedRecipientPropertyChanged;
+        if (newValue != null) newValue.PropertyChanged += OnSelectedRecipientPropertyChanged;
+        CancelMessageAction();
         OnPropertyChanged(nameof(SelectedRecipientInitials));
         OnPropertyChanged(nameof(SelectedRecipientAvatar));
         OnPropertyChanged(nameof(SelectedRecipientName));
+        OnPropertyChanged(nameof(SelectedRecipientStatusLabel));
         if (newValue != null)
             _ = LoadRecipientPresenceAsync(newValue);
 
@@ -414,20 +424,23 @@ public partial class ChatViewModel : ViewModelBase
 
         if (newValue == null) return;
         SendError = null;
-        if (newValue.IsGroup)
-        {
-            SendError = "Group and meeting chat history is not available in this desktop build yet. Direct chat and native meeting calls are available.";
-            return;
-        }
 
         // 1. Immediately mark as seen in UI and declare seen to backend/opposite user
         newValue.IsSeen = true;
-        _ = _chatService.MarkSeenAsync(newValue.ReceiverId);
+        _ = newValue.IsGroup ? _chatService.MarkConversationSeenAsync(newValue.ConversationId!) : _chatService.MarkSeenAsync(newValue.ReceiverId);
 
         // Load once; incoming messages and local activity update read receipts.
         CurrentPage = 0;
         HasMoreMessages = true;
         _ = LoadChatHistoryAsync(newValue.ReceiverId, 0);
+    }
+
+    private void OnSelectedRecipientPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(RecipientItemViewModel.StatusLabel)) OnPropertyChanged(nameof(SelectedRecipientStatusLabel));
+        if (e.PropertyName == nameof(RecipientItemViewModel.ReceiverName)) OnPropertyChanged(nameof(SelectedRecipientName));
+        if (e.PropertyName == nameof(RecipientItemViewModel.Initials)) OnPropertyChanged(nameof(SelectedRecipientInitials));
+        if (e.PropertyName == nameof(RecipientItemViewModel.Avatar)) OnPropertyChanged(nameof(SelectedRecipientAvatar));
     }
 
     private async Task LoadChatHistoryAsync(Guid receiverId, int page)
@@ -443,7 +456,8 @@ public partial class ChatViewModel : ViewModelBase
 
         try
         {
-            var history = await _chatService.GetChatHistoryAsync(receiverId, page);
+            var conversationId = SelectedRecipient?.ConversationId;
+            var history = conversationId == null ? await _chatService.GetChatHistoryAsync(receiverId, page) : await _chatService.GetConversationHistoryAsync(conversationId, page);
 
             if (history.Count < 10)
             {
@@ -455,7 +469,7 @@ public partial class ChatViewModel : ViewModelBase
 
             Dispatcher.UIThread.Post(() =>
             {
-                if (SelectedRecipient?.ReceiverId != receiverId) return;
+                if (SelectedRecipient?.ReceiverId != receiverId || SelectedRecipient.ConversationId != conversationId) return;
 
                 if (page == 0)
                 {
@@ -516,7 +530,7 @@ public partial class ChatViewModel : ViewModelBase
         {
             _isCurrentlyTypingNotified = isTyping;
             _ = _chatService.NotifyTypingAsync(SelectedRecipient.ReceiverId, isTyping);
-            _ = _chatService.MarkSeenAsync(SelectedRecipient.ReceiverId);
+            _ = SelectedRecipient.IsGroup ? _chatService.MarkConversationSeenAsync(SelectedRecipient.ConversationId!) : _chatService.MarkSeenAsync(SelectedRecipient.ReceiverId);
         }
 
         if (isTyping)
@@ -537,7 +551,6 @@ public partial class ChatViewModel : ViewModelBase
     public async Task SendMessageAsync()
     {
         if (SelectedRecipient == null || IsSendingMessage) return;
-        if (SelectedRecipient.IsGroup) { SendError = "This desktop build currently supports direct messages. Group chat support is pending."; return; }
         var text = MessageDraft?.Trim();
         var hasAttachments = PendingAttachments.Count > 0;
 
@@ -560,9 +573,22 @@ public partial class ChatViewModel : ViewModelBase
         try
         {
             var success = false;
-            if (hasAttachments)
+            if (EditingMessage != null)
             {
-                success = await _chatService.SendMessageWithAttachmentsAsync(recipientId, text, filesToSend);
+                if (hasAttachments) throw new InvalidOperationException("Remove pending uploads before editing a message.");
+                await _chatService.EditMessageAsync(EditingMessage.Message, text ?? ""); success = true;
+            }
+            else if (hasAttachments)
+            {
+                success = await _chatService.SendMessageWithAttachmentsAsync(recipientId, text, filesToSend, SelectedRecipient.ConversationId, ReplyingMessage?.Id);
+            }
+            else if (SelectedRecipient.IsGroup)
+            {
+                success = await _chatService.SendConversationAsync(SelectedRecipient.ConversationId!, text ?? "", ReplyingMessage?.Id);
+            }
+            else if (ReplyingMessage != null)
+            {
+                success = await _chatService.SendReplyAsync(recipientId, text ?? "", ReplyingMessage.Id);
             }
             else if (!string.IsNullOrEmpty(text))
             {
@@ -570,11 +596,13 @@ public partial class ChatViewModel : ViewModelBase
             }
             if (success)
             {
+                CancelMessageAction();
                 if (SelectedRecipient?.ReceiverId == recipientId && MessageDraft == originalDraft) MessageDraft = string.Empty;
                 foreach (var pending in PendingAttachments.Where(x => filesToSend.Contains(x.FilePath)).ToList()) PendingAttachments.Remove(pending);
             }
             else SendError = "Message was not sent. Your draft is retained. Check your connection and unlock chat in Media settings if a PIN is required.";
         }
+        catch (Exception ex) { SendError = ex.Message; }
         finally
         {
             IsSendingMessage = false;
@@ -603,8 +631,20 @@ public partial class ChatViewModel : ViewModelBase
     // --- Angular-Style User Profile & Quick Message Modal ---
 
     [RelayCommand]
+    private void StartChatFromSearch(UserSearchItemViewModel? item)
+    {
+        if (item == null || item.UserId == Guid.Empty || item.UserId == CurrentUser.Id) return;
+        CloseUserProfile();
+        SearchText = string.Empty;
+        StartChatWithUser(item.UserId, item.FullName, item.Avatar);
+        ClearIdentitySearch();
+        if (Workspace != null) Workspace.SelectedWorkspaceTab = 0;
+    }
+
+    [RelayCommand]
     public async Task OpenUserProfileAsync(UserSearchItemViewModel item)
     {
+        var version = ++_profileLoadVersion;
         ShowSearchDropdown = false;
         ProfileUserId = item.UserId;
         ProfileUserName = item.FullName;
@@ -618,6 +658,7 @@ public partial class ChatViewModel : ViewModelBase
         try
         {
             var profile = await _userService.GetUserProfileAsync(item.UserId);
+            if (version != _profileLoadVersion || !IsProfileOverlayOpen) return;
             ProfileData = profile;
 
             if (ProfileAvatar == null && !string.IsNullOrEmpty(profile?.ProfilePicture))
@@ -626,7 +667,8 @@ public partial class ChatViewModel : ViewModelBase
             }
             if (ProfileAvatar == null)
             {
-                ProfileAvatar = await _imageService.GetProfilePictureAsync(item.UserId);
+                var avatar = await _imageService.GetProfilePictureAsync(item.UserId);
+                if (version == _profileLoadVersion && IsProfileOverlayOpen) ProfileAvatar = avatar;
             }
         }
         catch (Exception ex)
@@ -635,13 +677,15 @@ public partial class ChatViewModel : ViewModelBase
         }
         finally
         {
-            IsLoadingProfile = false;
+            if (version == _profileLoadVersion) IsLoadingProfile = false;
         }
     }
 
     [RelayCommand]
     public void CloseUserProfile()
     {
+        ++_profileLoadVersion;
+        IsLoadingProfile = false;
         IsProfileOverlayOpen = false;
         IsImagePreviewOpen = false;
         QuickMessageText = string.Empty;
@@ -711,7 +755,7 @@ public partial class ChatViewModel : ViewModelBase
 
     public void StartChatWithUser(Guid userId, string name, Bitmap? avatar)
     {
-        var existing = Recipients.FirstOrDefault(r => r.ReceiverId == userId);
+        var existing = Recipients.FirstOrDefault(r => !r.IsGroup && r.ReceiverId == userId);
         if (existing == null)
         {
             existing = new RecipientItemViewModel
@@ -725,7 +769,6 @@ public partial class ChatViewModel : ViewModelBase
             };
             Recipients.Insert(0, existing);
             ApplyFilter();
-            _ = LoadRecipientPresenceAsync(existing);
         }
 
         SelectedRecipient = existing;
@@ -735,9 +778,9 @@ public partial class ChatViewModel : ViewModelBase
     {
         Dispatcher.UIThread.Post(() =>
         {
-            var isCurrentChat = SelectedRecipient != null &&
-                (message.Sender == SelectedRecipient.ReceiverId ||
-                 (message.Sender == CurrentUser.Id && message.Receiver == SelectedRecipient.ReceiverId));
+            var isCurrentChat = SelectedRecipient != null && (message.ConversationId != null
+                ? message.ConversationId == SelectedRecipient.ConversationId
+                : !SelectedRecipient.IsGroup && (message.Sender == SelectedRecipient.ReceiverId || (message.Sender == CurrentUser.Id && message.Receiver == SelectedRecipient.ReceiverId)));
                 var isMine = message.Sender == CurrentUser.Id;
 
             if (isCurrentChat)
@@ -748,13 +791,13 @@ public partial class ChatViewModel : ViewModelBase
 
                 if (!isMine && SelectedRecipient != null)
                 {
-                    _ = _chatService.MarkSeenAsync(SelectedRecipient.ReceiverId);
+                    _ = SelectedRecipient.IsGroup ? _chatService.MarkConversationSeenAsync(SelectedRecipient.ConversationId!) : _chatService.MarkSeenAsync(SelectedRecipient.ReceiverId);
                 }
             }
 
             // Update recipient item in sidebar
             var otherPartyId = message.Sender == CurrentUser.Id ? message.Receiver : message.Sender;
-            var recipient = Recipients.FirstOrDefault(r => r.ReceiverId == otherPartyId);
+            var recipient = Recipients.FirstOrDefault(r => message.ConversationId != null ? r.ConversationId == message.ConversationId : !r.IsGroup && r.ReceiverId == otherPartyId);
 
             if (recipient != null)
             {
@@ -801,6 +844,7 @@ public partial class ChatViewModel : ViewModelBase
     partial void OnProfileDataChanged(ViewUserProfileDto? value)
     {
         OnPropertyChanged(nameof(ProfileEmailText));
+        ProfileOrganization = value?.Organization is {} organization ? new ProfileOrganizationViewModel(organization, ProfileUserName) : null;
         OnPropertyChanged(nameof(ProfilePhoneText));
         OnPropertyChanged(nameof(ProfileAddressText));
     }
@@ -841,7 +885,7 @@ public partial class ChatViewModel : ViewModelBase
                     existing.LastMessage = dto.LastMessage;
                     existing.LastSent = dto.LastSent;
                     // If currently chatting with this user, preserve seen state
-                    if (SelectedRecipient?.ReceiverId == dto.ReceiverId)
+                    if (SelectedRecipient?.ReceiverId == dto.ReceiverId && SelectedRecipient.ConversationId == dto.ConversationId)
                     {
                         existing.IsSeen = true;
                     }
@@ -926,7 +970,7 @@ public partial class ChatViewModel : ViewModelBase
             if (recovered)
             {
                 _ = LoadRecipientsAsync();
-                if (SelectedRecipient is { IsGroup: false } selected) _ = LoadChatHistoryAsync(selected.ReceiverId, 0);
+                if (SelectedRecipient is {} selected) _ = LoadChatHistoryAsync(selected.ReceiverId, 0);
             }
         });
     }

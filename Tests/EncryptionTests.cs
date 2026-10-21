@@ -34,6 +34,16 @@ public sealed class EncryptionTests
         Assert.Equal("Hello", ChatEncryption.Open(wire, v.Recovery, v.PublicIdentity, v.Recovery.UserId).Text);
     }
     [Fact]
+    public void GroupEnvelopeRetainsAuthenticatedConversationAndZeroDirectRecipient()
+    {
+        var v = Read();
+        var payload = new ChatEncryption.Payload(1, "group-test",v.Recovery.UserId,Guid.Empty,"507f1f77bcf86cd799439011",new[] { v.Recovery.UserId },"Group message",Array.Empty<EncryptedFile>());
+        var wire = ChatEncryption.Protect(payload,v.Recovery,new Dictionary<Guid,ChatEncryption.PublicIdentity> { [v.Recovery.UserId] = v.PublicIdentity });
+        var opened = ChatEncryption.Open(wire,v.Recovery,v.PublicIdentity,v.Recovery.UserId);
+        Assert.Equal(Guid.Empty,opened.Receiver); Assert.Equal(payload.ConversationId,opened.ConversationId); Assert.Equal("Group message",opened.Text);
+        Assert.Equal(new[] { v.Recovery.UserId },opened.Audience);
+    }
+    [Fact]
     public async Task DecryptsWebCryptoAttachment_AndDoesNotAcceptModifiedTags()
     {
         var v = Read(); var encrypted = Convert.FromBase64String(v.FileCipher);

@@ -28,6 +28,8 @@ public sealed partial class NativeMediaSession : INativeMediaSession
     public bool Connected { get; private set; }
     public event Action<VideoPicture>? VideoReceived;
     public event Action<string>? ParticipantLeft;
+    public event Action<MediaParticipant>? ParticipantJoined;
+    public event Action<MediaParticipantUpdate>? ParticipantUpdated;
     public event Action<string>? Error;
     public event Action<string>? CaptureStopped;
 
@@ -39,9 +41,9 @@ public sealed partial class NativeMediaSession : INativeMediaSession
         {
             if (room != IntPtr.Zero) throw new InvalidOperationException("Leave the current call first.");
             if (!Uri.TryCreate(token.ServerUrl, UriKind.Absolute, out var url) || url.Scheme is not ("wss" or "ws")) throw new InvalidOperationException("The server returned an invalid media endpoint.");
-            if (LiveKitNative.fu_abi_version() != 3) throw new InvalidOperationException("The native LiveKit bridge version does not match this client.");
+            if (await Task.Run(LiveKitNative.fu_abi_version) != 3) throw new InvalidOperationException("The native LiveKit bridge version does not match this client.");
             lifetime = new CancellationTokenSource();
-            room = LiveKitNative.fu_create(videoCallback, audioCallback, eventCallback, dataCallback);
+            room = await Task.Run(() => LiveKitNative.fu_create(videoCallback, audioCallback, eventCallback, dataCallback));
             if (room == IntPtr.Zero) throw new InvalidOperationException("Could not create the native LiveKit room.");
             LiveKitNative.Check(await Task.Run(() => LiveKitNative.fu_connect(room, token.ServerUrl, token.Token), ct), "connection");
             ct.ThrowIfCancellationRequested(); Connected = true;
@@ -80,6 +82,8 @@ public sealed partial class NativeMediaSession : INativeMediaSession
                 CaptureStopped?.Invoke("microphone"); CaptureStopped?.Invoke("camera"); CaptureStopped?.Invoke("screen");
                 Error?.Invoke("Media disconnected. Leave and rejoin the call.");
             }
+            else if (kind == 7) { var parts = id.Split('\n', 3); if (parts.Length == 3) ParticipantUpdated?.Invoke(new MediaParticipantUpdate(parts[0], parts[1], parts[2])); }
+            else if (kind == 6) { var parts = id.Split('\n', 2); ParticipantJoined?.Invoke(new MediaParticipant(parts[0], parts.Length == 2 && !string.IsNullOrWhiteSpace(parts[1]) ? parts[1] : parts[0])); }
             else if (kind == 3) Error?.Invoke("A native media stream stopped. Leave and rejoin if it does not recover.");
         }
         catch { }
@@ -128,7 +132,7 @@ public sealed partial class NativeMediaSession : INativeMediaSession
             if (nativeKind == 0)
             {
                 var micStop = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
-                var input = new NativeAudio.Input(devices.Microphone);
+                var input = await Task.Run(() => new NativeAudio.Input(devices.Microphone), ct);
                 var mic = new Capture(input, micStop);
                 try
                 {
@@ -163,11 +167,16 @@ public sealed partial class NativeMediaSession : INativeMediaSession
                 devices = devices with { Camera = available.Cameras.FirstOrDefault()?.Id ?? "" };
                 if (string.IsNullOrEmpty(devices.Camera)) throw new InvalidOperationException(available.Warning ?? "No camera is connected. Open Media settings and refresh devices.");
             }
+            if (nativeKind == 2)
+            {
+                var selected = devices.ShareSource ?? throw new InvalidOperationException("Choose a screen or window before sharing.");
+                if (OperatingSystem.IsLinux() && ScreenSources.IsWayland && selected.Backend != ScreenCaptureBackend.Portal) throw new InvalidOperationException("Wayland requires the system sharing portal.");
+                if (selected.Backend is ScreenCaptureBackend.Portal or ScreenCaptureBackend.MacOS) { await StartNativeScreenAsync(selected, ct); return; }
+            }
             var platform = OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsMacOS() ? "macos" : "linux";
             var args = new List<string> { "-hide_banner", "-loglevel", "error", "-nostdin" };
             var width = 0; var height = 0;
-            if (kind == "screen") LiveKitNative.fu_desktop_bounds(out width, out height);
-            args.AddRange(NativeCapture.Input(kind, devices, platform, Environment.GetEnvironmentVariable("DISPLAY"), !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY")), width, height));
+            args.AddRange(NativeCapture.Input(kind, devices, platform, Environment.GetEnvironmentVariable("DISPLAY"), ScreenSources.IsWayland, width, height));
             var audio = nativeKind == 0;
             args.AddRange(audio ? new[] { "-vn", "-ac", "1", "-ar", "48000", "-f", "s16le", "pipe:1" }
                 : new[] { "-an", "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2", "-r", kind == "screen" ? "60" : "30", "-pix_fmt", "rgba", "-f", "rawvideo", "pipe:1" });
@@ -236,8 +245,9 @@ public sealed partial class NativeMediaSession : INativeMediaSession
         private readonly CancellationTokenSource stop;
         public Capture(Process process, CancellationTokenSource stop) { resource = process; this.stop = stop; stopAction = () => NativeCapture.Stop(process); }
         public Capture(NativeAudio.Input input, CancellationTokenSource stop) { resource = input; this.stop = stop; stopAction = input.Dispose; }
+        public Capture(IScreenFrameSource source, CancellationTokenSource stop) { resource = source; this.stop = stop; stopAction = source.Stop; }
         public Task Work { get; set; } = Task.CompletedTask;
-        public async Task StopAsync() { stop.Cancel(); stopAction(); await Work; }
+        public async Task StopAsync() { stop.Cancel(); await Task.Run(stopAction); await Work; }
         public void Dispose() { resource.Dispose(); stop.Dispose(); }
     }
     private sealed class Player

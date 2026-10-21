@@ -87,8 +87,22 @@ public class ChatAttachment
     }
 }
 
+public sealed record ChatSecurityStatus(bool PinEnabled, bool DeviceTrusted);
+public sealed record ChatReaction(Guid UserId, string Emoji);
+public sealed record SeenReceipt(Guid UserId, DateTime SeenAt);
+public sealed record CallSummary(string CallId, string CallType, string Status, string CallerName, bool IsActive, int? DurationSeconds);
 public class ChatMessage
 {
+    [JsonIgnore] public bool IsLocked { get; set; }
+    public string? MessageId { get; set; }
+    public bool? IsDeleted { get; set; }
+    public bool? IsEdited { get; set; }
+    public string? ReplyToMessageId { get; set; }
+    public string? ReplyToSenderName { get; set; }
+    public List<ChatReaction>? Reactions { get; set; }
+    public List<SeenReceipt>? SeenDetails { get; set; }
+    public CallSummary? CallSummary { get; set; }
+    private readonly string fallbackId = Guid.NewGuid().ToString("N");
     public string? ConversationId { get; set; }
     [JsonPropertyName("id")]
     public JsonElement IdRaw { get; set; }
@@ -98,6 +112,7 @@ public class ChatMessage
     {
         get
         {
+            if (!string.IsNullOrWhiteSpace(MessageId)) return MessageId;
             if (IdRaw.ValueKind == JsonValueKind.String)
                 return IdRaw.GetString() ?? string.Empty;
             if (IdRaw.ValueKind == JsonValueKind.Object)
@@ -107,7 +122,7 @@ public class ChatMessage
                 if (IdRaw.TryGetProperty("$oid", out var oid))
                     return oid.GetString() ?? string.Empty;
             }
-            return Guid.NewGuid().ToString();
+            return fallbackId;
         }
     }
 
@@ -138,6 +153,8 @@ public class ChatMessage
 
 public class RecipientDto
 {
+    public List<Guid> ParticipantIds { get; set; } = new();
+    public Guid? OwnerId { get; set; }
     public bool IsGroup { get; set; }
     public string? ConversationId { get; set; }
     [JsonPropertyName("receiverId")]
@@ -204,6 +221,8 @@ public class SystemUserSearch
 
 public class ChatDto
 {
+    public string? ConversationId { get; set; }
+    public string? ReplyToMessageId { get; set; }
     [JsonPropertyName("sender")]
     public Guid Sender { get; set; }
 
@@ -217,8 +236,18 @@ public class ChatDto
     public object? Attachments { get; set; }
 }
 
+public sealed record OrganizationName(string Name, Guid Id = default, string? Code = null, Guid OrganizationId = default, int? Type = null, string? CountryName = null, string? CityName = null);
+public sealed record PositionName(string Title, string? UnitName, string? OrganizationName, Guid Id = default, Guid UnitId = default, string? Code = null, string? LevelName = null, string? Grade = null);
+public sealed record ReportingManager(string DisplayName, string PositionTitle, Guid UserId = default);
+public sealed record EmployeeOrganization(OrganizationName? Organization, PositionName? Position, List<OrganizationName> UnitPath, List<PositionName> ReportingPath, List<ReportingManager>? ReportingManagers, bool ReportingManagersHasMore = false)
+{
+    public string Summary => (Organization?.Name ?? "No organization assignment") + "\n" + (Position?.Title ?? "") +
+        "\n" + string.Join(" › ", UnitPath.ConvertAll(x => x.Name)) + "\nReporting line: " + string.Join(" → ", ReportingPath.ConvertAll(x => x.Title)) +
+        "\nManagers: " + string.Join(", ", (ReportingManagers ?? new()).ConvertAll(x => x.DisplayName + " · " + x.PositionTitle));
+}
 public class ViewUserProfileDto
 {
+    [JsonIgnore] public EmployeeOrganization? Organization { get; set; }
     [JsonPropertyName("firstName")]
     public string FirstName { get; set; } = string.Empty;
 

@@ -34,6 +34,138 @@ public sealed class TestApplication : Avalonia.Application
 
 public sealed class WorkspaceTests
 {
+    [Theory]
+    [InlineData("fireuserconnect://chat/11111111-1111-1111-1111-111111111111")]
+    [InlineData("fireuserconnect:///chat/11111111-1111-1111-1111-111111111111")]
+    public void NotificationActivation_OpensStandardAndLegacyChatLinks(string link) =>
+        Assert.Equal(Guid.Parse("11111111-1111-1111-1111-111111111111"), App.ParseDeepLinkUserId(link));
+    [Theory]
+    [InlineData("https://chat/11111111-1111-1111-1111-111111111111")]
+    [InlineData("fireuserconnect://chat/not-a-user")]
+    public void NotificationActivation_RejectsUnrelatedSchemesAndInvalidUsers(string link) =>
+        Assert.Null(App.ParseDeepLinkUserId(link));
+    [AvaloniaFact]
+    public async Task MessageHistory_VirtualizesLongConversations()
+    {
+        var (vm, _, _) = Workspace(); vm.ReduceMotion = true;
+        vm.Chat.SelectedRecipient = new RecipientItemViewModel { ReceiverId = Guid.NewGuid(), ReceiverName = "Colleague" };
+        for (var i = 0; i < 1000; i++)
+            vm.Chat.Messages.Add(new ChatMessageItemViewModel(new ChatMessage { Text = "Message " + i, TimeSent = DateTime.UtcNow }, false, Substitute.For<IChatService>(), Substitute.For<IFileService>(), Substitute.For<IImageService>()));
+        var view = new ChatView { DataContext = vm.Chat };
+        var window = new Window { Width = 1100, Height = 750, Content = view };
+        window.Show(); Dispatcher.UIThread.RunJobs();
+        var list = view.FindControl<ListBox>("MessageStream")!;
+        Assert.Equal(1000, list.ItemCount);
+        var realized = list.GetVisualDescendants().OfType<ListBoxItem>().Count();
+        Assert.InRange(realized, 1, 80);
+        list.ScrollIntoView(999); Dispatcher.UIThread.RunJobs();
+        Assert.Contains(list.GetVisualDescendants().OfType<TextBlock>(), x => x.Text == "Message 999");
+        window.Close(); await vm.DisposeAsync();
+    }
+    [AvaloniaTheory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task ForegroundToast_BoundsVisibleCardsAndRendersBranding(bool reduced)
+    {
+        var owner = new Window { Width = 900, Height = 650, Content = new Grid() };
+        owner.Show(); Dispatcher.UIThread.RunJobs();
+        var opened = 0;
+        var toasts = new ToastPresenter(owner, () => reduced);
+        for (var i = 0; i < 5; i++) toasts.Show("Team update " + i, "Ready to review?", () => opened++);
+        await Task.Delay(350, TestContext.Current.CancellationToken); Dispatcher.UIThread.RunJobs();
+        var cards = owner.GetVisualDescendants().OfType<Avalonia.Controls.Notifications.NotificationCard>().Where(x => !x.IsClosing).ToArray();
+        Assert.Equal(3, cards.Length);
+        Assert.All(cards, card => Assert.Equal(reduced, card.Classes.Contains("reduced-motion")));
+        Assert.Contains(owner.GetVisualDescendants().OfType<TextBlock>(), x => x.Text == "FIRE USER");
+        using var frame = owner.CaptureRenderedFrame(); Assert.NotNull(frame);
+        var output = Environment.GetEnvironmentVariable("FIREUSER_TEST_ARTIFACTS");
+        if (output != null) { Directory.CreateDirectory(output); using var file = File.Create(Path.Combine(output, "foreground-toasts.png")); frame.Save(file, new Avalonia.Media.Imaging.PngBitmapEncoderOptions()); }
+        var openButton = cards[0].GetVisualDescendants().OfType<Button>().Single(x => x.Classes.Contains("fire-toast-action"));
+        openButton.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        openButton.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        Assert.Equal(1, opened);
+        owner.Close();
+    }
+    [AvaloniaFact]
+    public void ForegroundToast_RoutesSanitizedContentAndActivationOnUiThread()
+    {
+        var service = new UserIdentityDesktop.Service.SystemNotificationService();
+        var sender = Guid.NewGuid();
+        (string Title, string Body, Guid Sender)? observed = null;
+        service.TryShowForeground = (title, message, id) => { observed = (title, message, id); return true; };
+        Guid? activated = null; service.NotificationActivated += id => activated = id;
+        service.ShowNotification("  Team update  ", "  Ready to review?  ", sender);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(("Team update", "Ready to review?", sender), observed);
+        service.Activate(sender); Assert.Equal(sender, activated);
+    }
+    [AvaloniaFact]
+    public async Task AnnouncementPublication_UsesChosenDatesCategoryAndEmailPreference()
+    {
+        var (vm, api, _) = Workspace();
+        var person = new PersonSelection(new WorkplacePerson(Guid.NewGuid(), "Colleague")) { Selected = true }; vm.Audience.Add(person);
+        vm.AnnouncementTitle = "Maintenance"; vm.AnnouncementBody = "Scheduled update"; vm.AnnouncementCategory = "Important action";
+        vm.PublishDate = DateTimeOffset.Now.Date.AddDays(1); vm.PublishTime = new TimeSpan(10, 30, 0);
+        vm.ExpiryDate = DateTimeOffset.Now.Date.AddDays(3); vm.ExpiryTime = new TimeSpan(17, 0, 0); vm.SendAnnouncementEmail = false;
+        var expectedPublish = DateTime.SpecifyKind(vm.PublishDate.Value.Date.AddHours(10.5), DateTimeKind.Local).ToUniversalTime();
+        var expectedExpiry = DateTime.SpecifyKind(vm.ExpiryDate.Value.Date.AddHours(17), DateTimeKind.Local).ToUniversalTime();
+        await vm.PublishCommand.ExecuteAsync(null);
+        await api.Received().PublishAsync(Arg.Is<AnnouncementWrite>(x => x.Category == "Important action" && x.PublishUtc == expectedPublish && x.ExpiresUtc == expectedExpiry && !x.SendEmail && x.Targets.Single().TargetId == person.Id), Arg.Any<CancellationToken>());
+        Assert.Equal("Announcement scheduled.", vm.Feedback);
+        await vm.DisposeAsync();
+    }
+    [AvaloniaFact]
+    public async Task AnnouncementPublication_RejectsExpiryBeforePublication()
+    {
+        var (vm, api, _) = Workspace();
+        vm.Audience.Add(new PersonSelection(new WorkplacePerson(Guid.NewGuid(), "Colleague")) { Selected = true });
+        vm.AnnouncementTitle = "Update"; vm.AnnouncementBody = "Details";
+        vm.PublishDate = DateTimeOffset.Now.Date.AddDays(3); vm.ExpiryDate = DateTimeOffset.Now.Date.AddDays(1);
+        await vm.PublishCommand.ExecuteAsync(null);
+        await api.DidNotReceive().PublishAsync(Arg.Any<AnnouncementWrite>(), Arg.Any<CancellationToken>());
+        Assert.Equal("Expiry must be after publication.", vm.Feedback);
+        await vm.DisposeAsync();
+    }
+    [AvaloniaFact]
+    public void MonthCalendar_MapsOvernightEventsAndClearsStaleChips()
+    {
+        var entries = new System.Collections.ObjectModel.ObservableCollection<CalendarItem>();
+        var day = new DateTime(2026, 10, 19);
+        entries.Add(new CalendarItem(Guid.NewGuid(), "Meeting", "Overnight planning", null,
+            DateTime.SpecifyKind(day.AddHours(23), DateTimeKind.Local).ToUniversalTime(),
+            DateTime.SpecifyKind(day.AddDays(1).AddHours(1), DateTimeKind.Local).ToUniversalTime(), Guid.NewGuid(), 0, 1));
+        var view = new ScheduleCalendar { FocusDate = new DateTimeOffset(day), Items = entries };
+        var owner = new Window { Width = 1000, Height = 800, Content = view };
+        owner.Show(); Dispatcher.UIThread.RunJobs();
+        var buttons = view.GetVisualDescendants().OfType<Button>().Where(x => x.Tag is DateTime).ToArray();
+        Assert.Equal(42, buttons.Length);
+        Assert.Equal(DayOfWeek.Sunday, ((DateTime)buttons[0].Tag!).DayOfWeek);
+        foreach (var date in new[] { day, day.AddDays(1) })
+        {
+            var button = buttons.Single(x => Equals(x.Tag, date));
+            Assert.Contains(button.GetVisualDescendants().OfType<TextBlock>(), x => x.Text?.Contains("Overnight planning") == true);
+        }
+        entries.Clear(); Dispatcher.UIThread.RunJobs();
+        Assert.DoesNotContain(view.GetVisualDescendants().OfType<TextBlock>(), x => x.Text?.Contains("Overnight planning") == true);
+        owner.Close();
+    }
+    [AvaloniaFact]
+    public async Task SelectedCalendarDay_UpdatesAgendaWithoutNetworkReloadInsideMonth()
+    {
+        var (vm, api, _) = Workspace();
+        var date = DateTime.Today;
+        vm.RangeDate = new DateTimeOffset(date);
+        vm.Calendar.Add(new CalendarItem(Guid.NewGuid(), "Meeting", "Daily standup", null,
+            DateTime.SpecifyKind(date.AddHours(9), DateTimeKind.Local).ToUniversalTime(),
+            DateTime.SpecifyKind(date.AddHours(10), DateTimeKind.Local).ToUniversalTime(), Guid.NewGuid(), 0, 1));
+        Assert.Single(vm.DaySchedule);
+        api.ClearReceivedCalls();
+        var other = date.Day == 1 ? date.AddDays(1) : date.AddDays(-1);
+        vm.RangeDate = new DateTimeOffset(other); Dispatcher.UIThread.RunJobs();
+        Assert.Empty(vm.DaySchedule);
+        await api.DidNotReceive().CalendarAsync(Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
+        await vm.DisposeAsync();
+    }
+
     [AvaloniaFact]
     public async Task NavigationMotion_RapidChangesCancelWithoutLeavingInvisibleContent()
     {
@@ -41,7 +173,7 @@ public sealed class WorkspaceTests
         var view = new WorkspaceView { DataContext = vm };
         var window = new Window { Width = 1200, Height = 850, Content = view };
         window.Show(); Dispatcher.UIThread.RunJobs();
-        var tabs = view.GetVisualDescendants().OfType<TabControl>().Single();
+        var tabs = view.FindControl<TabControl>("WorkspaceTabs")!;
         tabs.SelectedIndex = 1; tabs.SelectedIndex = 2; tabs.SelectedIndex = 0;
         await Task.Delay(350); Dispatcher.UIThread.RunJobs();
         Assert.Equal(1, ((Control)((TabItem)tabs.SelectedItem!).Content!).Opacity);
@@ -72,14 +204,16 @@ public sealed class WorkspaceTests
         await vm.DisposeAsync();
     }
     [AvaloniaFact]
-    public async Task CallUsesOwnedWindow_AndClosingItLeavesAndHidesRemoteControlWithoutNativeShare()
+    public async Task CallUsesIndependentWindow_AndClosingItLeavesAndHidesRemoteControlWithoutNativeShare()
     {
         var (vm, _, media) = Workspace(); vm.ReduceMotion = true; vm.InCall = true; vm.CallTitle = "Team call";
         var view = new WorkspaceView { DataContext = vm };
         var owner = new Window { Width = 1200, Height = 850, Content = view };
         owner.Show(); Dispatcher.UIThread.RunJobs();
-        var child = Assert.Single(owner.OwnedWindows.OfType<CallWindow>());
-        Assert.Same(owner, child.Owner); Assert.False(vm.RemoteDesktopAvailable);
+        var child = Assert.IsType<CallWindow>(view.ActiveCallWindow);
+        Assert.Null(child.Owner); Assert.Empty(owner.OwnedWindows);
+        owner.WindowState = WindowState.Minimized; Assert.Equal(WindowState.Normal, child.WindowState);
+        Assert.False(vm.RemoteDesktopAvailable);
         Assert.False(child.GetVisualDescendants().OfType<Expander>().Single().IsVisible);
         using (var frame = child.CaptureRenderedFrame())
         {
@@ -191,11 +325,11 @@ public sealed class WorkspaceTests
         var view = new WorkspaceView { DataContext = vm };
         var window = new Window { Width = 1200, Height = 850, Content = view };
         window.Show(); Dispatcher.UIThread.RunJobs();
-        var tabs = view.GetVisualDescendants().OfType<TabControl>().Single();
+        var tabs = view.FindControl<TabControl>("WorkspaceTabs")!;
         for (var index = 0; index < tabs.ItemCount; index++)
         {
             tabs.SelectedIndex = index; Dispatcher.UIThread.RunJobs();
-            var expected = new[] { "Maya Hassan", "Meet face to face", "Your schedule", "Announcements", "Native media devices" }[index];
+            var expected = new[] { "Maya Hassan", "Join meeting", "Calendar", "Announcements", "Media & preferences" }[index];
             Assert.Contains(view.GetVisualDescendants().OfType<TextBlock>(), text => text.Text == expected && text.IsVisible);
             using var frame = window.CaptureRenderedFrame(); Assert.NotNull(frame);
             var output = Environment.GetEnvironmentVariable("FIREUSER_TEST_ARTIFACTS");

@@ -14,7 +14,7 @@ using UserIdentityDesktop.Core;
 using UserIdentityDesktop.Data;
 namespace UserIdentityDesktop.Service;
 
-public class ChatService : IChatService
+public partial class ChatService : IChatService
 {
     private readonly IAuthService _authService;
     private readonly IConfigurationService _configService;
@@ -28,6 +28,8 @@ public class ChatService : IChatService
     public HubConnectionState State => _hubConnection?.State ?? HubConnectionState.Disconnected;
 
     public event Action<ChatMessage>? MessageReceived;
+    public event Action<ChatMessage>? MessageUpdated;
+    public event Action<string>? MessageDeleted;
     public event Action<List<RecipientDto>>? RecipientsUpdated;
     public event Action<Guid, Guid>? MessageSeen;
     public event Action<bool, string, string>? TypingReceived;
@@ -66,15 +68,18 @@ public class ChatService : IChatService
             .Build();
 
         _hubConnection.On("WorkplaceChanged", () => WorkplaceChanged?.Invoke());
+        _hubConnection.On("ConversationsUpdated", async () => RecipientsUpdated?.Invoke(await GetRecipientsAsync()));
+        _hubConnection.On<string>("MeetingConversationChanged", _ => WorkplaceChanged?.Invoke());
         _hubConnection.On<IncomingCall>("IncomingCall", call => IncomingCallReceived?.Invoke(call));
         _hubConnection.On<CallParticipantLeft>("CallParticipantLeft", change => CallParticipantLeft?.Invoke(change));
 
         _hubConnection.On<ChatMessage>("ReceiveMessageInChat", async msg =>
         {
-            if (msg.ConversationId != null) return;
             MessageReceived?.Invoke(await _encryption.DecryptAsync(msg));
         });
 
+        _hubConnection.On<ChatMessage>("MessageUpdated", async msg => MessageUpdated?.Invoke(await _encryption.DecryptAsync(msg)));
+        _hubConnection.On<ChatMessage>("MessageDeleted", msg => MessageDeleted?.Invoke(msg.Id));
         _hubConnection.On<List<RecipientDto>>("RecipientUpdated", recipients =>
         {
             foreach (var recipient in recipients)
@@ -203,7 +208,7 @@ public class ChatService : IChatService
         }
     }
 
-    public async Task<bool> SendMessageWithAttachmentsAsync(Guid receiverId, string? text, IEnumerable<string> filePaths)
+    public async Task<bool> SendMessageWithAttachmentsAsync(Guid receiverId, string? text, IEnumerable<string> filePaths, string? conversationId = null, string? replyTo = null)
     {
         var currentUser = _authService.CurrentUser;
         if (currentUser == null)
@@ -217,8 +222,10 @@ public class ChatService : IChatService
 
             form.Add(new StringContent(currentUser.Id.ToString()), "Sender");
             form.Add(new StringContent(receiverId.ToString()), "Receiver");
+            if (conversationId != null) form.Add(new StringContent(conversationId), "ConversationId");
+            if (replyTo != null) form.Add(new StringContent(replyTo), "ReplyToMessageId");
             foreach (var path in filePaths) prepared.Add(await ChatEncryption.PrepareFileAsync(path));
-            form.Add(new StringContent(await _encryption.EncryptAsync(receiverId, text, prepared.ConvertAll(x => x.Metadata).ToArray())), "Text");
+            form.Add(new StringContent(await Protect(receiverId, conversationId, text, prepared.ConvertAll(x => x.Metadata).ToArray())), "Text");
 
             var openStreams = new List<FileStream>();
             try
@@ -502,6 +509,8 @@ public class ChatService : IChatService
         }
     }
 
+    public Task<ChatSecurityStatus> ChatSecurityAsync() => _encryption.StatusAsync();
+    public Task ChangeChatPinAsync(string action, string pin, string confirmation, string password, string otp) => _encryption.ChangePinAsync(action, pin, confirmation, password, otp);
     public Task UnlockChatAsync(string pin) => _encryption.UnlockAsync(pin);
 
     public async Task<bool> SaveAttachmentToFileAsync(Guid attachmentId, string destinationFilePath, EncryptedFile? encryption = null)

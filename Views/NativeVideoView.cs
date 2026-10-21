@@ -23,11 +23,14 @@ public sealed class NativeVideoView : Control
     private long lastMove;
     public NativeVideoView() { Focusable = true; ClipToBounds = true; }
     private WriteableBitmap? bitmap;
+    private bool frameDirty = true;
     static NativeVideoView() => FrameProperty.Changed.AddClassHandler<NativeVideoView>((view, _) => view.UpdateFrame());
-    private void UpdateFrame()
+    private void UpdateFrame() { frameDirty = true; InvalidateVisual(); }
+    private void CopyFrame()
     {
         var frame = Frame;
-        if (frame == null || frame.Width <= 0 || frame.Height <= 0 || frame.Width > 4096 || frame.Height > 4096 || frame.Rgba.Length != frame.Width * frame.Height * 4) return;
+        if (frame == null) { bitmap?.Dispose(); bitmap = null; return; }
+        if (frame.Width <= 0 || frame.Height <= 0 || frame.Width > 4096 || frame.Height > 4096 || frame.Rgba.Length != frame.Width * frame.Height * 4) return;
         if (bitmap?.PixelSize != new PixelSize(frame.Width, frame.Height))
         {
             bitmap?.Dispose();
@@ -36,11 +39,11 @@ public sealed class NativeVideoView : Control
         using (var target = bitmap.Lock())
             for (var row = 0; row < frame.Height; row++)
                 Marshal.Copy(frame.Rgba, row * frame.Width * 4, target.Address + row * target.RowBytes, frame.Width * 4);
-        InvalidateVisual();
     }
     public override void Render(DrawingContext context)
     {
         base.Render(context);
+        if (frameDirty) { frameDirty = false; CopyFrame(); }
         if (bitmap == null) return;
         var scale = Math.Min(Bounds.Width / bitmap.Size.Width, Bounds.Height / bitmap.Size.Height);
         var size = bitmap.Size * scale;

@@ -21,6 +21,10 @@ public sealed class ChatEncryption(IAuthService auth, IConfigurationService conf
     private readonly SemaphoreSlim gate = new(1, 1);
     private string? deviceToken;
     private Guid deviceOwner;
+    private sealed record CachedIdentity(Recovery Value, long Epoch);
+    private CachedIdentity? sessionIdentity;
+    private long identityEpoch;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, (Guid Owner, PublicIdentity Key, DateTime Checked)> publicKeys = new();
     public sealed record Recovery(Guid UserId, string PublicKey, string EncryptionPrivateKey, string SigningPrivateKey);
     public sealed record PublicIdentity(JsonElement EncryptionKey, JsonElement SigningKey);
     public sealed record PublicResponse(Guid UserId, string PublicKey);
@@ -28,7 +32,7 @@ public sealed class ChatEncryption(IAuthService auth, IConfigurationService conf
     public sealed record Payload(int Version, string Nonce, Guid Sender, Guid Receiver, string? ConversationId,
         Guid[] Audience, string? Text, EncryptedFile[] Files);
     public sealed record PreparedFile(string Path, EncryptedFile Metadata);
-    public void Lock() { deviceToken = null; deviceOwner = Guid.Empty; }
+    public void Lock() { Interlocked.Increment(ref identityEpoch); deviceToken = null; deviceOwner = Guid.Empty; sessionIdentity = null; publicKeys.Clear(); }
 
     private async Task<T> Request<T>(string path, object? body = null)
     {
@@ -55,15 +59,38 @@ public sealed class ChatEncryption(IAuthService auth, IConfigurationService conf
         finally { gate.Release(); }
     }
 
+    public Task<ChatSecurityStatus> StatusAsync() => Request<ChatSecurityStatus>("Status");
+    public async Task ChangePinAsync(string action, string pin, string confirmation, string password, string otp)
+    {
+        await gate.WaitAsync();
+        try
+        {
+            if (action == "Recovery") { await Request<bool>("Pin/Recovery", new { }); return; }
+            if (action == "Disable") { await Request<bool>("Pin/Disable", new { pin, password }); Lock(); return; }
+            var grant = action switch
+            {
+                "Set" => await Request<DeviceGrant>("Pin", new { pin, confirmPin = confirmation }),
+                "Reset" => await Request<DeviceGrant>("Pin/Reset", new { otp, newPin = pin }),
+                _ => throw new InvalidOperationException("Unsupported chat security action.")
+            };
+            Lock(); deviceOwner = auth.CurrentUser?.Id ?? throw new InvalidOperationException("Sign in first."); deviceToken = grant.DeviceToken;
+        }
+        finally { gate.Release(); }
+    }
+
     private async Task<Recovery> Identity(Guid owner)
     {
+        if (sessionIdentity is { } cached && cached.Value.UserId == owner && cached.Epoch == Volatile.Read(ref identityEpoch) && auth.CurrentUser?.Id == owner) return cached.Value;
+        var epoch = Volatile.Read(ref identityEpoch);
         var identity = await Request<Recovery>("Identity");
+        if (epoch != Volatile.Read(ref identityEpoch)) throw new InvalidOperationException("Chat was locked during this operation.");
         if (identity.UserId != owner || auth.CurrentUser?.Id != owner) throw new CryptographicException("The chat identity does not match this session.");
-        return identity;
+        sessionIdentity = new CachedIdentity(identity, epoch); return identity;
     }
 
     private async Task<PublicIdentity> Public(Guid id, Guid owner)
     {
+        if (publicKeys.TryGetValue(id, out var cached) && cached.Owner == owner && DateTime.UtcNow - cached.Checked < TimeSpan.FromMinutes(5)) return cached.Key;
         var response = await Request<PublicResponse>("Public/" + id);
         if (response.UserId != id) throw new CryptographicException("Unexpected chat identity.");
         var identity = JsonSerializer.Deserialize<PublicIdentity>(response.PublicKey, ApiPayload.Json)!;
@@ -80,21 +107,23 @@ public sealed class ChatEncryption(IAuthService auth, IConfigurationService conf
             if (await File.ReadAllTextAsync(path) != fingerprint) throw new CryptographicException("A chat identity changed. Verify the account identity before continuing.");
         }
         else await File.WriteAllTextAsync(path, fingerprint);
+        if (publicKeys.Count >= 128) publicKeys.Clear();
+        publicKeys[id] = (owner, identity, DateTime.UtcNow);
         return identity;
     }
 
-    public async Task<string> EncryptAsync(Guid receiver, string? text, EncryptedFile[]? files = null)
+    public async Task<string> EncryptAsync(Guid receiver, string? text, EncryptedFile[]? files = null, string? conversationId = null, Guid[]? participants = null)
     {
         await gate.WaitAsync();
         try
         {
             var owner = auth.CurrentUser?.Id ?? throw new InvalidOperationException("Sign in first.");
             var identity = await Identity(owner);
-            var audience = new[] { owner, receiver }.Distinct().OrderBy(x => x.ToString("D"), StringComparer.Ordinal).ToArray();
+            var audience = (conversationId == null ? new[] { owner, receiver } : participants ?? throw new InvalidOperationException("Conversation membership is unavailable.")).Distinct().OrderBy(x => x.ToString("D"), StringComparer.Ordinal).ToArray();
             var keys = new Dictionary<Guid, PublicIdentity>();
             foreach (var id in audience) keys[id] = await Public(id, owner);
             if (auth.CurrentUser?.Id != owner) throw new InvalidOperationException("The session changed.");
-            return Protect(new Payload(1, Guid.NewGuid().ToString("D"), owner, receiver, null, audience, text, files ?? Array.Empty<EncryptedFile>()), identity, keys);
+            return await Task.Run(() => Protect(new Payload(1, Guid.NewGuid().ToString("D"), owner, receiver, conversationId, audience, text, files ?? Array.Empty<EncryptedFile>()), identity, keys));
         }
         finally { gate.Release(); }
     }
@@ -161,9 +190,9 @@ public sealed class ChatEncryption(IAuthService auth, IConfigurationService conf
             var identity = await Identity(owner);
             // Read the signed author only after authenticating the outer encryption in Open.
             var author = await Public(message.Sender, owner);
-            var payload = Open(message.Text, identity, author, message.Sender);
-            if (payload.Receiver != message.Receiver || payload.ConversationId != null || payload.Files.Length != (message.Attachments?.Count ?? 0)) throw new CryptographicException("Message destination changed.");
-            message.Text = payload.Text;
+            var payload = await Task.Run(() => Open(message.Text, identity, author, message.Sender));
+            if (payload.Receiver != message.Receiver || payload.ConversationId != message.ConversationId || payload.Files.Length != (message.Attachments?.Count ?? 0)) throw new CryptographicException("Message destination changed.");
+            message.IsLocked = false; message.Text = payload.Text;
             for (var i = 0; i < payload.Files.Length; i++)
             {
                 var attachment = message.Attachments![i]; var metadata = payload.Files[i];
@@ -174,7 +203,7 @@ public sealed class ChatEncryption(IAuthService auth, IConfigurationService conf
             }
             return message;
         }
-        catch { message.Text = "Unable to unlock or verify this encrypted message. Unlock chat with your PIN if required."; message.Attachments = new(); return message; }
+        catch { message.IsLocked = true; message.Text = "Unable to unlock or verify this encrypted message. Unlock chat with your PIN if required."; message.Attachments = new(); return message; }
         finally { gate.Release(); }
     }
 

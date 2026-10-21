@@ -62,6 +62,8 @@ public interface IChatService
     event Action<CallParticipantLeft>? CallParticipantLeft;
     HubConnectionState State { get; }
     event Action<ChatMessage>? MessageReceived;
+    event Action<ChatMessage>? MessageUpdated;
+    event Action<string>? MessageDeleted;
     event Action<List<RecipientDto>>? RecipientsUpdated;
     event Action<Guid, Guid>? MessageSeen;
     event Action<bool, string, string>? TypingReceived;
@@ -71,9 +73,20 @@ public interface IChatService
     Task ConnectAsync();
     Task DisconnectAsync();
     Task UnlockChatAsync(string pin);
+    Task<ChatSecurityStatus> ChatSecurityAsync();
+    Task ChangeChatPinAsync(string action, string pin, string confirmation, string password, string otp);
     Task<bool> SendMessageAsync(Guid receiverId, string text);
-    Task<bool> SendMessageWithAttachmentsAsync(Guid receiverId, string? text, IEnumerable<string> filePaths);
+    Task<bool> SendConversationAsync(string conversationId, string text, string? replyTo = null);
+    Task<List<ChatMessage>> GetConversationHistoryAsync(string conversationId, int page = 0);
+    Task<List<ChatAttachment>> GetAttachmentsAsync(Guid receiverId, string? conversationId, int page);
+    Task<string> AddMembersAsync(RecipientDto recipient, List<Guid> ids);
+    Task<bool> SendReplyAsync(Guid receiverId, string text, string replyTo);
+    Task EditMessageAsync(ChatMessage message, string text);
+    Task DeleteMessageAsync(string messageId);
+    Task ReactAsync(string messageId, string emoji);
+    Task<bool> SendMessageWithAttachmentsAsync(Guid receiverId, string? text, IEnumerable<string> filePaths, string? conversationId = null, string? replyTo = null);
     Task MarkSeenAsync(Guid receiverId);
+    Task MarkConversationSeenAsync(string conversationId);
     Task NotifyTypingAsync(Guid receiverId, bool isTyping);
     Task HeartbeatAsync();
     Task ActivityAsync();

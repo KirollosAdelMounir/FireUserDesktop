@@ -16,6 +16,7 @@ namespace UserIdentityDesktop.Data;
 
 public class AuthService : IAuthService
 {
+    private static readonly SocketsHttpHandler authenticatedTransport = new() { PooledConnectionLifetime = TimeSpan.FromMinutes(5), ConnectTimeout = TimeSpan.FromSeconds(10), UseCookies = false };
     private readonly IConfigurationService _configService;
     private readonly HttpClient _httpClient;
     private Timer? _refreshTimer;
@@ -139,7 +140,7 @@ public class AuthService : IAuthService
 
     public HttpClient CreateAuthenticatedClient()
     {
-        var client = new HttpClient();
+        var client = new HttpClient(authenticatedTransport, disposeHandler: false);
         if (!string.IsNullOrEmpty(AccessToken))
         {
             client.DefaultRequestHeaders.Authorization =

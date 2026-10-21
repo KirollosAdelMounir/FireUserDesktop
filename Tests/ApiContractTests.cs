@@ -81,18 +81,45 @@ public sealed class ApiContractTests
     }
 
     [Fact]
-    public void Capture_RefusesWaylandBeforeOpeningDevice()
+    public async Task ProfileDirectory_PreservesHierarchyAndGradeMetadataFromServer()
     {
-        Assert.Throws<NotSupportedException>(() => NativeCapture.Input("screen", new("", "", ""), "linux", ":0", true));
+        var user = Guid.NewGuid(); var organization = Guid.NewGuid(); var unit = Guid.NewGuid(); var requests = new List<string>();
+        var config = Substitute.For<IConfigurationService>(); config.ServerUrl.Returns("https://identity.test"); var auth = Substitute.For<IAuthService>();
+        auth.CreateAuthenticatedClient().Returns(_ => new HttpClient(new Handler(request =>
+        {
+            requests.Add(request.RequestUri!.PathAndQuery);
+            return Task.FromResult(requests.Count == 1 ? Json(new { status = true, data = new { firstName = "Dina", lastName = "Nabil", email = "dina@example.test" } })
+                : Json(new { status = true, data = new {
+                    organization = new { id = organization, name = "Fire User", code = "FU", countryName = "Egypt", cityName = "Cairo" },
+                    position = new { id = Guid.NewGuid(), title = "Engineer", unitId = unit, unitName = "Engineering", levelName = "Professional", grade = "007" },
+                    unitPath = new[] { new { id = unit, organizationId = organization, type = 2, name = "Engineering", code = "ENG" } },
+                    reportingPath = new[] { new { id = Guid.NewGuid(), title = "Manager", unitName = "Engineering", levelName = "Management", grade = "001" } },
+                    reportingManagers = new[] { new { userId = Guid.NewGuid(), displayName = "Morgan Manager", positionTitle = "Manager" } }, reportingManagersHasMore = true
+                } }));
+        })));
+        var profile = await new UserService(auth, config).GetUserProfileAsync(user);
+        Assert.Equal(new[] { $"/api/ProfileSettings/User?userId={user}", $"/api/Organization/users/{user}" }, requests);
+        Assert.Equal("Dina Nabil", profile!.FullName); var directory = profile.Organization!;
+        Assert.Equal("Cairo", directory.Organization!.CityName); Assert.Equal("Egypt", directory.Organization.CountryName);
+        Assert.Equal(unit, directory.Position!.UnitId); Assert.Equal("007", directory.Position.Grade);
+        Assert.Equal(2, Assert.Single(directory.UnitPath).Type); Assert.Equal("001", Assert.Single(directory.ReportingPath).Grade);
+        Assert.Equal("Morgan Manager", Assert.Single(directory.ReportingManagers!).DisplayName); Assert.True(directory.ReportingManagersHasMore);
+    }
+
+    [Fact]
+    public void Capture_RefusesXWaylandFallbackEvenWhenDisplayExists()
+    {
+        Assert.Throws<InvalidOperationException>(() => NativeCapture.Input("screen", new("", "", ""), "linux", ":0", true, 1920, 1080));
+        Assert.Throws<InvalidOperationException>(() => NativeCapture.Input("screen", new("", "", ""), "linux", null, true));
     }
     [Theory]
     [InlineData("windows", "microphone", "audio=Microphone (USB)")]
     [InlineData("windows", "camera", "video=Camera (USB)")]
-    [InlineData("macos", "screen", "2:none")]
+    [InlineData("macos", "camera", "2:none")]
     [InlineData("linux", "camera", "/dev/video2")]
     public void Capture_KeepsDeviceNamesAsOneArgument(string platform, string kind, string expected)
     {
-        var devices = platform == "windows" ? new MediaDevices("Microphone (USB)", "Camera (USB)", "") : new MediaDevices("default", "/dev/video2", "2");
+        var devices = platform == "windows" ? new MediaDevices("Microphone (USB)", "Camera (USB)", "") : new MediaDevices("default", platform == "macos" ? "2" : "/dev/video2", "");
         Assert.Equal(expected, NativeCapture.Input(kind, devices, platform, ":0", false).Last());
     }
 }

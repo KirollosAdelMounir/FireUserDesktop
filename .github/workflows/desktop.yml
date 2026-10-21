@@ -20,14 +20,25 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - uses: actions/setup-python@v5
+        if: runner.os != 'Windows'
+        with:
+          python-version: '3.12'
       - name: Linux development dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxtst-dev libfontconfig1 libice6 libsm6 libssl-dev
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxtst-dev libfontconfig1 libice6 libsm6 libssl-dev python3 xvfb dbus-daemon libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 gstreamer1.0-plugins-base gstreamer1.0-pipewire
       - name: Build and smoke-test official LiveKit C++ bridge
         shell: pwsh
         run: ./scripts/build-native.ps1 -RuntimeIdentifier '${{ matrix.rid }}'
       - name: Build Avalonia client
         run: dotnet build UserIdentityDesktop.csproj -c Release
+      - name: Linux native startup smoke test
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          smoke_root=$(mktemp -d)
+          mkdir -p "$smoke_root/config" "$smoke_root/data" "$smoke_root/cache"
+          XDG_CONFIG_HOME="$smoke_root/config" XDG_DATA_HOME="$smoke_root/data" XDG_CACHE_HOME="$smoke_root/cache" timeout 30s xvfb-run -a ./bin/Release/net10.0/UserIdentityDesktop --startup-smoke-test
       - name: Test contracts, encryption, native control policy and UI
         run: dotnet test Tests/UserIdentityDesktop.Tests.csproj -c Release
       - name: Package native client

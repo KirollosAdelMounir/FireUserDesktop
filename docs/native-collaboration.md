@@ -22,7 +22,7 @@ use the .NET RTC SDK. Capture targets 1920x1080, camera 30 fps and screen 60
 fps, matching the Angular capture ceilings. Camera encoding uses the frontend's
 3 Mbps ceiling and simulcast; screen encoding uses VP8, no simulcast and the
 frontend's 6.4 Mbps maximum, prioritizing frame rate. Camera prioritizes resolution.
-Speech is mono, 48 kHz, with a 32 kbps encoding ceiling. These are ceilings;
+Speech is mono, 48 kHz, with a 32 kbps encoding ceiling. Angular Ringtone.mp3, Ringback.mp3 and NotificationSound.mp3 are packaged and decoded with miniaudio; no external audio player is launched. These are ceilings;
 device support, CPU and WebRTC congestion control determine delivered quality.
 The browser's separate two-second application bandwidth policy (1.2 Mbps start,
 720p/30 initial tier and stepped recovery/fallback) is not yet ported: the C++
@@ -30,8 +30,7 @@ SDK's public track interface does not expose equivalent live sender-parameter
 writes. Native WebRTC still adapts actual transmission below its ceiling.
 Local preview delivery is capped at 10 fps without capping transmitted frames.
 Video subscriptions use a one-frame queue, UI delivery retains the latest
-frame per tile, and bitmap allocations are reused. Up to 16 video tiles and 32
-native media readers are retained. These are rendering/resource limits, not
+frame per tile, and bitmap allocations are reused. Up to 16 video frame producers, 64 participant placeholders and 32 native media readers are retained. Bitmap copying occurs only during rendering, so a hidden gallery avoids copying while a share is focused. These are rendering/resource limits, not
 attachment upload limits. No production CPU/latency benchmark has been measured.
 
 Native calls join with devices off. Stopping a source stops its process before
@@ -45,7 +44,7 @@ also revokes remote input and releases injected keys/buttons.
 | Platform | Capture and output | Remote input | Validation status |
 | --- | --- | --- | --- |
 | Windows x64 | DirectShow device names; GDI desktop capture; native miniaudio audio | SendInput, current interactive desktop | C++ build/smoke test, managed tests and self-contained publish verified |
-| Linux x64/ARM64 | PulseAudio/PipeWire, V4L2 camera, X11 desktop capture; native miniaudio audio | XTest on the default X11 display | Source/build scripts and CI targets added; not executed on Linux in this session |
+| Linux x64/ARM64 | PulseAudio/PipeWire, V4L2 camera, X11 desktop capture; native miniaudio audio | XTest on the default X11 display | Fedora Linux build, native ABI smoke, startup window and managed/headless tests verified; actual devices and two-party network media unverified |
 | macOS Intel/Apple Silicon | AVFoundation device names/indices; default `Capture screen 0`; native miniaudio audio | CoreGraphics events, Accessibility permission, main display | Source/build scripts, `.app` manifest and CI targets added; not executed on macOS in this session |
 
 Standard builds automatically prepare checksum-pinned native and media dependencies. No FFmpeg/FFplay installation or PATH editing is needed for packaged clients. Microphone and speaker choices use miniaudio on Windows, Linux and macOS; cameras use DirectShow, V4L2 or AVFoundation discovery. Device checks are explicit, local and stop after completion. Speaker changes apply immediately; microphone/camera changes apply on the next enable. Use headphones: acoustic echo cancellation remains pending.
@@ -56,12 +55,7 @@ permission identity can depend on how it is installed/launched, so validate the
 signed packaged app and its capture executable together. No macOS permission or
 notarization success is claimed from a Windows build.
 
-Linux Wayland screen capture/control is deliberately unavailable until a
-PipeWire/desktop-portal provider is implemented. X11 sharing/control is the
-current Linux path. Remote control is offered only for the default screen
-capture configuration, so an arbitrary display/device string cannot silently
-send input to a different desktop. Windows elevated/secure desktops are not
-targeted and privilege escalation is not attempted.
+Screen sharing first opens a native screen/window picker. Wayland uses the compositor's ScreenCast portal and an approved PipeWire FD through native GStreamer; it does not fall back to XWayland. X11/Windows capture the selected monitor rectangle or window ID. macOS uses the selected ScreenCaptureKit display/window. OS permissions still apply. Scoped sources do not advertise default-desktop remote input. See [screen-sharing.md](screen-sharing.md) for runtime dependencies, cancellation/cleanup and platform validation limits. Windows elevated/secure desktops are not targeted and privilege escalation is not attempted.
 
 ## Remote-control consent and protocol
 
@@ -109,11 +103,7 @@ streamed multipart endpoint; resumable offset persistence is not yet ported.
 Encrypted image thumbnails are not yet decoded by the legacy image cache;
 authenticated attachment download is available.
 
-Failed sends retain the draft and pending files. Group/meeting entries are
-recognized and show an explicit unsupported message instead of sending a direct
-message to the empty receiver ID. Native meeting media remains available by
-meeting code and scheduled meeting link. Group encrypted chat and meeting
-history require their own protocol adapters before they can be enabled.
+Failed sends retain the draft and pending files. Direct and group chat now share encrypted sending/history, edits, deletion, replies, reactions, authenticated attachment download, attachment browsing, member addition and dedicated call cards. A current server-provided roster determines group encryption recipients. Meeting-specific encrypted chat/history still needs its separate protocol adapter. Meetings expose pending invitation review and conflict acknowledgement before acceptance, then issue media credentials only for an eligible active meeting. Private identity material stays in memory for the current lock generation; validated public keys expire after five minutes and never bypass persistent fingerprint checks.
 
 ## Real-time behavior and scheduling
 
@@ -140,7 +130,7 @@ creation currently publishes immediately for seven days to selected people.
 | Announcements | Read, acknowledge, publish to selected users | Edit/withdraw, publishing grants, organization/unit/group audience preview, scheduled publication UI |
 | Chat | Encrypted direct text and streamed encrypted attachments, PIN unlock, presence | Group chat, meeting inbox/history, PIN setup/recovery, replies/edits/reactions, encrypted thumbnails, resumable uploads |
 | Identity/workplace management | Existing sign-in and profile reads | Full profile/application/group administration, organization/directory/policies, schedules/holidays/vacations, notification management and other Angular management surfaces |
-| Packaging | Pinned SDK build, native ABI tests, matching-platform publish, macOS manifest, CI matrix | Executed Linux/macOS device tests, signed installers, notarization, Wayland portal provider, bundled media-device runtime |
+| Packaging | Pinned SDK build, native ABI tests, matching-platform publish, macOS manifest, CI matrix, portal/PipeWire provider | Executed Linux/macOS device tests, signed installers, notarization, distribution GStreamer/portal dependency installation |
 
 ## Validation
 
@@ -198,8 +188,10 @@ with publish/subscribe/data permissions. A server secret is unnecessary. Do not
 put credentials into project files, shell history, documentation or CI output.
 The test creates only synthetic tracks and never opens capture/input devices.
 
-Real device capture/playout, remote OS input and Linux/macOS execution still
-require platform integration testing. International keyboard/IME behavior also
+Real device capture/playout, remote OS input and Windows/macOS execution still
+require platform integration testing. Fedora 44 x64 native build, library loading
+and window startup are now verified; see desktop-design-and-devices.md for
+packaging details and remaining platform limits. International keyboard/IME behavior also
 needs coverage beyond the current basic key mappings. No running backend,
 database, deployment configuration or frontend source was modified for these
 checks.
