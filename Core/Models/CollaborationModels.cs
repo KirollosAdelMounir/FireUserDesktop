@@ -65,5 +65,5 @@ public sealed record VacationBalance(int Year, decimal Available, decimal Pendin
 { public string Label => $"{Year}: {Available:0.##} days available · {Pending:0.##} pending · {Approved:0.##} approved"; }
 public sealed record VacationPreview(System.Collections.Generic.List<VacationShift> Shifts, string PreviewToken, System.Collections.Generic.List<VacationBalance> Balances);
 public sealed record VacationRequest(Guid Id, Guid UserId, int State, string Reason, decimal RequestedDays, long Version)
-{ public string StateLabel => State switch { 0 => "Submitted", 1 => "Approved", 2 => "Rejected", 3 => "Withdrawn", 4 => "Cancellation requested", 5 => "Cancelled", _ => "Unknown" }; }
+{ public string StateLabel => State switch { 0 => "Pending", 1 => "Approved", 2 => "Rejected", 3 => "Withdrawn", 4 => "Cancellation requested", 5 => "Cancelled", _ => "Unknown" }; }
 public sealed record VacationPage(System.Collections.Generic.List<VacationRequest> Requests, bool HasMore, int Page);

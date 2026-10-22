@@ -40,6 +40,7 @@ public partial class PersonSelection(WorkplacePerson person) : ObservableObject
 
 public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
 {
+    public event Action<WorkspaceFormKind, string>? SubmissionCompleted;
     public ChatViewModel Chat { get; }
     private readonly ICollaborationApi api;
     private readonly INativeMediaSession media;
@@ -50,6 +51,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
     private readonly ConcurrentDictionary<string, VideoPicture> pendingFrames = new();
     private int frameScheduled;
     private bool disposed, refreshing, refreshAgain;
+    private TaskCompletionSource? refreshCompletion;
     private CancellationTokenSource? shareSelection;
     private long screenCaptureVersion;
     public Func<System.Collections.Generic.IReadOnlyList<ScreenShareSource>, Task<ScreenShareSource?>>? ChooseScreenShareSourceAsync { get; set; }
@@ -301,8 +303,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
     public async Task RefreshAsync()
     {
         if (disposed) return;
-        if (refreshing) { refreshAgain = true; return; }
-        refreshing = true;
+        if (refreshing) { refreshAgain = true; if (refreshCompletion != null) await refreshCompletion.Task; return; }
+        refreshing = true; refreshCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         try
         {
             do
@@ -328,11 +330,12 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
                     Load(api.CallingEnabledAsync(lifetime.Token), enabled => CallingEnabled = enabled),
                     Load(api.CatalogAsync(lifetime.Token), catalog => { UpdatePeople(People, catalog.People); UpdatePeople(Audience, catalog.People); ApplyCalendarPeople(catalog.People); ApplySharedCalendars(catalog.SharedCalendars); })
                 );
+                if (IsVacationTab) { vacationPage = 1; await LoadVacations(); }
             } while (refreshAgain && !disposed);
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
         catch (Exception ex) { Feedback = ex.Message; }
-        finally { refreshing = false; }
+        finally { refreshing = false; refreshCompletion?.TrySetResult(); }
     }
 
     private static void UpdatePeople(ObservableCollection<PersonSelection> target, System.Collections.Generic.List<WorkplacePerson> people)
@@ -551,7 +554,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             try { var meeting = await api.ConfigureMeetingAsync(saved.Id, lifetime.Token); MeetingCode = meeting.Locator; Feedback = "Meeting scheduled. Code: " + meeting.Locator; }
             catch (Exception ex) { Feedback = "Calendar entry saved; online meeting setup failed: " + ex.Message; }
         }
-        OnInvalidated();
+        await RefreshAsync();
+        SubmissionCompleted?.Invoke(WorkspaceFormKind.Calendar, Feedback);
     });
     public static bool SameDraft(CalendarWrite a, CalendarWrite b) =>
         a with { Participants = Array.Empty<Guid>() } == b with { Participants = Array.Empty<Guid>() } && a.Participants.SequenceEqual(b.Participants);
@@ -594,7 +598,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         if (expiry <= publish) throw new InvalidOperationException("Expiry must be after publication.");
         if (!AnnouncementCategories.Contains(AnnouncementCategory)) throw new InvalidOperationException("Choose a supported category.");
         await api.PublishAsync(new AnnouncementWrite(null, 0, AnnouncementTitle.Trim(), AnnouncementBody, AnnouncementCategory, publish, expiry, AnnouncementImportant, RequiresAcknowledgement, targets, SendAnnouncementEmail), lifetime.Token);
-        AnnouncementTitle = AnnouncementBody = ""; Feedback = publish > now ? "Announcement scheduled." : "Announcement published."; OnInvalidated();
+        AnnouncementTitle = AnnouncementBody = ""; Feedback = publish > now ? "Announcement scheduled." : "Announcement published.";
+        await RefreshAsync(); SubmissionCompleted?.Invoke(WorkspaceFormKind.Announcement, Feedback);
     });
     [RelayCommand] private Task JoinSelectedMeetingAsync() => RunMedia(async () =>
     {

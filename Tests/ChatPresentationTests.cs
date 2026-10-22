@@ -107,17 +107,20 @@ public sealed class ChatPresentationTests
         window.CloseAfterCall(); Dispatcher.UIThread.RunJobs(); await workspace.DisposeAsync();
     }
     [AvaloniaFact]
-    public async Task EditorsOpenOnDemand_KeepDrafts_AndStackAtCompactWidths()
+    public async Task EditorsOpenInOwnedWindows_KeepDrafts_AndLeaveTheCalendarFullWidth()
     {
-        var (workspace,_)=Model(); workspace.SelectedWorkspaceTab=2;
-        var view=new WorkspaceView { DataContext=workspace }; var window=new Window { Width=1360,Height=850,Content=view }; window.Show(); Dispatcher.UIThread.RunJobs();
-        var editor=view.FindControl<ScrollViewer>("CalendarEditor")!; Assert.False(editor.IsVisible);
-        var create=view.GetVisualDescendants().OfType<Button>().Single(x=>x.Content?.ToString()=="New schedule"); create.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Dispatcher.UIThread.RunJobs();
-        Assert.True(editor.IsVisible); Assert.Equal(2,view.FindControl<Grid>("CalendarLayout")!.ColumnDefinitions.Count); workspace.EventTitle="Draft preserved";
-        editor.GetVisualDescendants().OfType<Button>().First(x=>x.Classes.Contains("square")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Assert.False(editor.IsVisible); Assert.Equal("Draft preserved",workspace.EventTitle);
-        window.Width=850; create.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Dispatcher.UIThread.RunJobs(); Assert.Equal(2,Grid.GetRow(editor)); Assert.Equal(0,Grid.GetColumn(editor));
-        workspace.SelectedWorkspaceTab=3; Dispatcher.UIThread.RunJobs(); view.GetVisualDescendants().OfType<Button>().Single(x=>x.Content?.ToString()=="Compose").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Dispatcher.UIThread.RunJobs();
-        var announcement=view.FindControl<ScrollViewer>("AnnouncementEditor")!; Assert.True(announcement.IsVisible); Assert.Equal(3,Grid.GetRow(announcement));
+        var (workspace,_) = Model(); workspace.SelectedWorkspaceTab = 2;
+        var view = new WorkspaceView { DataContext = workspace }; var window = new Window { Width = 1360, Height = 850, Content = view }; window.Show(); Dispatcher.UIThread.RunJobs();
+        var create = view.GetVisualDescendants().OfType<Button>().Single(button => button.Content?.ToString() == "New schedule");
+        create.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Dispatcher.UIThread.RunJobs();
+        var editor = Assert.Single(view.EditorWindows); Assert.Same(window, editor.Owner); Assert.Equal(WorkspaceFormKind.Calendar, editor.Kind);
+        Assert.Single(view.FindControl<Grid>("CalendarLayout")!.ColumnDefinitions); workspace.EventTitle = "Draft preserved";
+        await editor.CloseAnimatedAsync(); Assert.Empty(view.EditorWindows); Assert.Equal("Draft preserved", workspace.EventTitle);
+        window.Width = 850; create.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Dispatcher.UIThread.RunJobs();
+        editor = Assert.Single(view.EditorWindows); Assert.Same(window, editor.Owner); Assert.Equal("Draft preserved", workspace.EventTitle); await editor.CloseAnimatedAsync();
+        workspace.SelectedWorkspaceTab = 3; Dispatcher.UIThread.RunJobs();
+        view.GetVisualDescendants().OfType<Button>().Single(button => button.Content?.ToString() == "Compose").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Dispatcher.UIThread.RunJobs();
+        editor = Assert.Single(view.EditorWindows); Assert.Equal(WorkspaceFormKind.Announcement, editor.Kind); await editor.CloseAnimatedAsync();
         window.Close(); await workspace.DisposeAsync();
     }
     private static void Save(Window window,string file)

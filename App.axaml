@@ -160,7 +160,7 @@
             <Setter Property="Cursor" Value="Hand" />
         </Style>
         <Style Selector="Button.secondary-btn:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="{DynamicResource ForgeSurfaceHover}" />
+            <Setter Property="Background" Value="{DynamicResource ForgePrimaryGradientSubtle}" />
         </Style>
 
         <!-- Icon Button Style -->
@@ -178,7 +178,7 @@
             </Setter>
         </Style>
         <Style Selector="Button.icon-btn:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="{DynamicResource ForgeSurfaceHover}" />
+            <Setter Property="Background" Value="{DynamicResource ForgePrimaryGradientSubtle}" />
             <Setter Property="Foreground" Value="{DynamicResource ForgePrimary}" />
             <Setter Property="Opacity" Value="0.84" />
         </Style>
@@ -196,5 +196,6 @@
             <Setter Property="BorderBrush" Value="{DynamicResource ForgeBorderFocus}" />
             <Setter Property="BorderThickness" Value="1.5" />
         </Style>
+        <StyleInclude Source="/Styles/Hover.axaml" />
     </Application.Styles>
 </Application>

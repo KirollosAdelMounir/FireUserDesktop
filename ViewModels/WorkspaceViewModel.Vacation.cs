@@ -66,6 +66,7 @@ public partial class WorkspaceViewModel
                 ?? CalendarPeople.FirstOrDefault(x => x.Id == auth.CurrentUser!.Id);
         }
         finally { applyingCalendarPeople = false; }
+        NotifyVacationActions();
         // If reporting access disappeared, fetch the fallback calendar once.
         if (selectedId != (SelectedCalendarPerson?.Id ?? auth.CurrentUser!.Id)) OnInvalidated();
     }
@@ -77,6 +78,27 @@ public partial class WorkspaceViewModel
     public System.Collections.Generic.IReadOnlyList<VacationShift> VacationShifts => VacationReview is {} review ? review.Shifts : Array.Empty<VacationShift>();
     public System.Collections.Generic.IReadOnlyList<VacationBalance> VacationBalances => VacationReview is {} review ? review.Balances : Array.Empty<VacationBalance>();
     [ObservableProperty] private VacationRequest? _selectedVacation;
+    [ObservableProperty] private bool _showVacationEditor;
+    private bool ReviewsSelectedVacation => SelectedVacation is {} request && request.UserId != auth.CurrentUser?.Id && CalendarPeople.Any(person => person.Id == request.UserId && person.ReportingDistance == 1);
+    public bool CanApproveVacation => SelectedVacation?.State == 0 && ReviewsSelectedVacation;
+    public bool CanWithdrawVacation => SelectedVacation is { State: 0 } request && request.UserId == auth.CurrentUser?.Id;
+    public bool CanRequestVacationCancellation => SelectedVacation is { State: 1 } request && request.UserId == auth.CurrentUser?.Id;
+    public bool CanConfirmVacationCancellation => SelectedVacation?.State == 4 && ReviewsSelectedVacation;
+    partial void OnSelectedVacationChanged(VacationRequest? value) => NotifyVacationActions();
+    private void NotifyVacationActions()
+    {
+        OnPropertyChanged(nameof(CanApproveVacation)); OnPropertyChanged(nameof(CanWithdrawVacation));
+        OnPropertyChanged(nameof(CanRequestVacationCancellation)); OnPropertyChanged(nameof(CanConfirmVacationCancellation));
+        DecideVacationCommand.NotifyCanExecuteChanged();
+    }
+    private bool CanDecideVacation(string? action) => action switch
+    {
+        "Approve" or "Reject" => CanApproveVacation,
+        "Withdraw" => CanWithdrawVacation,
+        "RequestCancellation" => CanRequestVacationCancellation,
+        "ConfirmCancellation" => CanConfirmVacationCancellation,
+        _ => false
+    };
     [ObservableProperty] private bool _vacationsHaveMore;
     private int vacationPage = 1;
     public ObservableCollection<VacationRequest> Vacations { get; } = new();
@@ -97,18 +119,22 @@ public partial class WorkspaceViewModel
     {
         var review = VacationReview ?? throw new InvalidOperationException("Preview your working shifts and balance first."); var draft = VacationDraft();
         await api.SubmitVacationAsync(auth.CurrentUser!.Id, draft.Start, draft.Days, VacationReason, review.PreviewToken, lifetime.Token);
-        VacationReview = null; Feedback = "Vacation request submitted."; await LoadVacations(); await RefreshAsync();
+        VacationReview = null; Feedback = "Vacation request submitted. Pending manager approval."; vacationPage = 1; if (!IsVacationTab) await LoadVacations(); await RefreshAsync();
+        SubmissionCompleted?.Invoke(WorkspaceFormKind.Vacation, "Vacation request submitted. Pending manager approval.");
     });
     [RelayCommand] private Task RefreshVacationsAsync() => Work(async () => { vacationPage = 1; await LoadVacations(); });
     [RelayCommand] private Task MoreVacationsAsync() => Work(async () => { if (VacationsHaveMore) { vacationPage++; await LoadVacations(); } });
     private async Task LoadVacations()
     {
         var page = await api.VacationsAsync(vacationPage, lifetime.Token);
+        if (page == null) return;
+        var selectedId = SelectedVacation?.Id;
         if (vacationPage == 1) Vacations.Clear(); foreach (var item in page.Requests) Vacations.Add(item); VacationsHaveMore = page.HasMore;
+        SelectedVacation = Vacations.FirstOrDefault(item => item.Id == selectedId);
     }
-    [RelayCommand] private Task DecideVacationAsync(string? action) => Work(async () =>
+    [RelayCommand(CanExecute = nameof(CanDecideVacation))] private Task DecideVacationAsync(string? action) => Work(async () =>
     {
-        if (SelectedVacation == null || action == null) throw new InvalidOperationException("Select a vacation request.");
-        await api.DecideVacationAsync(SelectedVacation, action, lifetime.Token); vacationPage = 1; await LoadVacations(); await RefreshAsync();
+        if (SelectedVacation == null || action == null || !CanDecideVacation(action)) throw new InvalidOperationException("This action is not available for the selected request.");
+        await api.DecideVacationAsync(SelectedVacation, action, lifetime.Token); vacationPage = 1; if (!IsVacationTab) await LoadVacations(); await RefreshAsync();
     });
 }

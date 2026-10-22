@@ -1,0 +1,14 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Style Selector="Button:not(.fire-btn):pointerover /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource ForgePrimaryGradientSubtle}" /></Style>
+  <Style Selector="ToggleButton:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource ForgePrimaryGradientSubtle}" /></Style>
+  <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource ForgePrimaryGradientSubtle}" /></Style>
+  <Style Selector="ComboBoxItem:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource ForgePrimaryGradientSubtle}" /></Style>
+  <Style Selector="TabItem:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource ForgePrimaryGradientSubtle}" /></Style>
+  <Style Selector="MenuItem:pointerover"><Setter Property="Background" Value="{DynamicResource ForgePrimaryGradientSubtle}" /></Style>
+  <Style Selector="MenuItem:pointerover /template/ Border#PART_LayoutRoot"><Setter Property="Background" Value="{DynamicResource ForgePrimaryGradientSubtle}" /></Style>
+  <Style Selector="ComboBox:pointerover"><Setter Property="Background" Value="{DynamicResource ForgePrimaryGradientSubtle}" /><Setter Property="BorderBrush" Value="{DynamicResource ForgePrimary}" /></Style>
+  <Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement"><Setter Property="BorderBrush" Value="{DynamicResource ForgePrimary}" /><Setter Property="Background" Value="{DynamicResource ForgePrimaryGradientSubtle}" /></Style>
+  <Style Selector="CheckBox:pointerover"><Setter Property="Background" Value="{DynamicResource ForgePrimaryGradientSubtle}" /></Style>
+  <Style Selector="RadioButton:pointerover"><Setter Property="Background" Value="{DynamicResource ForgePrimaryGradientSubtle}" /></Style>
+  <Style Selector="Thumb:pointerover"><Setter Property="Background" Value="{DynamicResource ForgePrimary}" /></Style>
+</Styles>

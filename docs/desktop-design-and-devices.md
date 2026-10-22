@@ -247,3 +247,13 @@ mail clients cannot reliably detect a running app and may block custom schemes.
 Regression evidence: `MeetingProtocol_ParsesPublicLocatorWithoutChangingCase`,
 `MeetingProtocol_RejectsNonMeetingRoutesAndCredentialParameters`, and
 `MeetingLink_SurvivesSignInAndReusesOpenWorkspaceWithoutStartingMedia`.
+
+## Creation windows and vacation approvals
+
+Calendar and Organization Calendar creation, vacation requests, and announcement composition open owned modal desktop windows. Forms retain their drafts when cancelled, size within the monitor working area, scroll long fields, and keep review/preview and submit buttons in a fixed footer. Calendar conflict review and acknowledgement and vacation shift/balance previews still bind the exact current draft. Successful persistence waits for the refreshed snapshot, including an already-running refresh, before closing the form and presenting completion. Validation or server failures leave the form open. Meeting setup failures after a successful calendar save remain explicit in the completion text.
+
+Windows completion uses the native information message box. macOS uses the system display-dialog service. Linux uses an installed Zenity or KDialog information dialog; a themed desktop dialog is the fallback if neither helper is available. The owner/session shutdown policy continues to bypass ordinary close animations. Native confirmation dialogs are not invoked in headless tests.
+
+Vacation state zero is labelled Pending. Only a current direct manager (catalog reporting distance exactly one, excluding the requester) can approve/reject a pending request or confirm a requested cancellation. The requester can withdraw a pending request or request cancellation of an approved one. Controls and command execution follow the same policy; backend authorization and manager notification routing remain authoritative. The approval queue refreshes on SignalR workplace events and reconnect snapshots, without polling.
+
+Conversation header avatars have explicit circular clipping. Interactive buttons, list items, menu items, tabs, dropdowns, inputs and selection controls use a faint orange hover treatment in both themes; primary and destructive controls retain their semantic styling.

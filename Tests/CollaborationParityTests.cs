@@ -172,11 +172,14 @@ public sealed class CollaborationParityTests
             vm.PendingMeetingInvitation = null; vm.MeetingInvitationReview = null;
             vm.SelectedWorkspaceTab = 2; Dispatcher.UIThread.RunJobs();
             vm.SelectedCalendarTab = 1; Dispatcher.UIThread.RunJobs();
+            vm.ShowVacationEditor = true; Dispatcher.UIThread.RunJobs();
+            var vacationEditor = Assert.Single(view.EditorWindows);
             var shifts = new List<VacationShift> { new(DateOnly.FromDateTime(DateTime.Today), DateTime.UtcNow, DateTime.UtcNow.AddHours(8), 1) };
             var balances = new List<VacationBalance> { new(2026, 20, 0, 0) }; vm.VacationReview = new(shifts, "preview", balances); Dispatcher.UIThread.RunJobs();
-            Assert.Contains(view.GetVisualDescendants().OfType<ItemsControl>(), x => ReferenceEquals(x.ItemsSource, shifts) && x.ItemCount == 1);
-            Assert.Contains(view.GetVisualDescendants().OfType<ItemsControl>(), x => ReferenceEquals(x.ItemsSource, balances) && x.ItemCount == 1);
+            Assert.Contains(vacationEditor.GetVisualDescendants().OfType<ItemsControl>(), x => ReferenceEquals(x.ItemsSource, shifts) && x.ItemCount == 1);
+            Assert.Contains(vacationEditor.GetVisualDescendants().OfType<ItemsControl>(), x => ReferenceEquals(x.ItemsSource, balances) && x.ItemCount == 1);
             vm.VacationReview = null; Assert.Empty(vm.VacationShifts); Assert.Empty(vm.VacationBalances);
+            await vacationEditor.CloseAnimatedAsync();
             var chatView = new ChatView { DataContext = vm.Chat }; window.Content = chatView; Dispatcher.UIThread.RunJobs();
             Assert.Empty(vm.Chat.SelectedRecipientStatusLabel);
             vm.Chat.SelectedRecipient = new() { ReceiverId = Guid.NewGuid(), ReceiverName = "Peer", Status = UserStatus.Online }; Dispatcher.UIThread.RunJobs();

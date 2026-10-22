@@ -258,6 +258,9 @@ public sealed class WorkspaceTests
         var auth = Substitute.For<IAuthService>(); auth.CurrentUser.Returns(new UserData { Id = Guid.NewGuid() });
         var chat = Substitute.For<IChatService>();
         var api = Substitute.For<ICollaborationApi>(); var media = Substitute.For<INativeMediaSession>();
+        api.CatalogAsync(Arg.Any<CancellationToken>()).Returns(new WorkplaceCatalog(new()));
+        api.CalendarAsync(Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>()).Returns(new List<CalendarItem>());
+        api.AnnouncementsAsync(Arg.Any<CancellationToken>()).Returns(new List<Announcement>());
         var chatVm = new ChatViewModel(auth, chat, Substitute.For<IUserService>(), Substitute.For<IImageService>(), Substitute.For<IFileService>(), Substitute.For<INotificationService>());
         return (new WorkspaceViewModel(chatVm, api, media, auth, chat), api, media);
     }
