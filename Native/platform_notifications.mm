@@ -7,6 +7,9 @@ static fu_notification_callback activation;
 @interface FireUserNotificationDelegate : NSObject <UNUserNotificationCenterDelegate>
 @end
 @implementation FireUserNotificationDelegate
+- (void)userNotificationCenter:(UNUserNotificationCenter*)center willPresentNotification:(UNNotification*)notification withCompletionHandler:(void (^)(UNNotificationPresentationOptions))completion {
+    completion(UNNotificationPresentationOptionList);
+}
 - (void)userNotificationCenter:(UNUserNotificationCenter*)center
     didReceiveNotificationResponse:(UNNotificationResponse*)response
     withCompletionHandler:(void (^)(void))completion {
@@ -31,13 +34,14 @@ extern "C" __attribute__((visibility("default"))) int fu_notifications_show(cons
         UNMutableNotificationContent* content = [UNMutableNotificationContent new];
         content.title = [NSString stringWithUTF8String:title];
         content.body = [NSString stringWithUTF8String:body];
+        if (@available(macOS 12.0, *)) content.interruptionLevel = UNNotificationInterruptionLevelPassive;
         // The managed native audio player uses the Angular notification tone.
         content.userInfo = @{@"sender": [NSString stringWithUTF8String:sender]};
         UNUserNotificationCenter* center = UNUserNotificationCenter.currentNotificationCenter;
         [center requestAuthorizationWithOptions:UNAuthorizationOptionAlert | UNAuthorizationOptionSound
             completionHandler:^(BOOL granted, NSError* error) {
                 if (!granted || error) return;
-                UNNotificationRequest* request = [UNNotificationRequest requestWithIdentifier:content.userInfo[@"sender"] content:content trigger:nil];
+                UNNotificationRequest* request = [UNNotificationRequest requestWithIdentifier:NSUUID.UUID.UUIDString content:content trigger:nil];
                 [center addNotificationRequest:request withCompletionHandler:nil];
             }];
     }

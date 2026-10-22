@@ -107,6 +107,8 @@ public partial class MainViewModel : ViewModelBase
             }
         }
     }
+    private string? pendingNotification;
+    public void DeferNotification(string target) => pendingNotification = target;
 
     private void OnLoginSucceeded()
     {
@@ -114,10 +116,11 @@ public partial class MainViewModel : ViewModelBase
         chatVm.LogoutRequested += OnLogoutRequested;
         _chatViewModel = chatVm;
         _chatViewModel.PropertyChanged += OnChatPropertyChanged;
-        _workspace = new WorkspaceViewModel(chatVm, _collaboration, _media, _authService, _chatService);
+        _workspace = new WorkspaceViewModel(chatVm, _collaboration, _media, _authService, _chatService, _notificationService);
         chatVm.BeforeLogoutAsync = async () => { if (_workspace != null) await _workspace.DisposeAsync(); };
         SetCurrentView(_workspace);
         OpenPendingMeeting();
+        if (pendingNotification is {} target) { pendingNotification = null; _ = _workspace.OpenNotificationTargetAsync(target); }
         _ = chatVm.InitializeAsync();
         _ = _workspace.RefreshAsync();
     }
@@ -198,7 +201,7 @@ public partial class MainViewModel : ViewModelBase
         if (string.IsNullOrWhiteSpace(name))
             name = "Conversation";
 
-        Dispatcher.UIThread.Post(() => _chatViewModel?.StartChatWithUser(userId, name, null));
+        Dispatcher.UIThread.Post(() => { if (_workspace != null) _workspace.SelectedWorkspaceTab = 0; _chatViewModel?.StartChatWithUser(userId, name, null); });
     }
 
     [RelayCommand]

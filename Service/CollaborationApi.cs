@@ -10,7 +10,7 @@ using UserIdentityDesktop.Data;
 
 namespace UserIdentityDesktop.Service;
 
-public sealed class CollaborationApi(IAuthService auth, IConfigurationService config) : ICollaborationApi
+public sealed partial class CollaborationApi(IAuthService auth, IConfigurationService config) : ICollaborationApi
 {
     private async Task<T> Send<T>(HttpMethod method, string path, object? body, CancellationToken ct)
     {
@@ -23,6 +23,10 @@ public sealed class CollaborationApi(IAuthService auth, IConfigurationService co
     private Task<T> Get<T>(string path, CancellationToken ct) => Send<T>(HttpMethod.Get, path, null, ct);
     private Task<T> Post<T>(string path, object? body, CancellationToken ct) => Send<T>(HttpMethod.Post, path, body, ct);
     private static string Segment(string value) => Uri.EscapeDataString(value);
+    public Task<NotificationPage> NotificationsAsync(string? ticks = null, Guid? beforeId = null, CancellationToken ct = default) => Get<NotificationPage>("Workplace/notifications?size=50" + (ticks == null ? "" : $"&beforeTicks={Segment(ticks)}&beforeId={beforeId}"), ct);
+    public Task<WorkplaceNotification> NotificationAsync(Guid id, CancellationToken ct = default) => Get<WorkplaceNotification>($"Workplace/notifications/{id}", ct);
+    public async Task ReadNotificationAsync(Guid id, CancellationToken ct = default) => await Post<object>($"Workplace/notifications/{id}/read", null, ct);
+    public Task<List<CalendarItem>> SharedCalendarAsync(string kind, Guid id, DateTime from, DateTime to, CancellationToken ct = default) => Get<List<CalendarItem>>($"Workplace/shared-calendar/{Segment(kind)}/{id}?from={Segment(from.ToUniversalTime().ToString("O"))}&to={Segment(to.ToUniversalTime().ToString("O"))}", ct);
     public Task<VacationPreview> PreviewVacationAsync(Guid user, DateOnly start, int days, string reason, CancellationToken ct = default) => Post<VacationPreview>("Workplace/vacations/preview", new { userId = user, startDate = start, days, reason }, ct);
     public async Task SubmitVacationAsync(Guid user, DateOnly start, int days, string reason, string token, CancellationToken ct = default) => await Post<object>("Workplace/vacations", new { userId = user, startDate = start, days, reason, previewToken = token }, ct);
     public Task<VacationPage> VacationsAsync(int page, CancellationToken ct = default) => Get<VacationPage>($"Workplace/vacations?page={page}&size=100", ct);

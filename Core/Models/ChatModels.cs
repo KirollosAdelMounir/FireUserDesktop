@@ -70,7 +70,8 @@ public class ChatAttachment
 
     [JsonIgnore]
     public bool IsAudio =>
-        !string.IsNullOrEmpty(MimeType) && MimeType.StartsWith("audio", StringComparison.OrdinalIgnoreCase);
+        (!string.IsNullOrEmpty(MimeType) && MimeType.StartsWith("audio", StringComparison.OrdinalIgnoreCase)) ||
+        System.IO.Path.GetExtension(FileName).ToLowerInvariant() is ".m4a" or ".aac" or ".mp3" or ".wav" or ".ogg" or ".oga" or ".opus" or ".weba" or ".flac";
 
     [JsonIgnore]
     public bool IsDocument => !IsImage && !IsVideo && !IsAudio;

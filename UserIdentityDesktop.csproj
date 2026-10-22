@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <AssemblyTitle>Fire User Connect</AssemblyTitle>
+    <Product>Fire User Connect</Product>
+    <Description>Fire User Connect</Description>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -41,8 +44,13 @@
     <NativeBridgeFile Condition="$([System.String]::Copy('$(NativeRuntimeIdentifier)').StartsWith('linux-'))">libfireuser_livekit.so</NativeBridgeFile>
     <NativeBridgeFile Condition="$([System.String]::Copy('$(NativeRuntimeIdentifier)').StartsWith('osx-'))">libfireuser_livekit.dylib</NativeBridgeFile>
     <NativeToolchain Condition="'$(NativeToolchain)' == ''">Auto</NativeToolchain>
-    <PowerShellExe Condition="'$(PowerShellExe)' == '' and '$(OS)' == 'Windows_NT'">powershell</PowerShellExe>
+    <PowerShellExe Condition="'$(PowerShellExe)' == '' and '$(OS)' == 'Windows_NT' and Exists('$(ProgramW6432)\PowerShell\7\pwsh.exe')">$(ProgramW6432)\PowerShell\7\pwsh.exe</PowerShellExe>
+    <PowerShellExe Condition="'$(PowerShellExe)' == '' and '$(OS)' == 'Windows_NT' and Exists('$(ProgramFiles)\PowerShell\7\pwsh.exe')">$(ProgramFiles)\PowerShell\7\pwsh.exe</PowerShellExe>
+    <PowerShellExe Condition="'$(PowerShellExe)' == '' and '$(OS)' == 'Windows_NT' and Exists('$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe')">$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe</PowerShellExe>
     <PowerShellExe Condition="'$(PowerShellExe)' == ''">pwsh</PowerShellExe>
+    <!-- An IDE/Codex parent can export a PowerShell 7 module path. Windows
+         PowerShell must load its own compatible built-in modules. -->
+    <_NativePowerShellEnvironment Condition="'$(OS)' == 'Windows_NT' and '$(PowerShellExe)' == '$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe'">PSModulePath=$(SystemRoot)\System32\WindowsPowerShell\v1.0\Modules</_NativePowerShellEnvironment>
   </PropertyGroup>
   <PropertyGroup>
     <NativeWindowsSdkArgument Condition="'$(LiveKitSdkPath)' != ''">-SdkPath &quot;$(LiveKitSdkPath)&quot;</NativeWindowsSdkArgument>
@@ -51,12 +59,12 @@
   </PropertyGroup>
   <ItemGroup><NativeBridgeInput Include="Native/*.cpp;Native/*.mm;Native/*.h;Native/CMakeLists.txt;scripts/build-native.ps1;scripts/build-native.py;scripts/native-runtimes.json" /></ItemGroup>
   <Target Name="BuildNativeBridge" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true'" Inputs="@(NativeBridgeInput)" Outputs="Native/artifacts/$(NativeRuntimeIdentifier)/$(NativeBridgeFile)">
-    <Exec Condition="'$(OS)' == 'Windows_NT'" Command="$(PowerShellExe) -NoProfile -File &quot;$(MSBuildProjectDirectory)/scripts/build-native.ps1&quot; -RuntimeIdentifier $(NativeRuntimeIdentifier) -Toolchain $(NativeToolchain) $(NativeWindowsSdkArgument)" />
+    <Exec Condition="'$(OS)' == 'Windows_NT'" EnvironmentVariables="$(_NativePowerShellEnvironment)" Command="&quot;$(PowerShellExe)&quot; -NoProfile -File &quot;$(MSBuildProjectDirectory)/scripts/build-native.ps1&quot; -RuntimeIdentifier $(NativeRuntimeIdentifier) -Toolchain $(NativeToolchain) $(NativeWindowsSdkArgument)" />
     <Exec Condition="'$(OS)' != 'Windows_NT'" Command="&quot;$(PythonExe)&quot; &quot;$(MSBuildProjectDirectory)/scripts/build-native.py&quot; --rid $(NativeRuntimeIdentifier) $(NativeSdkArgument)" />
     <Touch Files="Native/artifacts/$(NativeRuntimeIdentifier)/$(NativeBridgeFile)" AlwaysCreate="false" />
   </Target>
   <Target Name="PrepareMediaRuntime" BeforeTargets="AssignTargetPaths" Condition="'$(DesignTimeBuild)' != 'true'">
-    <Exec Condition="'$(OS)' == 'Windows_NT'" Command="$(PowerShellExe) -NoProfile -File &quot;$(MSBuildProjectDirectory)/scripts/setup-media.ps1&quot; -RuntimeIdentifier $(NativeRuntimeIdentifier)" />
+    <Exec Condition="'$(OS)' == 'Windows_NT'" EnvironmentVariables="$(_NativePowerShellEnvironment)" Command="&quot;$(PowerShellExe)&quot; -NoProfile -File &quot;$(MSBuildProjectDirectory)/scripts/setup-media.ps1&quot; -RuntimeIdentifier $(NativeRuntimeIdentifier)" />
     <Exec Condition="'$(OS)' != 'Windows_NT'" Command="&quot;$(PythonExe)&quot; &quot;$(MSBuildProjectDirectory)/scripts/build-native.py&quot; --rid $(NativeRuntimeIdentifier) --media-only" />
     <ItemGroup>
       <_NativeArtifacts Include="Native/artifacts/$(NativeRuntimeIdentifier)/*" />

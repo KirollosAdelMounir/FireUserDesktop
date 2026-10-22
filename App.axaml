@@ -100,6 +100,9 @@
     </Application.Resources>
 
     <Application.Styles>
+        <Style Selector="ContextMenu"><Setter Property="views:MenuMotion.Enabled" Value="True" /></Style>
+        <Style Selector="TabItem"><Setter Property="Transitions"><Transitions><BrushTransition Property="Foreground" Duration="0:0:0.18" /><BrushTransition Property="Background" Duration="0:0:0.18" /><BrushTransition Property="BorderBrush" Duration="0:0:0.18" /></Transitions></Setter></Style>
+        <Style Selector="TabControl"><Setter Property="PageTransition" Value="{x:Null}" /><Setter Property="views:TabMotion.Enabled" Value="True" /></Style>
         <Style Selector="Button.fire-toast-action"><Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" /><Setter Property="Padding" Value="0" /><Setter Property="HorizontalContentAlignment" Value="Stretch" /></Style>
         <Style Selector="Button.fire-toast-action:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="Transparent" /></Style>
         <Style Selector="Border.fire-toast">

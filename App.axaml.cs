@@ -66,13 +66,16 @@ public partial class App : Avalonia.Application
                 DataContext = Services.GetRequiredService<MainViewModel>(),
             };
             desktop.MainWindow = mainWindow;
-            var toasts = new ToastPresenter(mainWindow, () => Program.StartupSmokeTest || Environment.GetEnvironmentVariable("FIREUSER_REDUCED_MOTION") == "1" || (MainViewModelInstance?.CurrentView is WorkspaceViewModel { ReduceMotion: true }));
-            systemNotifications.TryShowForeground = (title, message, sender) =>
+            var toasts = new DesktopToastPresenter(mainWindow, () => Program.StartupSmokeTest || Environment.GetEnvironmentVariable("FIREUSER_REDUCED_MOTION") == "1" || MainViewModelInstance?.CurrentView is WorkspaceViewModel { ReduceMotion: true });
+            systemNotifications.ShowDesktopToast = (title, message, target) =>
             {
-                if (!mainWindow.IsActive || !mainWindow.IsVisible) return false;
-                toasts.Show(title, message, () => systemNotifications.Activate(sender));
-                return true;
+                var link = Uri.TryCreate(target, UriKind.Absolute, out var parsed) ? parsed : null;
+                var chat = link?.Host is "chat" or "conversation";
+                var workspace = MainViewModelInstance?.CurrentView as WorkspaceViewModel;
+                var peer = workspace?.Chat.Recipients.FirstOrDefault(x => link?.Host == "conversation" ? x.ConversationId == link.AbsolutePath.Trim('/') : x.ReceiverId.ToString() == link?.AbsolutePath.Trim('/'));
+                toasts.Show(title, message, () => systemNotifications.ActivateLink(target), chat, peer?.Avatar);
             };
+            systemNotifications.NotificationLinkActivated += target => _ = HandleDeepLinkAsync(target);
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             if (Program.StartupSmokeTest)
             {
@@ -86,14 +89,16 @@ public partial class App : Avalonia.Application
             }
 
             MainViewModelInstance = (MainViewModel)mainWindow.DataContext;
-            desktop.ShutdownRequested += async (_, args) =>
+            var shutdown = new ApplicationShutdown(
+                () => MainViewModelInstance.ShutdownAsync(),
+                () => mainWindow.AllowClose = true,
+                () => { _shutdownPrepared = true; desktop.Shutdown(); });
+            desktop.ShutdownRequested += (_, args) =>
             {
                 if (_shutdownPrepared) return;
-                args.Cancel = true;
-                _shutdownPrepared = true;
-                try { await MainViewModelInstance.ShutdownAsync(); }
-                catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Shutdown cleanup: " + ex.GetType().Name); }
-                finally { mainWindow.AllowClose = true; desktop.Shutdown(); }
+                // Platform shutdown/quit requests must never be vetoed. Explicit
+                // tray exit uses the bounded cleanup path below.
+                shutdown.Request(true, () => args.Cancel = true);
             };
             if (!string.IsNullOrWhiteSpace(PendingDeepLink))
                 EnqueueDeepLink(PendingDeepLink);
@@ -112,13 +117,10 @@ public partial class App : Avalonia.Application
                 mainWindow.ShowFromTray();
             };
             var exit = new NativeMenuItem { Header = "Exit" };
-            exit.Click += async (_, _) =>
+            exit.Click += (_, _) =>
             {
                 exit.IsEnabled = false;
-                try { if (MainViewModelInstance != null) await MainViewModelInstance.ShutdownAsync(); }
-                catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Shutdown cleanup: " + ex.GetType().Name); }
-                mainWindow.AllowClose = true;
-                desktop.Shutdown();
+                shutdown.Request(false, () => { });
             };
 
             var tray = new TrayIcon
@@ -202,6 +204,13 @@ public partial class App : Avalonia.Application
                 if (MainViewModelInstance == null) EnqueueDeepLink(uri);
                 else MainViewModelInstance.OpenMeeting(meetingLocator);
             });
+            return;
+        }
+        if (Uri.TryCreate(uri, UriKind.Absolute, out var notificationUri) && notificationUri.Scheme == "fireuserconnect" && notificationUri.Host is "notification" or "conversation" or "call")
+        {
+            if (MainViewModelInstance?.CurrentView is WorkspaceViewModel workspace)
+                await workspace.OpenNotificationTargetAsync(uri);
+            else MainViewModelInstance?.DeferNotification(uri);
             return;
         }
         var userId = ParseDeepLinkUserId(uri);

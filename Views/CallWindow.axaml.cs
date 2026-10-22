@@ -22,6 +22,9 @@ public partial class CallWindow : Window
     public CallWindow()
     {
         InitializeComponent();
+        var entryMotion = new SurfaceMotion();
+        Opened += (_, _) => { if (Content is Control surface) _ = entryMotion.EnterAsync(surface, SurfaceMotion.Reduced(this), SurfaceMotionKind.Popup); };
+        Closed += (_, _) => entryMotion.Cancel();
         SizeChanged += (_, _) => UpdateGalleryLayout();
         AddHandler(KeyDownEvent, PresentationKeyDown, RoutingStrategies.Tunnel);
         DataContextChanged += (_, _) =>
@@ -36,7 +39,8 @@ public partial class CallWindow : Window
         Closed += (_, _) => { if (observedModel != null) { observedModel.PropertyChanged -= OnPresentationChanged; observedModel.ChooseScreenShareSourceAsync = null; } };
         Closing += async (_, args) =>
         {
-            if (closingAfterCall || DataContext is not WorkspaceViewModel { InCall: true } vm) return;
+            if (args.CloseReason is WindowCloseReason.OSShutdown or WindowCloseReason.ApplicationShutdown or WindowCloseReason.OwnerWindowClosing) return;
+            if (closingAfterCall || DataContext is not WorkspaceViewModel { CallWindowVisible: true } vm) return;
             args.Cancel = true;
             if (leaving) return;
             leaving = true;

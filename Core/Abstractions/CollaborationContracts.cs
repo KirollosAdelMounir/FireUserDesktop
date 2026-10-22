@@ -8,6 +8,13 @@ namespace UserIdentityDesktop.Core;
 
 public interface ICollaborationApi
 {
+    event Action<string>? MeetingChanged;
+    Task WatchMeetingAsync(string locator, CancellationToken ct = default);
+    Task StopWatchingMeetingAsync();
+    Task<NotificationPage> NotificationsAsync(string? ticks = null, Guid? beforeId = null, CancellationToken ct = default);
+    Task<WorkplaceNotification> NotificationAsync(Guid id, CancellationToken ct = default);
+    Task ReadNotificationAsync(Guid id, CancellationToken ct = default);
+    Task<List<CalendarItem>> SharedCalendarAsync(string kind, Guid id, DateTime from, DateTime to, CancellationToken ct = default);
     Task<VacationPreview> PreviewVacationAsync(Guid user, DateOnly start, int days, string reason, CancellationToken ct = default);
     Task SubmitVacationAsync(Guid user, DateOnly start, int days, string reason, string token, CancellationToken ct = default);
     Task<VacationPage> VacationsAsync(int page, CancellationToken ct = default);

@@ -135,6 +135,21 @@ public partial class ChatAttachmentItemViewModel : ObservableObject
         Thumbnail = await _imageService.GetAttachmentThumbnailAsync(Attachment.Id);
     }
 
+    public async Task<string> PrepareAudioPlaybackAsync()
+    {
+        if (!IsAudio) throw new InvalidOperationException("This attachment is not audio.");
+        var path = Path.Combine(Path.GetTempPath(), "fireuser-audio-" + Guid.NewGuid().ToString("N") + Path.GetExtension(FileName));
+        var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
+        if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        using (new FileStream(path, options)) { }
+        try
+        {
+            if (!await _chatService.SaveAttachmentToFileAsync(Attachment.Id, path, Attachment.Encryption)) throw new IOException("Unable to load this audio attachment.");
+            return path;
+        }
+        catch { File.Delete(path); throw; }
+    }
+
     [RelayCommand]
     public async Task DownloadAsync()
     {
@@ -176,6 +191,8 @@ public partial class ChatMessageItemViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _seen;
+    public string ReceiptLabel => Seen ? "Seen" : "Sent";
+    partial void OnSeenChanged(bool value) => OnPropertyChanged(nameof(ReceiptLabel));
 
     public string Id => Message.Id;
     public Guid Sender => Message.Sender;

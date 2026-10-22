@@ -31,12 +31,39 @@ public partial class ChatService : IChatService
     public event Action<ChatMessage>? MessageUpdated;
     public event Action<string>? MessageDeleted;
     public event Action<List<RecipientDto>>? RecipientsUpdated;
-    public event Action<Guid, Guid>? MessageSeen;
+    public event Action<Guid, Guid, DateTime>? ReadReceiptReceived;
     public event Action<bool, string, string>? TypingReceived;
+    public event Action<ChatActivity>? ChatActivityReceived;
+    public event Action<ConversationTyping>? ConversationTypingReceived;
+    public Task NotifyConversationTypingAsync(string conversationId, bool isTyping) => _hubConnection?.InvokeAsync("ConversationTyping", conversationId, isTyping) ?? Task.CompletedTask;
+    public IDisposable BeginChatActivity(Guid? receiverId, string? conversationId, string kind) => new ActivityLease(this, receiverId, conversationId, kind);
+    private sealed class ActivityLease : IDisposable
+    {
+        private readonly ChatService owner;
+        private readonly Guid? receiver;
+        private readonly string? conversation;
+        private readonly string kind;
+        private readonly Timer timer;
+        private int stopped;
+        public ActivityLease(ChatService owner, Guid? receiver, string? conversation, string kind)
+        {
+            this.owner = owner; this.receiver = receiver; this.conversation = conversation; this.kind = kind;
+            timer = new Timer(_ => Send(true), null, 0, 3000);
+        }
+        private async void Send(bool active)
+        {
+            if (active && Volatile.Read(ref stopped) != 0) return;
+            try { if (owner._hubConnection?.State == HubConnectionState.Connected) await owner._hubConnection.InvokeAsync("NotifyChatActivity", new { ReceiverId = receiver, ConversationId = conversation, Kind = kind, Active = active }); }
+            catch { /* Activity is ephemeral; a lost connection must not interrupt sending. */ }
+        }
+        public void Dispose() { if (Interlocked.Exchange(ref stopped, 1) == 0) { timer.Dispose(); Send(false); } }
+    }
     public event Action<UserPresence>? UserPresenceChanged;
     public event Action<Guid, UserStatus>? UserStatusChanged;
     public event Action<HubConnectionState>? ConnectionStateChanged;
     public event Action? WorkplaceChanged;
+    public event Action<Guid>? WorkplaceNotificationChanged;
+    public event Action? WorkplaceNotificationsRead;
     public event Action<IncomingCall>? IncomingCallReceived;
     public event Action<CallParticipantLeft>? CallParticipantLeft;
 
@@ -66,8 +93,12 @@ public partial class ChatService : IChatService
             })
             .WithAutomaticReconnect()
             .Build();
+        _hubConnection.On<Guid>("WorkplaceNotificationChanged", id => WorkplaceNotificationChanged?.Invoke(id));
+        _hubConnection.On("WorkplaceNotificationsRead", () => WorkplaceNotificationsRead?.Invoke());
 
         _hubConnection.On("WorkplaceChanged", () => WorkplaceChanged?.Invoke());
+        _hubConnection.On<ChatActivity>("ChatActivity", activity => ChatActivityReceived?.Invoke(activity));
+        _hubConnection.On<ConversationTyping>("ConversationTyping", typing => ConversationTypingReceived?.Invoke(typing));
         _hubConnection.On("ConversationsUpdated", async () => RecipientsUpdated?.Invoke(await GetRecipientsAsync()));
         _hubConnection.On<string>("MeetingConversationChanged", _ => WorkplaceChanged?.Invoke());
         _hubConnection.On<IncomingCall>("IncomingCall", call => IncomingCallReceived?.Invoke(call));
@@ -87,7 +118,7 @@ public partial class ChatService : IChatService
             RecipientsUpdated?.Invoke(recipients);
         });
 
-        _hubConnection.On<JsonElement, JsonElement>("MessageSeen", (senderEl, receiverEl) =>
+        _hubConnection.On<JsonElement, JsonElement, DateTime>("MessageSeen", (senderEl, receiverEl, through) =>
         {
             var senderStr = senderEl.ValueKind == JsonValueKind.String ? senderEl.GetString() : senderEl.ToString();
             var receiverStr = receiverEl.ValueKind == JsonValueKind.String ? receiverEl.GetString() : receiverEl.ToString();
@@ -95,7 +126,7 @@ public partial class ChatService : IChatService
             Guid.TryParse(senderStr, out var senderId);
             Guid.TryParse(receiverStr, out var receiverId);
 
-            MessageSeen?.Invoke(senderId, receiverId);
+            ReadReceiptReceived?.Invoke(senderId, receiverId, through);
         });
 
         _hubConnection.On<bool, JsonElement, JsonElement>("IsTyping", (isTyping, senderEl, receiverEl) =>
@@ -545,7 +576,7 @@ public partial class ChatService : IChatService
         }
     }
 
-    private static string GetMimeType(string extension) => extension switch
+    internal static string GetMimeType(string extension) => extension switch
     {
         ".png" => "image/png",
         ".jpg" or ".jpeg" => "image/jpeg",
@@ -556,6 +587,11 @@ public partial class ChatService : IChatService
         ".webm" => "video/webm",
         ".mp3" => "audio/mpeg",
         ".wav" => "audio/wav",
+        ".m4a" => "audio/mp4",
+        ".aac" => "audio/aac",
+        ".ogg" or ".oga" or ".opus" => "audio/ogg",
+        ".weba" => "audio/webm",
+        ".flac" => "audio/flac",
         ".pdf" => "application/pdf",
         ".zip" => "application/zip",
         ".txt" => "text/plain",

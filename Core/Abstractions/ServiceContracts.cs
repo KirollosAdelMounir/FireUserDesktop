@@ -58,6 +58,8 @@ public interface IImageService
 public interface IChatService
 {
     event Action? WorkplaceChanged;
+    event Action<Guid>? WorkplaceNotificationChanged;
+    event Action? WorkplaceNotificationsRead;
     event Action<IncomingCall>? IncomingCallReceived;
     event Action<CallParticipantLeft>? CallParticipantLeft;
     HubConnectionState State { get; }
@@ -65,8 +67,12 @@ public interface IChatService
     event Action<ChatMessage>? MessageUpdated;
     event Action<string>? MessageDeleted;
     event Action<List<RecipientDto>>? RecipientsUpdated;
-    event Action<Guid, Guid>? MessageSeen;
+    event Action<Guid, Guid, DateTime>? ReadReceiptReceived;
     event Action<bool, string, string>? TypingReceived;
+    event Action<ChatActivity>? ChatActivityReceived;
+    event Action<ConversationTyping>? ConversationTypingReceived;
+    Task NotifyConversationTypingAsync(string conversationId, bool isTyping);
+    IDisposable BeginChatActivity(Guid? receiverId, string? conversationId, string kind);
     event Action<UserPresence>? UserPresenceChanged;
     event Action<Guid, UserStatus>? UserStatusChanged;
     event Action<HubConnectionState>? ConnectionStateChanged;
@@ -109,6 +115,10 @@ public interface IUserService
 
 public interface INotificationService
 {
+    event Action<DesktopNotification>? NotificationPosted;
+    event Action<string>? NotificationLinkActivated;
+    void ShowNotification(string title, string message, string target);
+    void ActivateLink(string target);
     event Action<Guid>? NotificationActivated;
     void ShowNotification(string title, string message, Guid senderId);
 }

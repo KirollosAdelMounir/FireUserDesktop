@@ -15,19 +15,24 @@ namespace UserIdentityDesktop.Views;
 
 public partial class WorkspaceView : UserControl
 {
-    private CancellationTokenSource? animation;
     private WorkspaceViewModel? model;
     private CallWindow? callWindow;
     internal CallWindow? ActiveCallWindow => callWindow;
     private IncomingCallWindow? incomingWindow;
+    private readonly SurfaceMotion calendarMotion = new();
+    private int calendarGeneration;
     public WorkspaceView()
     {
         InitializeComponent();
-        var railExit = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(180) };
-        NavigationRail.PointerEntered += (_, _) => { railExit.Stop(); NavigationRail.Classes.Add("expanded"); };
-        NavigationRail.PointerExited += (_, _) => railExit.Start();
-        railExit.Tick += (_, _) => { railExit.Stop(); if (!NavigationRail.IsPointerOver) NavigationRail.Classes.Remove("expanded"); };
+        CalendarTabs.SelectionChanged += (_, e) => { if (e.Source == CalendarTabs) AnimateCalendarTab(); };
+        CalendarTabs.SizeChanged += (_, _) => UpdateCalendarFocus();
+        NavigationRail.PointerEntered += (_, _) => NavigationRail.Classes.Add("expanded");
+        NavigationRail.PointerExited += (_, _) => NavigationRail.Classes.Remove("expanded");
+        NavigationRail.GotFocus += (_, e) => { if (e.NavigationMethod is Avalonia.Input.NavigationMethod.Tab or Avalonia.Input.NavigationMethod.Directional) NavigationRail.Classes.Add("expanded"); };
+        NavigationRail.LostFocus += (_, _) => { if (!NavigationRail.IsPointerOver) NavigationRail.Classes.Remove("expanded"); };
         SizeChanged += (_, _) => UpdateLayoutMode();
+        CalendarEditor.PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty) UpdateLayoutMode(); };
+        AnnouncementEditor.PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty) UpdateLayoutMode(); };
         MonthCalendar.CreateScheduleRequested += (day, time) =>
         {
             if (model == null) return;
@@ -40,7 +45,6 @@ public partial class WorkspaceView : UserControl
             if (e.Source != WorkspaceTabs) return;
             foreach (var button in NavigationRail.GetVisualDescendants().OfType<Button>())
                 button.Classes.Set("active", int.TryParse(button.Tag?.ToString(), out var index) && index == WorkspaceTabs.SelectedIndex);
-            if (WorkspaceTabs.SelectedItem is TabItem { Content: Control content }) Animate(content);
         };
         DataContextChanged += (_, _) =>
         {
@@ -50,15 +54,34 @@ public partial class WorkspaceView : UserControl
             UpdateMotion(); UpdateLayoutMode();
         };
     }
+    private void UpdateCalendarFocus()
+    {
+        if (CalendarTabs.SelectedItem is not TabItem item || item.TranslatePoint(new Point(), CalendarTabs) is not { } point) return;
+        if (SurfaceMotion.Reduced(this)) CalendarTabFocus.Transitions = null;
+        else CalendarTabFocus.ClearValue(TransitionsProperty);
+        CalendarTabFocus.Width = item.Bounds.Width;
+        CalendarTabFocus.Margin = new Thickness(point.X, 0, 0, 0);
+    }
+    private void AnimateCalendarTab()
+    {
+        calendarMotion.Cancel();
+        var generation = ++calendarGeneration;
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (generation != calendarGeneration || !this.IsAttachedToVisualTree()) return;
+            UpdateCalendarFocus();
+            _ = calendarMotion.EnterAsync(model?.IsVacationTab == true ? VacationPage : CalendarBrowser, SurfaceMotion.Reduced(this));
+        }, Avalonia.Threading.DispatcherPriority.Loaded);
+    }
     private void UpdateLayoutMode()
     {
         var compact = Bounds.Width < 1080;
-        CalendarLayout.ColumnDefinitions = new ColumnDefinitions(compact || model?.ShowCalendarEditor != true ? "*" : "*,340");
-        CalendarLayout.RowDefinitions = new RowDefinitions(compact ? "*,Auto" : "*");
-        Grid.SetColumn(CalendarEditor, compact ? 0 : 1); Grid.SetRow(CalendarEditor, compact ? 1 : 0);
+        CalendarLayout.ColumnDefinitions = new ColumnDefinitions(compact || !CalendarEditor.IsVisible ? "*" : "*,340");
+        CalendarLayout.RowDefinitions = new RowDefinitions(compact ? "Auto,*,Auto" : "Auto,*");
+        Grid.SetColumn(CalendarEditor, compact ? 0 : 1); Grid.SetRow(CalendarEditor, compact ? 2 : 1);
         CalendarEditor.MaxHeight = compact ? 260 : double.PositiveInfinity;
         CalendarEditor.Margin = compact ? new Thickness(0, 16, 0, 0) : new Thickness(0);
-        AnnouncementsLayout.ColumnDefinitions = new ColumnDefinitions(compact || model?.ShowAnnouncementEditor != true ? "*" : "*,340");
+        AnnouncementsLayout.ColumnDefinitions = new ColumnDefinitions(compact || !AnnouncementEditor.IsVisible ? "*" : "*,340");
         AnnouncementsLayout.RowDefinitions = new RowDefinitions(compact ? "Auto,*,Auto,Auto" : "Auto,*,Auto");
         Grid.SetColumn(AnnouncementEditor, compact ? 0 : 1); Grid.SetRow(AnnouncementEditor, compact ? 3 : 0);
         Grid.SetRowSpan(AnnouncementEditor, compact ? 1 : 3);
@@ -84,13 +107,13 @@ public partial class WorkspaceView : UserControl
     private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(WorkspaceViewModel.ShowCalendarEditor) or nameof(WorkspaceViewModel.ShowAnnouncementEditor)) UpdateLayoutMode();
-        if (e.PropertyName == nameof(WorkspaceViewModel.InCall)) UpdateCallWindow();
+        if (e.PropertyName is nameof(WorkspaceViewModel.InCall) or nameof(WorkspaceViewModel.ConnectingCall)) UpdateCallWindow();
         if (e.PropertyName == nameof(WorkspaceViewModel.Incoming))
         {
             incomingWindow?.Close(); incomingWindow = null;
             if (model?.Incoming != null) { incomingWindow = new IncomingCallWindow(model); incomingWindow.Show(); }
         }
-        if (e.PropertyName == nameof(WorkspaceViewModel.ReduceMotion)) { if (model?.ReduceMotion == true) animation?.Cancel(); UpdateMotion(); }
+        if (e.PropertyName == nameof(WorkspaceViewModel.ReduceMotion)) { if (model?.ReduceMotion == true) foreach (var tabs in this.GetVisualDescendants().OfType<TabControl>()) TabMotion.Stop(tabs); UpdateMotion(); }
     }
     private void UpdateMotion()
     {
@@ -99,7 +122,7 @@ public partial class WorkspaceView : UserControl
     }
     private void UpdateCallWindow()
     {
-        if (model?.InCall == true)
+        if (model?.CallWindowVisible == true)
         {
             if (callWindow != null) { callWindow.Activate(); return; }
             if (TopLevel.GetTopLevel(this) is not Window owner) return;
@@ -115,27 +138,10 @@ public partial class WorkspaceView : UserControl
         }
         else callWindow?.CloseAfterCall();
     }
-    private async void Animate(Control content)
-    {
-        animation?.Cancel(); animation?.Dispose(); animation = null;
-        if (model?.ReduceMotion != false) return;
-        var stop = new CancellationTokenSource(); animation = stop;
-        var fade = new Animation
-        {
-            Duration = TimeSpan.FromMilliseconds(240),
-            Easing = new AngularNavigationEasing(),
-            Children =
-            {
-                new KeyFrame { Cue = new Cue(0), Setters = { new Setter(OpacityProperty, 0d), new Setter(Avalonia.Media.TranslateTransform.YProperty, 10d) } },
-                new KeyFrame { Cue = new Cue(1), Setters = { new Setter(OpacityProperty, 1d), new Setter(Avalonia.Media.TranslateTransform.YProperty, 0d) } }
-            }
-        };
-        try { await fade.RunAsync(content, stop.Token); }
-        catch (OperationCanceledException) { }
-    }
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
-        animation?.Cancel(); animation?.Dispose(); animation = null;
+        foreach (var tabs in this.GetVisualDescendants().OfType<TabControl>()) TabMotion.Stop(tabs);
+        calendarGeneration++; calendarMotion.Cancel();
         incomingWindow?.Close(); incomingWindow = null;
         if (model != null) model.PropertyChanged -= OnModelChanged;
         base.OnDetachedFromVisualTree(e);
@@ -145,5 +151,6 @@ public partial class WorkspaceView : UserControl
         base.OnAttachedToVisualTree(e);
         if (model != null) { model.PropertyChanged -= OnModelChanged; model.PropertyChanged += OnModelChanged; }
         Avalonia.Threading.Dispatcher.UIThread.Post(UpdateCallWindow);
+        Avalonia.Threading.Dispatcher.UIThread.Post(UpdateCalendarFocus, Avalonia.Threading.DispatcherPriority.Loaded);
     }
 }

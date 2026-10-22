@@ -171,7 +171,7 @@ public sealed class CollaborationParityTests
             Assert.Contains(view.GetVisualDescendants().OfType<ItemsControl>(), x => ReferenceEquals(x.ItemsSource, vm.MeetingInvitationConflicts) && x.ItemCount == 1);
             vm.PendingMeetingInvitation = null; vm.MeetingInvitationReview = null;
             vm.SelectedWorkspaceTab = 2; Dispatcher.UIThread.RunJobs();
-            view.GetVisualDescendants().OfType<Expander>().Single(x => x.Header?.ToString() == "Vacations · requests and approvals").IsExpanded = true; Dispatcher.UIThread.RunJobs();
+            vm.SelectedCalendarTab = 1; Dispatcher.UIThread.RunJobs();
             var shifts = new List<VacationShift> { new(DateOnly.FromDateTime(DateTime.Today), DateTime.UtcNow, DateTime.UtcNow.AddHours(8), 1) };
             var balances = new List<VacationBalance> { new(2026, 20, 0, 0) }; vm.VacationReview = new(shifts, "preview", balances); Dispatcher.UIThread.RunJobs();
             Assert.Contains(view.GetVisualDescendants().OfType<ItemsControl>(), x => ReferenceEquals(x.ItemsSource, shifts) && x.ItemCount == 1);

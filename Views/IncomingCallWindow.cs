@@ -13,7 +13,7 @@ public sealed partial class IncomingCallWindow : Window
 {
     private readonly WorkspaceViewModel? model;
     private readonly string? callId;
-    public IncomingCallWindow() => InitializeComponent();
+    public IncomingCallWindow() { InitializeComponent(); _ = new WindowMotion(this); }
     public IncomingCallWindow(WorkspaceViewModel vm) : this()
     {
         model = vm; callId = vm.Incoming!.CallId;
@@ -23,8 +23,10 @@ public sealed partial class IncomingCallWindow : Window
         {
             if (vm.Incoming?.CallId != callId) { Close(); return; }
             answer.IsEnabled = decline.IsEnabled = false;
+            answer.Content = "Connecting…";
+            CallAlertError.Text = "Connecting to the call. Please wait…"; CallAlertError.IsVisible = true;
             await vm.AcceptCommand.ExecuteAsync(null);
-            if (vm.Incoming?.CallId == callId) { answer.IsEnabled = decline.IsEnabled = true; CallAlertError.Text = vm.Feedback; CallAlertError.IsVisible = !string.IsNullOrWhiteSpace(vm.Feedback); }
+            if (vm.Incoming?.CallId == callId) { answer.IsEnabled = decline.IsEnabled = true; answer.Content = "Answer"; CallAlertError.Text = vm.Feedback; CallAlertError.IsVisible = !string.IsNullOrWhiteSpace(vm.Feedback); }
         };
         decline.Click += async (_, _) => { if (vm.Incoming?.CallId == callId) await vm.DeclineCommand.ExecuteAsync(null); };
         void PlaceAlert()

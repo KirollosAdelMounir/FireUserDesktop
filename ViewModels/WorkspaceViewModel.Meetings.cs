@@ -6,6 +6,17 @@ using UserIdentityDesktop.Core.Models;
 namespace UserIdentityDesktop.ViewModels;
 public partial class WorkspaceViewModel
 {
+    private void OnMeetingChanged(string locator) => Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
+    {
+        if (disposed || meetingLocator != locator) return;
+        try
+        {
+            var detail = await api.MeetingAsync(locator, lifetime.Token);
+            if (detail.State is 2 or 3) await LeaveAsync();
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
+        catch (Exception ex) { Feedback = ex.Message; }
+    });
     [ObservableProperty, NotifyPropertyChangedFor(nameof(MeetingInvitationTitle))] private MeetingDetail? _pendingMeetingInvitation;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(MeetingInvitationConflicts))] private CalendarReview? _meetingInvitationReview;
     public string MeetingInvitationTitle => PendingMeetingInvitation?.Title ?? "";

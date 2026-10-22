@@ -22,7 +22,16 @@ public sealed record CalendarConflict(Guid UserId, string Kind, string Title, Da
 public sealed record CalendarReview(List<CalendarConflict> Conflicts, string Token);
 public sealed record SavedCalendar(Guid Id, long Version);
 public sealed record WorkplacePerson(Guid Id, string Name, Guid? OrganizationId = null, int? CountryId = null, int ReportingDistance = 0);
-public sealed record WorkplaceCatalog(List<WorkplacePerson> People);
+public sealed record WorkplaceOrganization(Guid Id, string Name);
+public sealed record SharedCalendarUnit(Guid Id, string Name, Guid OrganizationId, Guid? ParentId);
+public sealed record SharedCalendarScope(List<WorkplaceOrganization> Organizations, List<SharedCalendarUnit> Units);
+public sealed record SharedCalendarChoice(string Kind, Guid Id, string Name);
+public sealed record WorkplaceCatalog(List<WorkplacePerson> People, SharedCalendarScope? SharedCalendars = null);
+public sealed record WorkplaceNotification(Guid Id, string Title, string Body, string ResourceType, Guid ResourceId, DateTime CreatedUtc, DateTime? ReadUtc);
+public sealed record NotificationPage(List<WorkplaceNotification> Items, string? BeforeTicks, Guid? BeforeId, bool HasMore, int Unread);
+public sealed record DesktopNotification(string Title, string Body, string Target, DateTime CreatedUtc);
+public sealed record ChatActivity(Guid UserId, Guid? ReceiverId, string? ConversationId, string Kind, bool Active, string SourceId);
+public sealed record ConversationTyping(string ConversationId, Guid UserId, bool IsTyping);
 public sealed record AnnouncementTarget(string Kind, Guid TargetId, bool IncludeDescendants = false);
 public sealed record AnnouncementWrite(Guid? Id, long Version, string Title, string Body, string Category,
     DateTime PublishUtc, DateTime ExpiresUtc, bool Important, bool RequiresAcknowledgement,
@@ -43,7 +52,12 @@ public sealed record MediaDeviceCatalog(MediaDeviceOption[] Microphones, MediaDe
 public sealed record MediaParticipantUpdate(string Identity, string Kind, string Value);
 public sealed record MediaParticipant(string Identity, string Name);
 public sealed record VideoPicture(string Identity, int Width, int Height, byte[] Rgba);
-public sealed record EncryptedFile(string Id, string Name, string MimeType, long Size, int ChunkSize, string Key, string NoncePrefix);
+public sealed record EncryptedFile(string Id, string Name, string MimeType, long Size, int ChunkSize, string Key, string NoncePrefix)
+{
+    [System.Text.Json.Serialization.JsonPropertyName("waveform")]
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public double[]? Waveform { get; init; }
+}
 
 public sealed record VacationShift(DateOnly AnchorDate, DateTime StartUtc, DateTime EndUtc, decimal Days)
 { public string Label => $"{AnchorDate:ddd, d MMM} · {StartUtc.ToLocalTime():HH:mm} – {EndUtc.ToLocalTime():HH:mm}"; }

@@ -8,6 +8,31 @@ using UserIdentityDesktop.Core.Models;
 namespace UserIdentityDesktop.ViewModels;
 public partial class WorkspaceViewModel
 {
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsVacationTab)), NotifyPropertyChangedFor(nameof(IsCalendarTab)), NotifyPropertyChangedFor(nameof(IsOrganizationCalendarTab))] private int _selectedCalendarTab;
+    public bool IsVacationTab => SelectedCalendarTab == 1;
+    public bool IsCalendarTab => SelectedCalendarTab != 1;
+    public bool IsOrganizationCalendarTab => SelectedCalendarTab == 2;
+    partial void OnSelectedCalendarTabChanged(int value) { ShowCalendarEditor = false; if (value == 1) RefreshVacationsCommand.Execute(null); else OnInvalidated(); }
+    public ObservableCollection<SharedCalendarChoice> SharedCalendars { get; } = new();
+    [ObservableProperty] private SharedCalendarChoice? _selectedSharedCalendar;
+    partial void OnSelectedSharedCalendarChanged(SharedCalendarChoice? value) { if (IsOrganizationCalendarTab) OnInvalidated(); }
+    private void ApplySharedCalendars(SharedCalendarScope? scope)
+    {
+        var choices = (scope?.Organizations ?? new()).Select(x => new SharedCalendarChoice("Organization", x.Id, x.Name))
+            .Concat((scope?.Units ?? new()).Select(x => new SharedCalendarChoice("Unit", x.Id, x.Name))).ToArray();
+        if (SharedCalendars.SequenceEqual(choices)) return;
+        var old = SelectedSharedCalendar;
+        SharedCalendars.Clear(); foreach (var item in choices) SharedCalendars.Add(item);
+        SelectedSharedCalendar = SharedCalendars.FirstOrDefault(x => x.Kind == old?.Kind && x.Id == old.Id) ?? SharedCalendars.FirstOrDefault();
+    }
+    private Task<System.Collections.Generic.List<CalendarItem>> LoadCalendar(DateTime from, DateTime to)
+    {
+        if (IsOrganizationCalendarTab)
+            return SelectedSharedCalendar is {} shared ? api.SharedCalendarAsync(shared.Kind, shared.Id, from, to, lifetime.Token) : Task.FromResult(new System.Collections.Generic.List<CalendarItem>());
+        var requested = SelectedCalendarPerson;
+        var user = requested != null && CalendarPeople.Any(x => x.Id == requested.Id) ? requested.Id : auth.CurrentUser!.Id;
+        return api.CalendarAsync(user, from.ToUniversalTime(), to.ToUniversalTime(), lifetime.Token);
+    }
     public ObservableCollection<WorkplacePerson> CalendarPeople { get; } = new();
     private bool applyingCalendarPeople;
     [ObservableProperty] private WorkplacePerson? _selectedCalendarPerson;
@@ -47,7 +72,8 @@ public partial class WorkspaceViewModel
     [ObservableProperty] private DateTimeOffset? _vacationStart = DateTimeOffset.Now.Date.AddDays(1);
     [ObservableProperty] private string _vacationDays = "1";
     [ObservableProperty] private string _vacationReason = "";
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(VacationShifts)), NotifyPropertyChangedFor(nameof(VacationBalances))] private VacationPreview? _vacationReview;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(VacationShifts)), NotifyPropertyChangedFor(nameof(VacationBalances)), NotifyPropertyChangedFor(nameof(VacationFormCommand))] private VacationPreview? _vacationReview;
+    public System.Windows.Input.ICommand VacationFormCommand => VacationReview == null ? PreviewVacationCommand : SubmitVacationCommand;
     public System.Collections.Generic.IReadOnlyList<VacationShift> VacationShifts => VacationReview is {} review ? review.Shifts : Array.Empty<VacationShift>();
     public System.Collections.Generic.IReadOnlyList<VacationBalance> VacationBalances => VacationReview is {} review ? review.Balances : Array.Empty<VacationBalance>();
     [ObservableProperty] private VacationRequest? _selectedVacation;

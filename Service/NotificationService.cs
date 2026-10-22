@@ -10,14 +10,20 @@ using Avalonia.Platform;
 using Microsoft.Win32;
 
 using UserIdentityDesktop.Core;
+using UserIdentityDesktop.Core.Models;
 namespace UserIdentityDesktop.Service;
 
 public class SystemNotificationService : INotificationService
 {
     private string? _cachedIconPath;
     private readonly Media.CallSounds notificationSound = new();
+    private readonly LinuxNotifications linuxNotifications = new();
 
     public event Action<Guid>? NotificationActivated;
+    public event Action<DesktopNotification>? NotificationPosted;
+    public event Action<string>? NotificationLinkActivated;
+    public void ActivateLink(string target) => NotificationLinkActivated?.Invoke(target);
+    public Action<string, string, string>? ShowDesktopToast { get; set; }
     // Called on Avalonia's UI thread. Return true when a foreground toast was shown.
     public Func<string, string, Guid, bool>? TryShowForeground { get; set; }
     private readonly System.Threading.SemaphoreSlim osNotificationGate = new(1, 1);
@@ -131,7 +137,7 @@ public class SystemNotificationService : INotificationService
     [SupportedOSPlatform("macos")]
     public void InitializeMacRegistration()
     {
-        try { MacNotifications.Initialize(Activate); }
+        try { MacNotifications.Initialize(ActivateLink); }
         catch (Exception ex) { Console.WriteLine($"macOS notification registration: {ex.GetType().Name}"); }
     }
 
@@ -207,34 +213,42 @@ public class SystemNotificationService : INotificationService
             Console.WriteLine($"Could not extract notification icon: {ex.Message}");
         }
     }
-
-    public void ShowNotification(string title, string message, Guid senderId)
+    public void ShowNotification(string title, string message, Guid senderId) => ShowNotification(title, message, $"fireuserconnect://chat/{senderId}");
+    public void ShowNotification(string title, string message, string target)
     {
         notificationSound.Play("NotificationSound", loop: false);
         var cleanTitle = SanitizeText(title, 80);
         var cleanMessage = SanitizeText(message, 200);
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
-            if (TryShowForeground?.Invoke(cleanTitle, cleanMessage, senderId) == true) return;
-            _ = PostSystemAsync(cleanTitle, cleanMessage, senderId);
+            NotificationPosted?.Invoke(new(cleanTitle, cleanMessage, target, DateTime.UtcNow));
+            if (ShowDesktopToast != null) ShowDesktopToast(cleanTitle, cleanMessage, target);
+            else if (Guid.TryParse(target.Split('/')[^1], out var legacy) && TryShowForeground?.Invoke(cleanTitle, cleanMessage, legacy) == true) return;
+            _ = ArchiveAfterToastAsync(cleanTitle, cleanMessage, target);
         });
     }
-
-    private async Task PostSystemAsync(string cleanTitle, string cleanMessage, Guid senderId)
+    private async Task ArchiveAfterToastAsync(string title, string message, string target)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(6));
+        await PostSystemAsync(title, message, target);
+    }
+    private async Task PostSystemAsync(string cleanTitle, string cleanMessage, string senderId)
     {
         // Avoid spawning unbounded shell/audio processes during message bursts.
-        if (!await osNotificationGate.WaitAsync(0)) return;
+        await osNotificationGate.WaitAsync();
         try
         {
+            if (OperatingSystem.IsLinux())
+            {
+                EnsureIconExtracted();
+                await linuxNotifications.ShowAsync(cleanTitle, cleanMessage, senderId, _cachedIconPath, ActivateLink);
+                return;
+            }
             await Task.Run(() =>
             {
                 EnsureIconExtracted();
 
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-                {
-                    ShowLinuxNotification(cleanTitle, cleanMessage, senderId);
-                }
-                else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
                     ShowWindowsNotification(cleanTitle, cleanMessage, senderId);
                 }
@@ -250,60 +264,12 @@ public class SystemNotificationService : INotificationService
         }
         finally { osNotificationGate.Release(); }
     }
-
-    private void ShowLinuxNotification(string title, string message, Guid senderId)
-    {
-        try
-        {
-            var psi = new ProcessStartInfo
-            {
-                FileName = "notify-send",
-                CreateNoWindow = true,
-                UseShellExecute = false
-            };
-
-            psi.ArgumentList.Add("--hint=string:desktop-entry:fire-user-connect");
-            psi.ArgumentList.Add("--hint=boolean:suppress-sound:true");
-            psi.ArgumentList.Add("--expire-time=6000");
-            psi.ArgumentList.Add("--wait");
-            psi.ArgumentList.Add("-a");
-            psi.ArgumentList.Add("Fire User Connect");
-            psi.ArgumentList.Add("-u");
-            psi.ArgumentList.Add("normal");
-            psi.ArgumentList.Add("-A");
-            psi.ArgumentList.Add("default=Open");
-            psi.RedirectStandardOutput = true;
-
-            if (!string.IsNullOrEmpty(_cachedIconPath) && File.Exists(_cachedIconPath))
-            {
-                psi.ArgumentList.Add("-i");
-                psi.ArgumentList.Add(_cachedIconPath);
-            }
-
-            psi.ArgumentList.Add("--");
-            psi.ArgumentList.Add(title);
-            psi.ArgumentList.Add(System.Security.SecurityElement.Escape(message) ?? "");
-
-            using var proc = Process.Start(psi);
-            if (proc != null)
-            {
-                if (!proc.WaitForExit(15000)) { proc.Kill(entireProcessTree: true); return; }
-                if (proc.StandardOutput.ReadToEnd().Trim() == "default")
-                    Avalonia.Threading.Dispatcher.UIThread.Post(() => NotificationActivated?.Invoke(senderId));
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Linux notification error: {ex.Message}");
-        }
-    }
-
     [SupportedOSPlatform("windows")]
-    private void ShowWindowsNotification(string title, string message, Guid senderId)
+    private void ShowWindowsNotification(string title, string message, string senderId)
     {
         try
         {
-            var launchUri = $"fireuserconnect://chat/{senderId}";
+            var launchUri = System.Security.SecurityElement.Escape(senderId);
             var iconXml = string.IsNullOrEmpty(_cachedIconPath) || !File.Exists(_cachedIconPath) ? "" :
                 $"<image placement='appLogoOverride' src='{System.Security.SecurityElement.Escape(new Uri(_cachedIconPath).AbsoluteUri)}'/>";
             var xmlText = $"<toast activationType='protocol' launch='{launchUri}'><visual><binding template='ToastGeneric'><text>{System.Security.SecurityElement.Escape(title)}</text><text>{System.Security.SecurityElement.Escape(message)}</text>{iconXml}</binding></visual><audio silent='true'/></toast>";
@@ -315,6 +281,7 @@ public class SystemNotificationService : INotificationService
 $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
 $xml.LoadXml([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{xmlPayload}')))
 $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
+$toast.SuppressPopup = $true
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('UserIdentityDesktop.Desktop').Show($toast)
 ";
             var bytes = Encoding.Unicode.GetBytes(script);
@@ -370,41 +337,32 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
         Directory.CreateDirectory(startMenu);
         var shortcutPath = Path.Combine(startMenu, "Fire User Connect.lnk");
 
+        try { WriteWindowsToastShortcut(executablePath, shortcutPath); }
+        catch (Exception ex) { Console.WriteLine($"Windows notification shortcut error: {ex}"); }
+    }
+
+    [SupportedOSPlatform("windows")]
+    internal static void WriteWindowsToastShortcut(string executablePath, string shortcutPath)
+    {
+        var link = (IShellLinkW)new ShellLink();
         try
         {
-            var link = (IShellLinkW)new ShellLink();
-            try
-            {
-                link.SetPath(executablePath);
-                link.SetWorkingDirectory(Path.GetDirectoryName(executablePath) ?? string.Empty);
-                link.SetDescription("Fire User Connect");
-                link.SetIconLocation(executablePath, 0);
+            link.SetPath(executablePath);
+            link.SetWorkingDirectory(Path.GetDirectoryName(executablePath) ?? string.Empty);
+            link.SetDescription("Fire User Connect");
+            link.SetIconLocation(executablePath, 0);
 
-                var propertyStore = (IPropertyStore)link;
-                try
-                {
-                    var propertyKey = new PropertyKey(AppUserModelIdFormatId, 5);
-                    using var appUserModelId = new PropVariant(AppUserModelId);
-                    var appUserModelIdValue = appUserModelId.Value;
-                    propertyStore.SetValue(ref propertyKey, ref appUserModelIdValue);
-                    propertyStore.Commit();
-                }
-                finally
-                {
-                    Marshal.ReleaseComObject(propertyStore);
-                }
-
-                ((IPersistFile)link).Save(shortcutPath, true);
-            }
-            finally
-            {
-                Marshal.ReleaseComObject(link);
-            }
+            // All three interfaces share one RCW. Releasing an interface alias here
+            // disconnects the link before IPersistFile.Save can use it.
+            var propertyStore = (IPropertyStore)link;
+            var propertyKey = new PropertyKey(AppUserModelIdFormatId, 5);
+            using var appUserModelId = new PropVariant(AppUserModelId);
+            var appUserModelIdValue = appUserModelId.Value;
+            propertyStore.SetValue(ref propertyKey, ref appUserModelIdValue);
+            propertyStore.Commit();
+            ((IPersistFile)link).Save(shortcutPath, true);
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Windows notification shortcut error: {ex}");
-        }
+        finally { Marshal.ReleaseComObject(link); }
     }
 
     private const string AppUserModelId = "UserIdentityDesktop.Desktop";
@@ -492,7 +450,7 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
     }
 
     [SupportedOSPlatform("macos")]
-    private static void ShowMacNotification(string title, string message, Guid senderId)
+    private static void ShowMacNotification(string title, string message, string senderId)
     {
         if (!MacNotifications.Show(title, message, senderId))
             Console.WriteLine("macOS notifications require the packaged Fire User Connect.app bundle.");

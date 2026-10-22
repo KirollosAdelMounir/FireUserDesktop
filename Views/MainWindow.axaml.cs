@@ -20,9 +20,11 @@ public partial class MainWindow : Window
         Activate();
     }
 
+    internal static bool HidesOnClose(bool allowClose, WindowCloseReason reason) => !allowClose && reason is WindowCloseReason.WindowClosing or WindowCloseReason.Undefined;
+
     private void OnClosing(object? sender, WindowClosingEventArgs e)
     {
-        if (!AllowClose)
+        if (HidesOnClose(AllowClose, e.CloseReason))
         {
             e.Cancel = true;
             Hide();

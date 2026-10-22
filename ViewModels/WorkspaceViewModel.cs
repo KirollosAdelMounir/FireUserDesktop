@@ -107,10 +107,13 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
     partial void OnInCallChanged(bool value) { OnPropertyChanged(nameof(CanInviteToCall)); OnPropertyChanged(nameof(CanRequestControl)); OnPropertyChanged(nameof(CanStartCall)); }
     [ObservableProperty] private CalendarItem? _selectedCalendar;
     [ObservableProperty] private Announcement? _selectedAnnouncement;
-    [ObservableProperty] private string _feedback = "";
-    [ObservableProperty] private bool _isLoading;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasWorkspaceStatus))] private string _feedback = "";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasWorkspaceStatus))] private bool _isLoading;
+    public bool HasWorkspaceStatus => IsLoading || !string.IsNullOrWhiteSpace(Feedback);
     [ObservableProperty] private bool _callingEnabled;
-    [ObservableProperty] private bool _inCall;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(CallWindowVisible))] private bool _inCall;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(CallWindowVisible))] private bool _connectingCall;
+    public bool CallWindowVisible => InCall || ConnectingCall;
     [ObservableProperty] private bool _mediaBusy;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(MicrophoneActionLabel))] private bool _microphoneEnabled;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(CameraActionLabel))] private bool _cameraEnabled;
@@ -158,11 +161,12 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         ? "Allow microphone, camera and Screen Recording access in System Settings. Remote control also requires Accessibility permission."
         : OperatingSystem.IsLinux() ? "Audio uses the system audio service; cameras use V4L2. Wayland screen sharing uses your compositor's ScreenCast portal and PipeWire; X11 sessions capture the selected screen or window. Remote control requires an X11 session and a supported desktop source."
         : "Choose your devices below. Allow camera and microphone access in Windows privacy settings.";
-
-    public WorkspaceViewModel(ChatViewModel chat, ICollaborationApi api, INativeMediaSession media, IAuthService auth, IChatService chatService)
+    public WorkspaceViewModel(ChatViewModel chat, ICollaborationApi api, INativeMediaSession media, IAuthService auth, IChatService chatService, INotificationService? notifications = null)
     {
         chat.Workspace = this;
         Chat = chat; this.api = api; this.media = media; this.auth = auth; this.chatService = chatService;
+        InitializeNotifications(notifications);
+        api.MeetingChanged += OnMeetingChanged;
         chatService.WorkplaceChanged += OnInvalidated;
         chatService.ConnectionStateChanged += OnConnection;
         chatService.IncomingCallReceived += OnIncoming;
@@ -190,7 +194,12 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
     }
     private void OnInvalidated() => Dispatcher.UIThread.Post(() => { if (!disposed) _ = RefreshAsync(); });
     private void OnConnection(HubConnectionState state) { if (state == HubConnectionState.Connected) OnInvalidated(); }
-    private void OnIncoming(IncomingCall call) => Dispatcher.UIThread.Post(() => { if (!disposed) Incoming = call; });
+    private void OnIncoming(IncomingCall call) => Dispatcher.UIThread.Post(() =>
+    {
+        if (disposed) return;
+        Incoming = call;
+        notifications?.ShowNotification(call.MeetingTitle ?? "Incoming call", call.CallerName + " is calling", call.MeetingLocator is {} locator ? "fireuserconnect://meeting/" + locator : "fireuserconnect://call/" + Uri.EscapeDataString(call.CallId));
+    });
     private void OnCallLeft(CallParticipantLeft change) => Dispatcher.UIThread.Post(() =>
     {
         if (Incoming?.CallId == change.CallId && change.CallEnded) Incoming = null;
@@ -309,14 +318,15 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
                     catch (Exception ex) { if (!disposed) Feedback = ex.Message; }
                 }
                 await Task.WhenAll(
-                    Load(api.CalendarAsync(SelectedCalendarPerson?.Id ?? auth.CurrentUser!.Id, date.ToUniversalTime(), date.AddDays(42).ToUniversalTime(), lifetime.Token), items =>
+                    Load(LoadCalendar(date, date.AddDays(42)), items =>
                     {
                         Calendar.Clear(); foreach (var entry in items) Calendar.Add(entry);
                         OnPropertyChanged(nameof(DaySchedule)); OnPropertyChanged(nameof(HasDaySchedule)); OnPropertyChanged(nameof(UpcomingMeetings));
                     }),
                     Load(api.AnnouncementsAsync(lifetime.Token), items => { Announcements.Clear(); foreach (var item in items) Announcements.Add(item); OnPropertyChanged(nameof(HasAnnouncements)); }),
+                    Load(LoadNotificationSnapshot(), _ => { }),
                     Load(api.CallingEnabledAsync(lifetime.Token), enabled => CallingEnabled = enabled),
-                    Load(api.CatalogAsync(lifetime.Token), catalog => { UpdatePeople(People, catalog.People); UpdatePeople(Audience, catalog.People); ApplyCalendarPeople(catalog.People); })
+                    Load(api.CatalogAsync(lifetime.Token), catalog => { UpdatePeople(People, catalog.People); UpdatePeople(Audience, catalog.People); ApplyCalendarPeople(catalog.People); ApplySharedCalendars(catalog.SharedCalendars); })
                 );
             } while (refreshAgain && !disposed);
         }
@@ -338,15 +348,18 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         else if (!await mediaGate.WaitAsync(0)) return;
         try { MediaBusy = true; Feedback = ""; await action(); }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
-        catch (Exception ex) { Feedback = ex.Message; }
+        catch (Exception ex) { ConnectingCall = false; Feedback = ex.Message; }
         finally { MediaBusy = false; mediaGate.Release(); }
     }
     private async Task JoinMedia(MediaToken token, string title)
     {
         Videos.Clear(); FocusedVideo = null;
         Videos.Add(new VideoTileViewModel("You") { Name = "You", AvatarInitials = auth.CurrentUser?.Initials });
-        await media.ConnectAsync(token, lifetime.Token);
+        CallTitle = title; ConnectingCall = true;
+        try { await media.ConnectAsync(token, lifetime.Token); }
+        catch { ConnectingCall = false; throw; }
         CallTitle = title; callStarted = DateTimeOffset.UtcNow; CallElapsed = "00:00"; callClock.Start(); InCall = true;
+        ConnectingCall = false;
         // Devices start disabled. Joining never activates a microphone/camera implicitly.
         MicrophoneEnabled = CameraEnabled = ScreenEnabled = false;
     }
@@ -355,6 +368,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         if (InCall) throw new InvalidOperationException("Leave the current call first.");
         var context = await api.CallContextAsync(id, lifetime.Token);
         callId = context.CallId;
+        CallTitle = "Fire User call"; ConnectingCall = true;
         try { await JoinMedia(await api.CallTokenAsync(callId, lifetime.Token), "Fire User call"); }
         catch { await api.LeaveCallAsync(callId); callId = null; throw; }
     });
@@ -367,6 +381,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         var peer = Chat.SelectedRecipient ?? throw new InvalidOperationException("Select a conversation first.");
         var call = peer.IsGroup ? await api.CreateGroupCallAsync(peer.ConversationId!, video, lifetime.Token) : await api.CreateCallAsync(peer.ReceiverId, video, lifetime.Token);
         callId = call.CallId; callSounds.Play("Ringback");
+        CallTitle = peer.ReceiverName; ConnectingCall = true;
         try { await JoinMedia(await api.CallTokenAsync(callId, lifetime.Token), peer.ReceiverName); }
         catch { callSounds.Play(null); await api.LeaveCallAsync(callId); callId = null; throw; }
     });
@@ -374,6 +389,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
     {
         if (InCall) throw new InvalidOperationException("Leave the current call first.");
         var incoming = Incoming ?? throw new InvalidOperationException("This invitation is no longer available.");
+        callSounds.Play(null);
         if (incoming.MeetingLocator != null)
         {
             MeetingCode = incoming.MeetingLocator;
@@ -382,6 +398,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         else
         {
             callId = incoming.CallId;
+            CallTitle = incoming.CallerName; ConnectingCall = true;
             try { await JoinMedia(await api.CallTokenAsync(callId, lifetime.Token), incoming.CallerName); }
             catch { callSounds.Play(null); await api.LeaveCallAsync(callId); callId = null; throw; }
         }
@@ -410,16 +427,18 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         if (!detail.Online) throw new InvalidOperationException("This is an in-person meeting.");
         if (detail.InvitationPending)
         {
+            SelectedWorkspaceTab = 1;
             PendingMeetingInvitation = detail; MeetingInvitationReview = null;
             throw new InvalidOperationException("Accept this invitation before joining. Review the invitation below, acknowledge any scheduling conflicts, then choose Accept invitation.");
         }
         if (detail.State is 2 or 3) throw new InvalidOperationException("This meeting has ended or was cancelled.");
-        if (detail.State == 0 && !detail.IsHost) throw new InvalidOperationException("Wait for the host to start the meeting, then choose Join meeting again.");
+        // Let the server apply attendance and host/start policy, as Angular does.
         PendingMeetingInvitation = null; MeetingInvitationReview = null;
+        CallTitle = detail.Title; ConnectingCall = true;
         var token = await api.MeetingTokenAsync(locator, lifetime.Token);
         meetingLocator = locator;
-        try { await JoinMedia(token, detail.Title); }
-        catch { await api.LeaveMeetingAsync(locator); meetingLocator = null; throw; }
+        try { await api.WatchMeetingAsync(locator, lifetime.Token); await JoinMedia(token, detail.Title); }
+        catch { await api.StopWatchingMeetingAsync(); await api.LeaveMeetingAsync(locator); meetingLocator = null; throw; }
     }
     partial void OnMicrophoneEnabledChanged(bool value) { var tile = Videos.FirstOrDefault(x => x.Identity == "You"); if (tile != null) tile.MicrophoneOn = value; }
     [RelayCommand] private Task ToggleMicrophoneAsync() => RunMedia(async () => { await media.SetMicrophoneAsync(!MicrophoneEnabled, Devices, lifetime.Token); MicrophoneEnabled = !MicrophoneEnabled; });
@@ -443,7 +462,9 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             var sources = await media.GetScreenSourcesAsync(selection.Token);
             selection.Token.ThrowIfCancellationRequested();
             var choose = ChooseScreenShareSourceAsync ?? throw new InvalidOperationException("Open the call window to choose a sharing source.");
-            var selected = await choose(sources);
+            var portal = sources.FirstOrDefault(x => x.Backend == ScreenCaptureBackend.Portal && x.Kind == ScreenShareKind.Screen)
+                ?? sources.FirstOrDefault(x => x.Backend == ScreenCaptureBackend.Portal);
+            var selected = portal ?? await choose(sources);
             if (selected == null || selection.IsCancellationRequested || !InCall) { Feedback = ""; return; }
             if (!sources.Contains(selected) && selected.Kind != ScreenShareKind.Screen) throw new InvalidOperationException("The selected window is no longer available.");
             await RunMedia(async () =>
@@ -473,11 +494,11 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         try { await media.DisconnectAsync(); }
         finally
         {
-            InCall = false; MicrophoneEnabled = CameraEnabled = ScreenEnabled = false;
+            InCall = false; ConnectingCall = false; MicrophoneEnabled = CameraEnabled = ScreenEnabled = false;
             callClock.Stop(); FocusedVideo = null; Videos.Clear(); pendingFrames.Clear();
         }
         if (call != null) { await api.LeaveCallAsync(call); callId = null; }
-        if (meeting != null) { await api.LeaveMeetingAsync(meeting); meetingLocator = null; }
+        if (meeting != null) { await api.StopWatchingMeetingAsync(); await api.LeaveMeetingAsync(meeting); meetingLocator = null; }
     }
 
     private CalendarWrite Draft()
@@ -489,6 +510,14 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         var participants = People.Where(x => x.Selected).Select(x => x.Id).ToArray();
         var start = TimeZoneInfo.ConvertTimeToUtc(local);
         return new(null, 0, IsMeeting ? 1 : 0, EventTitle.Trim(), EventDescription, start, start.AddMinutes(minutes), TimeZoneInfo.Local.Id, false, participants);
+    }
+    [RelayCommand] private async Task SubmitCalendarFormAsync()
+    {
+        var ready = false;
+        try { ready = Reviewed && reviewedDraft != null && SameDraft(Draft(), reviewedDraft); }
+        catch (InvalidOperationException) { }
+        if (ready) await SaveEventCommand.ExecuteAsync(null);
+        else await ReviewEventCommand.ExecuteAsync(null);
     }
     private async Task Work(Func<Task> action)
     {
@@ -579,6 +608,11 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
     {
         if (disposed) return;
         disposed = true; lifetime.Cancel();
+        if (notifications != null) notifications.NotificationPosted -= OnNotificationPosted;
+        api.MeetingChanged -= OnMeetingChanged;
+        chatService.WorkplaceNotificationChanged -= OnWorkplaceNotification;
+        chatService.WorkplaceNotificationsRead -= OnNotificationsRead;
+        RecentNotifications.Clear();
         chatService.WorkplaceChanged -= OnInvalidated; chatService.ConnectionStateChanged -= OnConnection;
         chatService.IncomingCallReceived -= OnIncoming; chatService.CallParticipantLeft -= OnCallLeft;
         media.VideoReceived -= OnVideo; media.Error -= OnMediaError; media.ParticipantLeft -= OnParticipantLeft;

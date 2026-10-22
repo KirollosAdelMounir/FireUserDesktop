@@ -214,7 +214,16 @@ public sealed class ChatEncryption(IAuthService auth, IConfigurationService conf
     public static async Task<PreparedFile> PrepareFileAsync(string path)
     {
         var file = new FileInfo(path);
-        var metadata = new EncryptedFile(Guid.NewGuid().ToString("D"), file.Name, "application/octet-stream", file.Length, 1048576, Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)), Convert.ToBase64String(RandomNumberGenerator.GetBytes(8)));
+        var metadata = new EncryptedFile(Guid.NewGuid().ToString("D"), file.Name, ChatService.GetMimeType(file.Extension.ToLowerInvariant()), file.Length, 1048576, Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)), Convert.ToBase64String(RandomNumberGenerator.GetBytes(8)));
+        if (metadata.MimeType.StartsWith("audio/", StringComparison.Ordinal) && file.Length <= 32 * 1024 * 1024)
+        {
+            try
+            {
+                var duration = await Media.AudioNotePlayback.DurationAsync(path, CancellationToken.None);
+                metadata = metadata with { Waveform = await Media.AudioNotePlayback.WaveformAsync(path, duration, CancellationToken.None) };
+            }
+            catch (Exception) { /* Optional visual metadata must not prevent an attachment upload. */ }
+        }
         var temporary = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".fua");
         try
         {

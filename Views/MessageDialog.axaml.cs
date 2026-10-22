@@ -5,8 +5,9 @@ using UserIdentityDesktop.ViewModels;
 namespace UserIdentityDesktop.Views;
 public partial class MessageDialog : Window
 {
-    public MessageDialog() { InitializeComponent(); KeyDown += (_, e) => { if (e.Key == Key.Escape) { e.Handled = true; Close(false); } }; }
+    private readonly WindowMotion motion;
+    public MessageDialog() { InitializeComponent(); motion = new WindowMotion(this); KeyDown += (_, e) => { if (e.Key == Key.Escape) { e.Handled = true; _ = motion.CloseAsync(false); } }; }
     public MessageDialog(MessageDialogModel model) : this() => DataContext = model;
-    private void Close_Click(object? sender, RoutedEventArgs e) => Close(false);
-    private void Delete_Click(object? sender, RoutedEventArgs e) => Close(true);
+    private void Close_Click(object? sender, RoutedEventArgs e) => _ = motion.CloseAsync(false);
+    private void Delete_Click(object? sender, RoutedEventArgs e) => _ = motion.CloseAsync(true);
 }

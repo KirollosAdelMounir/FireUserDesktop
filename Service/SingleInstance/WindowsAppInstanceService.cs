@@ -12,31 +12,36 @@ namespace UserIdentityDesktop.Service;
 public sealed class WindowsAppInstanceService : IAppInstanceService
 {
     private const string MutexName = "Global\\FireUserConnectSingleInstance";
-    private const string PipeName = "fireuserconnect-ipc";
+    private readonly string pipeName;
 
     private readonly Mutex _mutex;
     private readonly CancellationTokenSource _disposeCts = new();
     private Task? _serverTask;
     private readonly object _serverLock = new();
     private bool _disposed;
+    private bool acquired;
+    internal Task ServerCompletion => _serverTask ?? Task.CompletedTask;
 
-    public WindowsAppInstanceService()
+    public WindowsAppInstanceService() : this(MutexName, "fireuserconnect-ipc") { }
+    internal WindowsAppInstanceService(string mutexName, string pipeName)
     {
-        _mutex = new Mutex(false, MutexName, out _);
+        this.pipeName = pipeName;
+        _mutex = new Mutex(false, mutexName, out _);
     }
 
     public bool TryAcquire()
     {
         if (_disposed)
             return false;
+        if (acquired) return true;
 
         try
         {
-            return _mutex.WaitOne(0);
+            return acquired = _mutex.WaitOne(0);
         }
         catch (AbandonedMutexException)
         {
-            return true;
+            return acquired = true;
         }
     }
 
@@ -47,10 +52,10 @@ public sealed class WindowsAppInstanceService : IAppInstanceService
 
         lock (_serverLock)
         {
-            if (_serverTask != null)
+            if (_disposed || _serverTask != null)
                 return Task.CompletedTask;
-
-            _serverTask = Task.Run(() => RunServerLoopAsync(cancellationToken, onMessageReceived), cancellationToken);
+            var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _disposeCts.Token);
+            _serverTask = Task.Run(async () => { using (linked) await RunServerLoopAsync(linked.Token, onMessageReceived); });
         }
 
         return Task.CompletedTask;
@@ -65,7 +70,7 @@ public sealed class WindowsAppInstanceService : IAppInstanceService
         {
             try
             {
-                using var pipeClient = new NamedPipeClientStream(".", PipeName, PipeDirection.Out, PipeOptions.Asynchronous);
+                using var pipeClient = new NamedPipeClientStream(".", pipeName, PipeDirection.Out, PipeOptions.Asynchronous);
                 await pipeClient.ConnectAsync(1500);
 
                 using var writer = new StreamWriter(pipeClient, Encoding.UTF8, leaveOpen: true);
@@ -102,6 +107,7 @@ public sealed class WindowsAppInstanceService : IAppInstanceService
         try
         {
             _mutex.ReleaseMutex();
+            acquired = false;
         }
         catch (Exception)
         {
@@ -111,13 +117,18 @@ public sealed class WindowsAppInstanceService : IAppInstanceService
 
     public void Dispose()
     {
-        if (_disposed)
-            return;
-
-        _disposed = true;
-        _disposeCts.Cancel();
-        _mutex.Dispose();
-        _serverTask?.Dispose();
+        lock (_serverLock)
+        {
+            if (_disposed) return;
+            Release();
+            _disposed = true;
+            _disposeCts.Cancel();
+            _mutex.Dispose();
+            // Tasks do not require disposal. In particular, disposing the listener
+            // while it awaits a connection throws during process exit.
+            if (_serverTask == null) _disposeCts.Dispose();
+            else _ = _serverTask.ContinueWith(_ => _disposeCts.Dispose(), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        }
     }
 
     private async Task RunServerLoopAsync(CancellationToken cancellationToken, Func<string, Task> onMessageReceived)
@@ -126,13 +137,13 @@ public sealed class WindowsAppInstanceService : IAppInstanceService
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                using var pipeServer = new NamedPipeServerStream(PipeName, PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+                using var pipeServer = new NamedPipeServerStream(pipeName, PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
                 await pipeServer.WaitForConnectionAsync(cancellationToken);
 
                 using var reader = new StreamReader(pipeServer, Encoding.UTF8);
-                var message = await reader.ReadToEndAsync();
+                var message = await reader.ReadToEndAsync(cancellationToken);
                 if (!string.IsNullOrWhiteSpace(message))
-                    await onMessageReceived(message.Trim());
+                    await onMessageReceived(message.Trim()).WaitAsync(cancellationToken);
             }
         }
         catch (OperationCanceledException)

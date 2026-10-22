@@ -1,10 +1,10 @@
 # Native screen and window selection
 
-Share screen opens an Avalonia picker with **Entire screen** and **Window** tabs. Discovery enumerates metadata only; it does not take screenshots, publish media, or start camera/microphone capture. Cancel/Escape starts nothing. Stop sharing does not open the picker again. Source availability is refreshed for each sharing action.
+On Windows, macOS and X11, Share screen opens an Avalonia picker with **Entire screen** and **Window** tabs. Discovery enumerates metadata only; it does not take screenshots, publish media, or start camera/microphone capture. Cancel/Escape starts nothing. Stop sharing does not open the picker again. Source availability is refreshed for each sharing action.
 
 ## Wayland (including Hyprland)
 
-The picker offers the screen/window types advertised by `org.freedesktop.portal.ScreenCast.AvailableSourceTypes`. Share then runs `CreateSession → SelectSources → Start → OpenPipeWireRemote`. `Start` opens the compositor's sharing dialog; Fire User does not implement or replace Hyprland/KDE/GNOME's permission UI. The portal receives one requested type and `multiple=false`, with no persistence or restore token. Cancellation closes the pending request and session. Session revocation stops capture.
+Wayland bypasses the application picker and opens the compositor’s screen selection directly. If the compositor exposes only window sharing, that advertised type is used. Discovery checks `org.freedesktop.portal.ScreenCast.AvailableSourceTypes`. The system selection runs `CreateSession → SelectSources → Start → OpenPipeWireRemote`. `Start` opens the compositor's sharing dialog; Fire User does not implement or replace Hyprland/KDE/GNOME's permission UI. The portal receives one requested type and `multiple=false`, with no persistence or restore token. Cancellation closes the pending request and session. Session revocation stops capture.
 
 Native GStreamer consumes the portal-issued PipeWire Unix FD and selected stream. A returned `pipewire-serial` is preferred as `target-object`; older portals use their selected node ID. The application never opens an unrestricted PipeWire connection as a fallback, and never uses XWayland capture under Wayland. It publishes only after the first complete RGBA frame. GStreamer converts/scales to the existing 1920×1080 screen transport; one latest appsink buffer is retained, with local preview capped at 10 FPS. Static sources do not require a repeated frame or an inactivity timeout.
 
@@ -48,3 +48,12 @@ The Linux native bridge ABI lifecycle test and Release build passed. The full Re
 Portal protocol tests use a private dbus-daemon and a fake portal, with `/dev/null` as a disposable remote FD. Native frame tests use GStreamer `videotestsrc`, never a real screen, window or device. No real compositor permission prompt/capture or multi-party transmission was exercised. Windows capture and macOS compilation/device capture must be validated on those platforms; Linux compilation does not establish their success.
 
 References: [XDG ScreenCast lifecycle and stream permissions](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.ScreenCast.html), [Hyprland portal integration](https://wiki.hypr.land/Hypr-Ecosystem/xdg-desktop-portal-hyprland/), [FFmpeg source options](https://ffmpeg.org/ffmpeg-devices.html), [Apple ScreenCaptureKit](https://developer.apple.com/documentation/screencapturekit/capturing-screen-content-in-macos).
+
+
+## Adaptive screen quality (October 2026)
+
+The C++ bridge samples publisher WebRTC statistics every two seconds while a screen track is active. Upload estimates below 100 decimal KB/s use 480p/15 FPS; 100–200 KB/s use 720p/30 FPS; 200–400 KB/s use 1080p/30 FPS; 400 KB/s and above permit 1080p/60 FPS. High RTT or packet loss triggers the low tier. Increases require a healthy interval; without an estimate the ceiling is 720p/30 FPS. VP8 uses maintain-resolution degradation to prioritize screen textures. These are adaptive ceilings, not guaranteed delivery rates or exact parity with Angular’s separate camera budget.
+
+Tier changes replace only the screen publication and can briefly interrupt that tile. Lower tiers are resampled in native C++; 1080p uses the direct buffer-copy path. Producer pacing preserves the final update from a static portal source and releases the publication lock while waiting so microphone frames can continue. Camera and screen previews retain their independent 10 FPS ceiling.
+
+Windows native compilation and disconnected ABI/quality-boundary tests ran locally for this revision. Linux/macOS compilation, compositor/device permissions and two-client network quality still require the target platform or configured synthetic LiveKit tests; Windows build results do not prove those paths.

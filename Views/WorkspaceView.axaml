@@ -39,12 +39,13 @@
     <Style Selector="TabItem:selected /template/ ContentPresenter">
       <Setter Property="TextElement.Foreground" Value="{DynamicResource ForgePrimary}" />
     </Style>
+    <Style Selector="UserControl.reduced-motion TabItem"><Setter Property="Transitions"><Transitions /></Setter></Style>
     <Style Selector="UserControl.reduced-motion Button"><Setter Property="Transitions"><Transitions /></Setter></Style>
     <Style Selector="Border#NavigationRail">
       <Setter Property="Width" Value="70" />
       <Setter Property="Transitions"><Transitions><DoubleTransition Property="Width" Duration="0:0:0.24"><DoubleTransition.Easing><views:AngularNavigationEasing /></DoubleTransition.Easing></DoubleTransition></Transitions></Setter>
     </Style>
-    <Style Selector="Border#NavigationRail.expanded, Border#NavigationRail:focus-within"><Setter Property="Width" Value="210" /></Style>
+    <Style Selector="Border#NavigationRail.expanded"><Setter Property="Width" Value="210" /></Style>
     <Style Selector="Button.workspace-nav">
       <Setter Property="Width" Value="194" /><Setter Property="Height" Value="48" />
       <Setter Property="Padding" Value="14,12" /><Setter Property="Background" Value="Transparent" />
@@ -55,9 +56,9 @@
     <Style Selector="Button.workspace-nav.active"><Setter Property="Background" Value="{DynamicResource ForgePrimaryGradientSubtle}" /><Setter Property="Foreground" Value="{DynamicResource ForgePrimary}" /></Style>
     <Style Selector="Button.workspace-nav:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource ForgePrimaryGradientSubtle}" /><Setter Property="BorderThickness" Value="0" /></Style>
     <Style Selector="Button.workspace-nav TextBlock"><Setter Property="Opacity" Value="0" /><Setter Property="Transitions"><Transitions><DoubleTransition Property="Opacity" Duration="0:0:0.16" /></Transitions></Setter></Style>
-    <Style Selector="Border#NavigationRail.expanded Button.workspace-nav TextBlock, Border#NavigationRail:focus-within Button.workspace-nav TextBlock"><Setter Property="Opacity" Value="1" /></Style>
+    <Style Selector="Border#NavigationRail.expanded Button.workspace-nav TextBlock"><Setter Property="Opacity" Value="1" /></Style>
     <Style Selector="TextBlock.sidebar-caption"><Setter Property="Opacity" Value="0" /><Setter Property="Foreground" Value="{DynamicResource ForgeTextSecondary}" /><Setter Property="FontSize" Value="10" /><Setter Property="FontWeight" Value="SemiBold" /></Style>
-    <Style Selector="Border#NavigationRail.expanded TextBlock.sidebar-caption, Border#NavigationRail:focus-within TextBlock.sidebar-caption"><Setter Property="Opacity" Value="1" /></Style>
+    <Style Selector="Border#NavigationRail.expanded TextBlock.sidebar-caption"><Setter Property="Opacity" Value="1" /></Style>
     <Style Selector="UserControl.reduced-motion Border#NavigationRail"><Setter Property="Transitions"><Transitions /></Setter></Style>
     <Style Selector="UserControl.reduced-motion Button.workspace-nav TextBlock"><Setter Property="Transitions"><Transitions /></Setter></Style>
     <Style Selector="TabControl#WorkspaceTabs /template/ ItemsPresenter#PART_ItemsPresenter"><Setter Property="Height" Value="0" /><Setter Property="MinHeight" Value="0" /><Setter Property="Opacity" Value="0" /></Style>
@@ -73,6 +74,7 @@
         <Button Classes="workspace-nav" Tag="1" Click="Navigate_Click" AutomationProperties.Name="Meetings" ToolTip.Tip="Meetings"><StackPanel Orientation="Horizontal" Spacing="16"><PathIcon Width="24" Height="24" Data="M2,5 L16,5 16,19 2,19 Z M18,9 L23,6 23,18 18,15 Z" /><TextBlock Text="Meetings" VerticalAlignment="Center" /></StackPanel></Button>
         <Button Classes="workspace-nav" Tag="2" Click="Navigate_Click" AutomationProperties.Name="Calendar" ToolTip.Tip="Calendar"><StackPanel Orientation="Horizontal" Spacing="16"><PathIcon Width="24" Height="24" Data="M5,2 L7,2 7,5 17,5 17,2 19,2 19,5 22,5 22,22 2,22 2,5 5,5 Z M4,10 L4,20 20,20 20,10 Z M7,12 L10,12 10,15 7,15 Z M13,12 L16,12 16,15 13,15 Z" /><TextBlock Text="Calendar" VerticalAlignment="Center" /></StackPanel></Button>
         <Button Classes="workspace-nav" Tag="3" Click="Navigate_Click" AutomationProperties.Name="Announcements" ToolTip.Tip="Announcements"><StackPanel Orientation="Horizontal" Spacing="16"><PathIcon Width="24" Height="24" Data="M2,8 L9,8 20,3 20,21 9,16 7,16 8,22 4,22 3,16 2,16 Z M22,9 L24,9 24,15 22,15 Z" /><TextBlock Text="Announcements" VerticalAlignment="Center" /></StackPanel></Button>
+        <Button Classes="workspace-nav" Tag="5" Click="Navigate_Click" AutomationProperties.Name="Notifications" ToolTip.Tip="Notifications"><StackPanel Orientation="Horizontal" Spacing="16"><PathIcon Width="24" Height="24" Data="M12,2 C8,2 5,5 5,9 L5,16 2,19 22,19 19,16 19,9 C19,5 16,2 12,2 Z M9,21 C9,25 15,25 15,21 Z" /><TextBlock Text="Notifications" VerticalAlignment="Center" /></StackPanel></Button>
       </StackPanel>
       <Button Grid.Row="2" Classes="workspace-nav" Tag="4" Click="Navigate_Click" AutomationProperties.Name="Media settings" ToolTip.Tip="Media settings"><StackPanel Orientation="Horizontal" Spacing="16"><PathIcon Width="24" Height="24" Data="M3,5 L21,5 21,7 3,7 Z M3,11 L21,11 21,13 3,13 Z M3,17 L21,17 21,19 3,19 Z M7,2 L9,2 9,10 7,10 Z M15,8 L17,8 17,16 15,16 Z M7,14 L9,14 9,22 7,22 Z" /><TextBlock Text="Media settings" VerticalAlignment="Center" /></StackPanel></Button>
     </Grid>
@@ -98,7 +100,7 @@
           <Border Classes="workspace-panel" MaxWidth="720" HorizontalAlignment="Left">
             <StackPanel Spacing="16"><TextBlock Text="Join meeting" FontSize="20" FontWeight="SemiBold" />
               <TextBlock Text="Enter your meeting code to get started." Foreground="{DynamicResource ForgeTextSecondary}" />
-              <Grid ColumnDefinitions="*,Auto"><TextBox Text="{Binding MeetingCode}" PlaceholderText="Meeting code" MinWidth="280" AutomationProperties.Name="Meeting code" />
+              <Grid ColumnDefinitions="*,Auto"><TextBox views:EnterSubmit.Command="{Binding JoinMeetingCommand}" Text="{Binding MeetingCode}" PlaceholderText="Meeting code" MinWidth="280" AutomationProperties.Name="Meeting code" />
                 <Button Classes="fire-btn" Grid.Column="1" Content="Join meeting" Command="{Binding JoinMeetingCommand}" IsEnabled="{Binding CanStartCall}" Margin="12,0,0,0" /></Grid>
               <TextBlock Text="Your microphone and camera start off." FontSize="12" Foreground="{DynamicResource ForgeTextSecondary}" />
             </StackPanel>
@@ -127,13 +129,14 @@
         </StackPanel></ScrollViewer>
       </TabItem>
       <TabItem Header="Calendar">
-        <Grid x:Name="CalendarLayout" ColumnDefinitions="*,340" Margin="24">
-          <Grid x:Name="CalendarBrowser" RowDefinitions="Auto,*,Auto" Margin="0,0,18,0">
-            <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,16"><TextBlock Text="Calendar" FontSize="24" FontWeight="SemiBold" />
-              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"><Button Content="Refresh" Classes="quiet" Command="{Binding RefreshCommand}" IsEnabled="{Binding !IsLoading}" /><Button Content="New schedule" Classes="fire-btn" Click="NewSchedule_Click" /></StackPanel></Grid>
-            <ScrollViewer Grid.Row="1"><StackPanel Spacing="16">
-              <ComboBox ItemsSource="{Binding CalendarPeople}" SelectedItem="{Binding SelectedCalendarPerson}" HorizontalAlignment="Stretch" PlaceholderText="My calendar and reporting team"><ComboBox.ItemTemplate><DataTemplate x:DataType="model:WorkplacePerson"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
-              <Expander Header="Vacations · requests and approvals" Expanded="Vacations_Expanded">
+        <Grid x:Name="CalendarLayout" ColumnDefinitions="*,340" RowDefinitions="Auto,*" Margin="24">
+          <Grid Grid.ColumnSpan="2" Margin="0,0,0,12">
+            <TabControl x:Name="CalendarTabs" SelectedIndex="{Binding SelectedCalendarTab}" views:TabMotion.Enabled="False"><TabItem Header="Calendar" /><TabItem Header="Vacation" /><TabItem Header="Organization Calendar" /></TabControl>
+            <Border x:Name="CalendarTabFocus" Background="{DynamicResource ForgePrimary}" Height="2" CornerRadius="1" HorizontalAlignment="Left" VerticalAlignment="Bottom" IsHitTestVisible="False">
+              <Border.Transitions><Transitions><ThicknessTransition Property="Margin" Duration="0:0:0.24"><ThicknessTransition.Easing><views:AngularNavigationEasing /></ThicknessTransition.Easing></ThicknessTransition><DoubleTransition Property="Width" Duration="0:0:0.24"><DoubleTransition.Easing><views:AngularNavigationEasing /></DoubleTransition.Easing></DoubleTransition></Transitions></Border.Transitions>
+            </Border>
+          </Grid>
+              <ScrollViewer x:Name="VacationPage" Grid.Row="1" Grid.ColumnSpan="2" IsVisible="{Binding IsVacationTab}" views:EnterSubmit.Command="{Binding VacationFormCommand}">
                 <StackPanel Spacing="10">
                   <TextBlock Text="Request vacation" FontSize="18" FontWeight="Bold" />
                   <DatePicker SelectedDate="{Binding VacationStart}" />
@@ -149,7 +152,13 @@
                   <WrapPanel><Button Content="Approve" Command="{Binding DecideVacationCommand}" CommandParameter="Approve" /><Button Content="Reject" Command="{Binding DecideVacationCommand}" CommandParameter="Reject" /><Button Content="Withdraw" Command="{Binding DecideVacationCommand}" CommandParameter="Withdraw" /><Button Content="Request cancellation" Command="{Binding DecideVacationCommand}" CommandParameter="RequestCancellation" /><Button Content="Confirm cancellation" Command="{Binding DecideVacationCommand}" CommandParameter="ConfirmCancellation" /></WrapPanel>
                   <Button Content="More requests" Command="{Binding MoreVacationsCommand}" IsVisible="{Binding VacationsHaveMore}" />
                 </StackPanel>
-              </Expander>
+              </ScrollViewer>
+          <Grid x:Name="CalendarBrowser" Grid.Row="1" IsVisible="{Binding IsCalendarTab}" RowDefinitions="Auto,*,Auto" Margin="0,0,18,0">
+            <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,16"><TextBlock Text="Calendar" FontSize="24" FontWeight="SemiBold" />
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"><Button Content="Refresh" Classes="quiet" Command="{Binding RefreshCommand}" IsEnabled="{Binding !IsLoading}" /><Button Content="New schedule" Classes="fire-btn" Click="NewSchedule_Click" /></StackPanel></Grid>
+            <ScrollViewer Grid.Row="1"><StackPanel Spacing="16">
+              <ComboBox IsVisible="{Binding !IsOrganizationCalendarTab}" ItemsSource="{Binding CalendarPeople}" SelectedItem="{Binding SelectedCalendarPerson}" HorizontalAlignment="Stretch" PlaceholderText="My calendar and reporting team"><ComboBox.ItemTemplate><DataTemplate x:DataType="model:WorkplacePerson"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
+              <ComboBox IsVisible="{Binding IsOrganizationCalendarTab}" ItemsSource="{Binding SharedCalendars}" SelectedItem="{Binding SelectedSharedCalendar}" PlaceholderText="Choose an authorized organization or unit"><ComboBox.ItemTemplate><DataTemplate x:DataType="model:SharedCalendarChoice"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
               <Border Classes="workspace-panel"><views:ScheduleCalendar x:Name="MonthCalendar" FocusDate="{Binding RangeDate}" Items="{Binding Calendar}" /></Border>
               <TextBlock Text="{Binding DateRange}" FontSize="19" FontWeight="SemiBold" />
               <TextBlock Text="No schedules for this day." IsVisible="{Binding !HasDaySchedule}" Foreground="{DynamicResource ForgeTextSecondary}" />
@@ -174,7 +183,7 @@
               <CheckBox Content="I acknowledge invitation conflicts" IsChecked="{Binding AcknowledgeResponseConflicts}" IsVisible="{Binding ResponseReviewed}" />
             </StackPanel>
           </Grid>
-          <ScrollViewer x:Name="CalendarEditor" Grid.Column="1" IsVisible="{Binding ShowCalendarEditor}"><StackPanel Classes="workspace-editor" Spacing="10" IsEnabled="{Binding !IsLoading}">
+          <ScrollViewer views:EnterSubmit.Command="{Binding SubmitCalendarFormCommand}" x:Name="CalendarEditor" Grid.Row="1" Grid.Column="1" views:RevealMotion.Kind="Drawer" views:RevealMotion.IsOpen="{Binding ShowCalendarEditor}"><StackPanel Classes="workspace-editor" Spacing="10" IsEnabled="{Binding !IsLoading}">
             <Grid ColumnDefinitions="*,Auto"><TextBlock Text="New schedule" FontSize="18" FontWeight="SemiBold" /><Button Grid.Column="1" Classes="quiet square" Click="CloseSchedule_Click" AutomationProperties.Name="Close schedule editor"><PathIcon Data="{StaticResource Glyph.Close}" Width="12" Height="12" /></Button></Grid>
             <TextBlock Text="Title" /><TextBox x:Name="EventTitleInput" Text="{Binding EventTitle}" MaxLength="200" />
             <TextBlock Text="Description" /><TextBox Text="{Binding EventDescription}" AcceptsReturn="True" Height="70" />
@@ -214,7 +223,7 @@
             </DataTemplate></ListBox.ItemTemplate>
           </ListBox>
           <TextBlock Grid.Row="2" Text="No active announcements." IsVisible="{Binding !HasAnnouncements}" Margin="0,12,0,0" Foreground="{DynamicResource ForgeTextSecondary}" />
-          <ScrollViewer x:Name="AnnouncementEditor" Grid.Column="1" Grid.RowSpan="3" IsVisible="{Binding ShowAnnouncementEditor}" Margin="20,0,0,0"><StackPanel Classes="workspace-editor" Spacing="10" IsEnabled="{Binding !IsLoading}">
+          <ScrollViewer views:EnterSubmit.Command="{Binding PublishCommand}" x:Name="AnnouncementEditor" Grid.Column="1" Grid.RowSpan="3" views:RevealMotion.Kind="Drawer" views:RevealMotion.IsOpen="{Binding ShowAnnouncementEditor}" Margin="20,0,0,0"><StackPanel Classes="workspace-editor" Spacing="10" IsEnabled="{Binding !IsLoading}">
             <Grid ColumnDefinitions="*,Auto"><TextBlock Text="New announcement" FontSize="18" FontWeight="SemiBold" /><Button Grid.Column="1" Classes="quiet square" Click="ComposeAnnouncement_Click" AutomationProperties.Name="Close announcement editor"><PathIcon Data="{StaticResource Glyph.Close}" Width="12" Height="12" /></Button></Grid>
             <TextBlock Text="Title" /><TextBox Text="{Binding AnnouncementTitle}" MaxLength="200" />
             <TextBlock Text="Category" /><ComboBox ItemsSource="{Binding AnnouncementCategories}" SelectedItem="{Binding AnnouncementCategory}" HorizontalAlignment="Stretch" />
@@ -256,14 +265,22 @@
           <TextBlock Text="Use headphones to prevent echo. This capture provider does not yet apply acoustic echo cancellation. Device changes apply the next time you enable that device." TextWrapping="Wrap" Foreground="{DynamicResource ForgeTextSecondary}" />
           <TextBlock Text="Chat security" FontSize="20" FontWeight="SemiBold" Margin="0,16,0,0" />
           <TextBlock Text="If your account has a chat PIN, unlock encrypted messages for this session." TextWrapping="Wrap" />
-          <TextBox Text="{Binding ChatPin}" PasswordChar="●" MaxLength="6" PlaceholderText="Chat PIN" />
+          <TextBox views:EnterSubmit.Command="{Binding UnlockChatCommand}" Text="{Binding ChatPin}" PasswordChar="●" MaxLength="6" PlaceholderText="Chat PIN" />
           <Button Content="Unlock chat" Command="{Binding UnlockChatCommand}" />
         </StackPanel></ScrollViewer>
       </TabItem>
+      <TabItem Header="Notifications"><Grid Margin="24" RowDefinitions="Auto,*,Auto"><TextBlock Text="Notifications" FontSize="24" FontWeight="SemiBold" />
+        <ListBox Grid.Row="1" ItemsSource="{Binding RecentNotifications}" Margin="0,16"><ListBox.ItemTemplate><DataTemplate x:DataType="model:DesktopNotification"><Button Classes="quiet" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Command="{Binding $parent[UserControl].((vm:WorkspaceViewModel)DataContext).OpenNotificationCommand}" CommandParameter="{Binding}"><StackPanel Spacing="6" Margin="12"><TextBlock Text="{Binding Title}" FontWeight="SemiBold" /><TextBlock Text="{Binding Body}" TextWrapping="Wrap" /><TextBlock Text="{Binding CreatedUtc, Converter={StaticResource DateTimeFormatConverter}}" FontSize="11" /></StackPanel></Button></DataTemplate></ListBox.ItemTemplate></ListBox>
+        <StackPanel Grid.Row="2" Spacing="10">
+          <Border Classes="workspace-panel" IsVisible="{Binding HasNotificationDetails}"><Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Spacing="8"><TextBlock Text="{Binding NotificationDetailTitle}" FontWeight="SemiBold" /><TextBlock Text="{Binding NotificationDetailBody}" TextWrapping="Wrap" MaxHeight="180" /></StackPanel>
+            <Button Grid.Column="1" Content="Close" Command="{Binding DismissNotificationDetailsCommand}" VerticalAlignment="Top" />
+          </Grid></Border>
+          <TextBlock Text="You’re all caught up. New notifications will appear here." IsVisible="{Binding !HasRecentNotifications}" Foreground="{DynamicResource ForgeTextSecondary}" /><Button Content="Earlier notifications" Command="{Binding MoreNotificationsCommand}" IsVisible="{Binding HasEarlierNotifications}" /></StackPanel></Grid></TabItem>
     </TabControl>
-    <StackPanel Grid.Row="3" Margin="16,4" Spacing="4">
+    <StackPanel Grid.Row="3" Margin="16,4" Spacing="4" IsVisible="{Binding HasWorkspaceStatus}">
       <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsLoading}" Height="3" />
-      <TextBlock Text="{Binding Feedback}" TextWrapping="Wrap" MaxHeight="80" Foreground="{DynamicResource ForgeTextSecondary}" />
+      <TextBlock IsVisible="{Binding Feedback, Converter={StaticResource NullToBoolConverter}}" Text="{Binding Feedback}" TextWrapping="Wrap" MaxHeight="80" Foreground="{DynamicResource ForgeTextSecondary}" />
     </StackPanel>
   </Grid>
   </Grid>

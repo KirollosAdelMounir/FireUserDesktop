@@ -329,14 +329,14 @@ public sealed class WorkspaceTests
         for (var index = 0; index < tabs.ItemCount; index++)
         {
             tabs.SelectedIndex = index; Dispatcher.UIThread.RunJobs();
-            var expected = new[] { "Maya Hassan", "Join meeting", "Calendar", "Announcements", "Media & preferences" }[index];
+            var expected = new[] { "Maya Hassan", "Join meeting", "Calendar", "Announcements", "Media & preferences", "Notifications" }[index];
             Assert.Contains(view.GetVisualDescendants().OfType<TextBlock>(), text => text.Text == expected && text.IsVisible);
             using var frame = window.CaptureRenderedFrame(); Assert.NotNull(frame);
             var output = Environment.GetEnvironmentVariable("FIREUSER_TEST_ARTIFACTS");
             if (output != null) { Directory.CreateDirectory(output); using var file = File.Create(Path.Combine(output, $"workspace-{(dark ? "dark" : "light")}-{index}.png")); frame.Save(file, new Avalonia.Media.Imaging.PngBitmapEncoderOptions()); }
         }
         tabs.SelectedIndex = 0;
-        view.GetVisualDescendants().OfType<Button>().First(x => x.Tag?.ToString() == "0").Focus(); Dispatcher.UIThread.RunJobs();
+        view.GetVisualDescendants().OfType<Button>().First(x => x.Tag?.ToString() == "0").Focus(Avalonia.Input.NavigationMethod.Tab); Dispatcher.UIThread.RunJobs();
         Assert.Equal(210, view.FindControl<Border>("NavigationRail")!.Bounds.Width);
         using (var expanded = window.CaptureRenderedFrame())
         {

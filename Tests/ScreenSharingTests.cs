@@ -23,8 +23,8 @@ public sealed class ScreenSharingTests
         var media = Substitute.For<INativeMediaSession>();
         return (new WorkspaceViewModel(vm, Substitute.For<ICollaborationApi>(), media, auth, chat) { InCall = true, ReduceMotion = true }, media);
     }
-    private static readonly ScreenShareSource Screen = new("portal-screen", "Choose a screen in the system dialog", ScreenShareKind.Screen, ScreenCaptureBackend.Portal);
-    private static readonly ScreenShareSource Window = new("portal-window", "Choose a window in the system dialog", ScreenShareKind.Window, ScreenCaptureBackend.Portal);
+    private static readonly ScreenShareSource Screen = new("monitor-0", "Screen 1", ScreenShareKind.Screen, ScreenCaptureBackend.Windows);
+    private static readonly ScreenShareSource Window = new("123", "Window", ScreenShareKind.Window, ScreenCaptureBackend.Windows);
     [AvaloniaFact]
     public async Task SharePicker_ChoosesWindowBeforeCapture_AndStopDoesNotOpenPickerAgain()
     {
@@ -35,7 +35,7 @@ public sealed class ScreenSharingTests
             var sharing = vm.ToggleScreenCommand.ExecuteAsync(null); Dispatcher.UIThread.RunJobs();
             var picker = Assert.Single(owner.OwnedWindows.OfType<ScreenSharePicker>()); Assert.False(vm.ScreenEnabled);
             await media.DidNotReceive().SetScreenAsync(true, Arg.Any<MediaDevices>(), Arg.Any<CancellationToken>());
-            var model = Assert.IsType<ScreenSharePickerViewModel>(picker.DataContext); Assert.True(model.UsesPortal);
+            var model = Assert.IsType<ScreenSharePickerViewModel>(picker.DataContext); Assert.False(model.UsesPortal);
             picker.FindControl<TabControl>("SourceTabs")!.SelectedIndex = 1; Dispatcher.UIThread.RunJobs(); Assert.Equal(Window, model.SelectedSource);
             if (Environment.GetEnvironmentVariable("FIREUSER_TEST_ARTIFACTS") is {} directory)
             {
@@ -68,7 +68,7 @@ public sealed class ScreenSharingTests
     [InlineData(true)] [InlineData(false)]
     public async Task PortalCancelOrFailure_DoesNotEnableSharingOrFallback(bool cancel)
     {
-        var (vm, media) = Create(); media.GetScreenSourcesAsync(Arg.Any<CancellationToken>()).Returns(new[] { Screen });
+        var (vm, media) = Create(); media.GetScreenSourcesAsync(Arg.Any<CancellationToken>()).Returns(new[] { Screen with { Backend = ScreenCaptureBackend.Portal } });
         vm.ChooseScreenShareSourceAsync = _ => Task.FromResult<ScreenShareSource?>(Screen);
         media.SetScreenAsync(true, Arg.Any<MediaDevices>(), Arg.Any<CancellationToken>()).Returns(Task.FromException(cancel ? new ScreenShareCanceledException() : new IOException("Portal unavailable")));
         await vm.ToggleScreenCommand.ExecuteAsync(null); Assert.False(vm.ScreenEnabled); Assert.False(vm.MediaBusy);
@@ -79,7 +79,7 @@ public sealed class ScreenSharingTests
     [AvaloniaFact]
     public async Task LeaveDuringPortalApproval_CancelsPendingStartAndLeavesCall()
     {
-        var (vm, media) = Create(); media.GetScreenSourcesAsync(Arg.Any<CancellationToken>()).Returns(new[] { Screen });
+        var (vm, media) = Create(); media.GetScreenSourcesAsync(Arg.Any<CancellationToken>()).Returns(new[] { Screen with { Backend = ScreenCaptureBackend.Portal } });
         vm.ChooseScreenShareSourceAsync = _ => Task.FromResult<ScreenShareSource?>(Screen);
         var pending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         media.SetScreenAsync(true, Arg.Any<MediaDevices>(), Arg.Any<CancellationToken>()).Returns(call => { var ct = call.Arg<CancellationToken>(); ct.Register(() => pending.TrySetCanceled(ct)); return pending.Task; });
@@ -91,7 +91,7 @@ public sealed class ScreenSharingTests
     [AvaloniaFact]
     public async Task SourceStopsDuringStartup_SharingRemainsOff_AndPendingPreviewDoesNotReappear()
     {
-        var (vm, media) = Create(); media.GetScreenSourcesAsync(Arg.Any<CancellationToken>()).Returns(new[] { Screen });
+        var (vm, media) = Create(); media.GetScreenSourcesAsync(Arg.Any<CancellationToken>()).Returns(new[] { Screen with { Backend = ScreenCaptureBackend.Portal } });
         vm.ChooseScreenShareSourceAsync = _ => Task.FromResult<ScreenShareSource?>(Screen);
         media.SetScreenAsync(true, Arg.Any<MediaDevices>(), Arg.Any<CancellationToken>()).Returns(_ =>
         {
