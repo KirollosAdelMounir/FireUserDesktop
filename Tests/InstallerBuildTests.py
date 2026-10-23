@@ -61,7 +61,7 @@ class InstallerBuildTests(unittest.TestCase):
                     installer.build(rid, source, Path(directory) / 'installers', '1.0.0')
                 self.assertIn('/DAllowedArchitectures=' + architectures, run.call_args.args)
                 self.assertIn('/DMinimumWindows=' + minimum, run.call_args.args)
-                self.assertIn('/DPublishDirectory=' + str(source), run.call_args.args)
+                self.assertIn('/DPublishDirectory=' + str(source.resolve()), run.call_args.args)
 
     def test_linux_declares_each_package_managers_dependencies_and_architecture(self):
         for rid, deb_arch, arch in [('linux-x64', 'amd64', 'x86_64'), ('linux-arm64', 'arm64', 'aarch64')]:
