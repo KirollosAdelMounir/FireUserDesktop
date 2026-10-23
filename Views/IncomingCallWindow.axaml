@@ -1,0 +1,17 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:UserIdentityDesktop.ViewModels"
+        x:Class="UserIdentityDesktop.Views.IncomingCallWindow" x:DataType="vm:WorkspaceViewModel"
+        Title="Incoming Fire User call" Width="400" Height="188" SizeToContent="Height" CanResize="False" ShowInTaskbar="False" Topmost="True" ShowActivated="False"
+        WindowDecorations="None" WindowStartupLocation="Manual" Background="Transparent" TransparencyLevelHint="Transparent">
+  <Window.Styles>
+    <Style Selector="Button#AnswerButton:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="#168344" /><Setter Property="Foreground" Value="White" /></Style>
+    <Style Selector="Button#DeclineButton:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="#D92748" /><Setter Property="Foreground" Value="White" /></Style>
+  </Window.Styles>
+  <Border Margin="8" Padding="20" CornerRadius="16" Background="{DynamicResource ForgeSurface}" BorderBrush="{DynamicResource ForgeBorder}" BorderThickness="1" BoxShadow="0 5 18 0 #40000000">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="14">
+      <Grid ColumnDefinitions="Auto,*"><Border Width="48" Height="48" CornerRadius="24" ClipToBounds="True" Background="{DynamicResource ForgePrimaryGradient}" VerticalAlignment="Center"><Panel><TextBlock Text="{Binding IncomingCallerInitials}" FontSize="18" FontWeight="SemiBold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" /><Image Source="{Binding IncomingAvatar}" Stretch="UniformToFill" IsVisible="{Binding HasIncomingAvatar}" /></Panel></Border><StackPanel Grid.Column="1" Margin="12,0" Spacing="5"><TextBlock Text="{Binding IncomingCallerName}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource ForgeTextPrimary}" /><TextBlock Text="Incoming call" FontSize="12" Foreground="{DynamicResource ForgeTextSecondary}" TextTrimming="CharacterEllipsis" /></StackPanel></Grid>
+      <CheckBox Grid.Row="1" Content="Join with microphone muted" IsChecked="{Binding JoinMeetingMuted}" IsVisible="{Binding IsIncomingMeeting}" />
+      <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="10"><Button x:Name="AnswerButton" Content="Answer" Background="#168344" Foreground="White" BorderThickness="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" /><Button x:Name="DeclineButton" Grid.Column="1" Content="Decline" Background="#D92748" Foreground="White" BorderThickness="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" /></Grid>
+      <TextBlock x:Name="CallAlertError" Grid.Row="3" IsVisible="False" Foreground="{DynamicResource ForgeDanger}" FontSize="11" TextWrapping="Wrap" />
+    </Grid>
+  </Border>
+</Window>

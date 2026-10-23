@@ -1,0 +1,27 @@
+{
+  "win-x64": {
+    "name": "windows-x64",
+    "archive": "zip",
+    "sha256": "196f1e86b306c427baed71eeea8c1ea1f8f40a10f087e646447719e3c647bdbb"
+  },
+  "linux-x64": {
+    "name": "ubuntu-22.04-x64",
+    "archive": "tar.gz",
+    "sha256": "a262e98006f95bd24f75c44068eeeaeb91d4830c75f6c20fee032c8fefd1b034"
+  },
+  "linux-arm64": {
+    "name": "ubuntu-22.04-arm64",
+    "archive": "tar.gz",
+    "sha256": "57234960500ea1013fd89e6c9cac313bd90170101f8366da973d61d46ef104e9"
+  },
+  "osx-x64": {
+    "name": "macos-x64",
+    "archive": "tar.gz",
+    "sha256": "0b8ff2d2f1af59136f8076fb6707c094cacc8fbc0a78bcbefd56959f35499955"
+  },
+  "osx-arm64": {
+    "name": "macos-arm64",
+    "archive": "tar.gz",
+    "sha256": "e3ae4a320dae037bf62eafa01148ef30a26c781e9c0cf1920cbbbbc9ce8545b5"
+  }
+}

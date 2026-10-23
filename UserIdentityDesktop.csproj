@@ -1,0 +1,78 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>Fire User Connect</AssemblyName>
+    <RootNamespace>UserIdentityDesktop</RootNamespace>
+    <AssemblyTitle>Fire User Connect</AssemblyTitle>
+    <Product>Fire User Connect</Product>
+    <Description>Fire User Connect</Description>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets/favicon.ico</ApplicationIcon>
+    <NativeRuntimeIdentifier Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</NativeRuntimeIdentifier>
+    <NativeRuntimeIdentifier Condition="'$(NativeRuntimeIdentifier)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</NativeRuntimeIdentifier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Application\**" />
+    <Compile Remove="Core\**" />
+    <Compile Remove="Data\**" />
+    <Compile Remove="Service\**" />
+    <Compile Remove="Tests\**" />
+    <AvaloniaResource Include="Assets\**" />
+    <Content Include="sounds/*.mp3" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="Application\UserIdentityDesktop.Application.csproj" />
+    <ProjectReference Include="Core\UserIdentityDesktop.Core.csproj" />
+    <ProjectReference Include="Data\UserIdentityDesktop.Data.csproj" />
+    <ProjectReference Include="Service\UserIdentityDesktop.Service.csproj" />
+    <PackageReference Include="Avalonia" Version="12.1.2" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.2" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.2" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.2" />
+    <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Common" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.13" />
+  </ItemGroup>
+  <PropertyGroup>
+    <NativeBridgeFile Condition="$([System.String]::Copy('$(NativeRuntimeIdentifier)').StartsWith('win-'))">fireuser_livekit.dll</NativeBridgeFile>
+    <NativeBridgeFile Condition="$([System.String]::Copy('$(NativeRuntimeIdentifier)').StartsWith('linux-'))">libfireuser_livekit.so</NativeBridgeFile>
+    <NativeBridgeFile Condition="$([System.String]::Copy('$(NativeRuntimeIdentifier)').StartsWith('osx-'))">libfireuser_livekit.dylib</NativeBridgeFile>
+    <NativeToolchain Condition="'$(NativeToolchain)' == ''">Auto</NativeToolchain>
+    <PowerShellExe Condition="'$(PowerShellExe)' == '' and '$(OS)' == 'Windows_NT' and Exists('$(ProgramW6432)\PowerShell\7\pwsh.exe')">$(ProgramW6432)\PowerShell\7\pwsh.exe</PowerShellExe>
+    <PowerShellExe Condition="'$(PowerShellExe)' == '' and '$(OS)' == 'Windows_NT' and Exists('$(ProgramFiles)\PowerShell\7\pwsh.exe')">$(ProgramFiles)\PowerShell\7\pwsh.exe</PowerShellExe>
+    <PowerShellExe Condition="'$(PowerShellExe)' == '' and '$(OS)' == 'Windows_NT' and Exists('$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe')">$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe</PowerShellExe>
+    <PowerShellExe Condition="'$(PowerShellExe)' == ''">pwsh</PowerShellExe>
+    <!-- An IDE/Codex parent can export a PowerShell 7 module path. Windows
+         PowerShell must load its own compatible built-in modules. -->
+    <_NativePowerShellEnvironment Condition="'$(OS)' == 'Windows_NT' and '$(PowerShellExe)' == '$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe'">PSModulePath=$(SystemRoot)\System32\WindowsPowerShell\v1.0\Modules</_NativePowerShellEnvironment>
+  </PropertyGroup>
+  <PropertyGroup>
+    <NativeWindowsSdkArgument Condition="'$(LiveKitSdkPath)' != ''">-SdkPath &quot;$(LiveKitSdkPath)&quot;</NativeWindowsSdkArgument>
+    <NativeSdkArgument Condition="'$(LiveKitSdkPath)' != ''">--sdk &quot;$(LiveKitSdkPath)&quot;</NativeSdkArgument>
+    <PythonExe Condition="'$(PythonExe)' == ''">python3</PythonExe>
+  </PropertyGroup>
+  <!-- Always validate the native build environment, even when copied artifacts
+       are newer than sources. CMake handles compilation incrementally. -->
+  <Target Name="BuildNativeBridge" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Condition="'$(OS)' == 'Windows_NT'" EnvironmentVariables="$(_NativePowerShellEnvironment)" Command="&quot;$(PowerShellExe)&quot; -NoProfile -File &quot;$(MSBuildProjectDirectory)/scripts/build-native.ps1&quot; -RuntimeIdentifier $(NativeRuntimeIdentifier) -Toolchain $(NativeToolchain) $(NativeWindowsSdkArgument)" />
+    <Exec Condition="'$(OS)' != 'Windows_NT'" Command="&quot;$(PythonExe)&quot; &quot;$(MSBuildProjectDirectory)/scripts/build-native.py&quot; --rid $(NativeRuntimeIdentifier) $(NativeSdkArgument)" />
+  </Target>
+  <Target Name="PrepareMediaRuntime" BeforeTargets="AssignTargetPaths" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Condition="'$(OS)' == 'Windows_NT'" EnvironmentVariables="$(_NativePowerShellEnvironment)" Command="&quot;$(PowerShellExe)&quot; -NoProfile -File &quot;$(MSBuildProjectDirectory)/scripts/setup-media.ps1&quot; -RuntimeIdentifier $(NativeRuntimeIdentifier)" />
+    <Exec Condition="'$(OS)' != 'Windows_NT'" Command="&quot;$(PythonExe)&quot; &quot;$(MSBuildProjectDirectory)/scripts/build-native.py&quot; --rid $(NativeRuntimeIdentifier) --media-only" />
+    <ItemGroup>
+      <_NativeArtifacts Include="Native/artifacts/$(NativeRuntimeIdentifier)/*" />
+      <_MediaRuntime Include="Native/media/$(NativeRuntimeIdentifier)/**/*" />
+      <Content Include="@(_NativeArtifacts)" Link="%(_NativeArtifacts.Filename)%(_NativeArtifacts.Extension)" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
+      <Content Include="@(_MediaRuntime)" Link="media/%(_MediaRuntime.RecursiveDir)%(_MediaRuntime.Filename)%(_MediaRuntime.Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+</Project>

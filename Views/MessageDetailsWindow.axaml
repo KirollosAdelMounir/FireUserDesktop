@@ -1,0 +1,15 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:UserIdentityDesktop.ViewModels"
+        x:Class="UserIdentityDesktop.Views.MessageDetailsWindow" x:DataType="vm:MessageDetailsViewModel" Title="Message details" Width="560" Height="620" MinWidth="420" MinHeight="360" WindowStartupLocation="CenterOwner" WindowDecorations="Full" Background="{DynamicResource ForgeSurface}" Foreground="{DynamicResource ForgeTextPrimary}">
+  <ScrollViewer><StackPanel Margin="24" Spacing="18">
+    <TextBlock Text="Message details" FontSize="22" FontWeight="SemiBold" />
+    <TextBlock Text="{Binding RefreshError}" TextWrapping="Wrap" Foreground="{DynamicResource ForgeDanger}" IsVisible="{Binding RefreshError, Converter={StaticResource NullToBoolConverter}}"/>
+    <Border Classes="detail-card"><SelectableTextBlock Text="{Binding Body}" TextWrapping="Wrap" MaxHeight="130" /></Border>
+    <StackPanel Spacing="8"><StackPanel Orientation="Horizontal" Spacing="8"><PathIcon Data="{StaticResource Glyph.Send}" Width="17" Height="17"/><TextBlock Text="Sent" FontWeight="SemiBold"/></StackPanel><TextBlock Text="{Binding Sender}"/><SelectableTextBlock Text="{Binding SentAt}"/><TextBlock Text="Times shown in your local time" Classes="caption"/></StackPanel>
+    <StackPanel IsVisible="{Binding ShowReceipts}" Spacing="18">
+      <StackPanel Spacing="10"><StackPanel Orientation="Horizontal" Spacing="8"><PathIcon Data="{StaticResource Glyph.Users}" Width="17" Height="17"/><TextBlock Text="Seen by" FontWeight="SemiBold"/></StackPanel><TextBlock Text="No one yet" IsVisible="{Binding NoReaders}" Classes="caption"/>
+        <ItemsControl ItemsSource="{Binding SeenRows}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:MessageReceiptRow"><Grid ColumnDefinitions="*,Auto" Margin="0,5" ColumnSpacing="16"><TextBlock Text="{Binding Name}" TextWrapping="Wrap"/><SelectableTextBlock Grid.Column="1" Text="{Binding Time}"/></Grid></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+      </StackPanel>
+      <ItemsControl ItemsSource="{Binding Playback}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:MessagePlaybackSection"><StackPanel Spacing="10" Margin="0,0,0,18"><StackPanel Orientation="Horizontal" Spacing="8"><PathIcon Data="{StaticResource Glyph.Audio}" Width="17" Height="17"/><TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap"/></StackPanel><TextBlock Text="Not played yet" IsVisible="{Binding IsEmpty}" Classes="caption"/><ItemsControl ItemsSource="{Binding Rows}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:MessageReceiptRow"><Grid ColumnDefinitions="*,Auto" Margin="0,5" ColumnSpacing="16"><TextBlock Text="{Binding Name}" TextWrapping="Wrap"/><SelectableTextBlock Grid.Column="1" Text="{Binding Time}"/></Grid></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+    </StackPanel>
+  </StackPanel></ScrollViewer>
+</Window>

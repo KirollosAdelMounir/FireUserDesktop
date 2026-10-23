@@ -1,0 +1,105 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:UserIdentityDesktop"
+             xmlns:views="using:UserIdentityDesktop.Views"
+             xmlns:converters="using:UserIdentityDesktop.Converters"
+             x:Class="UserIdentityDesktop.App"
+             RequestedThemeVariant="Dark">
+
+    <Application.DataTemplates>
+        <local:ViewLocator />
+    </Application.DataTemplates>
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <converters:BoolInverterConverter x:Key="BoolInverterConverter" />
+            <converters:NullToBoolConverter x:Key="NullToBoolConverter" />
+            <converters:DateTimeFormatConverter x:Key="DateTimeFormatConverter" />
+
+            <ControlTheme x:Key="FireToastCardTheme" TargetType="NotificationCard">
+                <Setter Property="Width" Value="350" />
+                <Setter Property="Template"><ControlTemplate><Border Margin="5,5,5,10" CornerRadius="12" BoxShadow="0 4 12 0 #28000000"><ContentPresenter Content="{TemplateBinding Content}" /></Border></ControlTemplate></Setter>
+                <Style Selector="^[IsClosing=false]:not(.reduced-motion)">
+                    <Style.Animations><Animation Duration="0:0:0.24" FillMode="Forward"><Animation.Easing><views:AngularNavigationEasing /></Animation.Easing>
+                        <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0" /><Setter Property="TranslateTransform.Y" Value="10" /></KeyFrame>
+                        <KeyFrame Cue="100%"><Setter Property="Opacity" Value="1" /><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
+                    </Animation></Style.Animations>
+                </Style>
+                <Style Selector="^[IsClosing=true]:not(.reduced-motion)">
+                    <Style.Animations><Animation Duration="0:0:0.24" FillMode="Forward">
+                        <KeyFrame Cue="0%"><Setter Property="Opacity" Value="1" /></KeyFrame>
+                        <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0" /><Setter Property="IsClosed" Value="True" /></KeyFrame>
+                    </Animation></Style.Animations>
+                </Style>
+                <Style Selector="^[IsClosing=true].reduced-motion">
+                    <Style.Animations><Animation Duration="0:0:0.001" FillMode="Forward"><KeyFrame Cue="100%"><Setter Property="IsClosed" Value="True" /></KeyFrame></Animation></Style.Animations>
+                </Style>
+            </ControlTheme>
+            <!-- Brand shared brushes -->
+            <SolidColorBrush x:Key="ForgePrimary" Color="#E0531C" />
+            <SolidColorBrush x:Key="ForgePrimaryHover" Color="#EA602A" />
+            <SolidColorBrush x:Key="ForgeAccentGold" Color="#FFB703" />
+            <SolidColorBrush x:Key="ForgeSuccess" Color="#2EC4B6" />
+            <SolidColorBrush x:Key="ForgeDanger" Color="#E63946" />
+
+            <LinearGradientBrush x:Key="ForgePrimaryGradient" StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Color="#D84914" Offset="0.0" />
+                <GradientStop Color="#EB682B" Offset="0.5" />
+                <GradientStop Color="#F59E0B" Offset="1.0" />
+            </LinearGradientBrush>
+
+            <LinearGradientBrush x:Key="ForgePrimaryGradientSubtle" StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Color="#1AE0531C" Offset="0.0" />
+                <GradientStop Color="#1AF59E0B" Offset="1.0" />
+            </LinearGradientBrush>
+
+            <ResourceDictionary.ThemeDictionaries>
+                <!-- Obsidian / Magma Dark Theme -->
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="ForgePrimary" Color="#DD7036" />
+                    <SolidColorBrush x:Key="ForgePrimaryHover" Color="#E67E45" />
+                    <LinearGradientBrush x:Key="ForgePrimaryGradient" StartPoint="0%,0%" EndPoint="100%,100%">
+                        <GradientStop Color="#CF5C22" Offset="0" /><GradientStop Color="#DD7036" Offset="0.5" /><GradientStop Color="#E5A51A" Offset="1" />
+                    </LinearGradientBrush>
+                    <LinearGradientBrush x:Key="ForgePrimaryGradientSubtle" StartPoint="0%,0%" EndPoint="100%,100%">
+                        <GradientStop Color="#1ADD7036" Offset="0" /><GradientStop Color="#1AF59E0B" Offset="1" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="ForgeBg" Color="#121316" />
+                    <SolidColorBrush x:Key="ForgeBgSecondary" Color="#18191E" />
+                    <SolidColorBrush x:Key="ForgeSurface" Color="#1C1D23" />
+                    <SolidColorBrush x:Key="ForgeSurfaceCard" Color="#1A1B21" />
+                    <SolidColorBrush x:Key="ForgeSurfaceHover" Color="#262830" />
+                    <SolidColorBrush x:Key="ForgeBorder" Color="#17FFFFFF" />
+                    <SolidColorBrush x:Key="ForgeBorderFocus" Color="#DD7036" />
+                    <SolidColorBrush x:Key="ForgeTextPrimary" Color="#F0F2F5" />
+                    <SolidColorBrush x:Key="ForgeTextSecondary" Color="#B0B5BE" />
+                    <SolidColorBrush x:Key="ForgeTextMuted" Color="#7A808B" />
+                    <SolidColorBrush x:Key="ForgeBubbleReceived" Color="#22242B" />
+                    <SolidColorBrush x:Key="ForgeBubbleSent" Color="#3D2C25" />
+                    <SolidColorBrush x:Key="ForgeBubbleSentBorder" Color="#66503A" />
+                </ResourceDictionary>
+
+                <!-- Warm Ash Light Theme -->
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="ForgeBg" Color="#F5F4F0" />
+                    <SolidColorBrush x:Key="ForgeBgSecondary" Color="#EBE8E2" />
+                    <SolidColorBrush x:Key="ForgeSurface" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="ForgeSurfaceCard" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="ForgeSurfaceHover" Color="#F7F4EF" />
+                    <SolidColorBrush x:Key="ForgeBorder" Color="#1F322823" />
+                    <SolidColorBrush x:Key="ForgeBorderFocus" Color="#E0531C" />
+                    <SolidColorBrush x:Key="ForgeTextPrimary" Color="#1F242B" />
+                    <SolidColorBrush x:Key="ForgeTextSecondary" Color="#58606E" />
+                    <SolidColorBrush x:Key="ForgeTextMuted" Color="#8C93A0" />
+                    <SolidColorBrush x:Key="ForgeBubbleReceived" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="ForgeBubbleSent" Color="#FFF0E6" />
+                    <SolidColorBrush x:Key="ForgeBubbleSentBorder" Color="#F0D5C0" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
+    <Application.Styles>
+        <StyleInclude Source="/Styles/FireUserStyles.axaml" />
+    </Application.Styles>
+</Application>

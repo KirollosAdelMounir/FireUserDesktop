@@ -1,0 +1,9 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:UserIdentityDesktop.ViewModels"
+        x:Class="UserIdentityDesktop.Views.MessageDialog" x:DataType="vm:MessageDialogModel" Title="{Binding Title}" Width="460" Height="360" MinWidth="380" MinHeight="300"
+        WindowStartupLocation="CenterOwner" Background="{DynamicResource ForgeSurface}" Foreground="{DynamicResource ForgeTextPrimary}" CanResize="True">
+  <Grid RowDefinitions="Auto,*,Auto" Margin="26">
+    <StackPanel Spacing="6" Margin="0,0,0,20"><TextBlock Text="{Binding Title}" FontSize="22" FontWeight="SemiBold" /><TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource ForgeTextMuted}" TextWrapping="Wrap" /></StackPanel>
+    <ScrollViewer Grid.Row="1"><StackPanel Spacing="16"><Border Classes="detail-card"><SelectableTextBlock Text="{Binding Body}" TextWrapping="Wrap" FontSize="14" /></Border><TextBlock Text="{Binding Detail}" TextWrapping="Wrap" Foreground="{DynamicResource ForgeTextSecondary}" FontSize="12" /></StackPanel></ScrollViewer>
+    <StackPanel Grid.Row="2" IsVisible="{Binding IsConfirmation}" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0,22,0,0"><Button Content="Cancel" IsVisible="{Binding IsConfirmation}" Click="Close_Click" /><Button Content="Delete for everyone" Classes="danger" IsVisible="{Binding IsConfirmation}" Click="Delete_Click" /></StackPanel>
+  </Grid>
+</Window>

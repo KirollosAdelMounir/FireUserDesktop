@@ -1,0 +1,43 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="UserIdentityDesktop.Views.ScheduleCalendar">
+  <UserControl.Styles>
+    <Style Selector="Button.calendar-day">
+      <Setter Property="Background" Value="{DynamicResource ForgeSurfaceCard}" />
+      <Setter Property="Foreground" Value="{DynamicResource ForgeTextPrimary}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ForgeBorder}" />
+      <Setter Property="BorderThickness" Value="1" /><Setter Property="CornerRadius" Value="9" /><Setter Property="Margin" Value="2" />
+      <Setter Property="Padding" Value="8" /><Setter Property="MinHeight" Value="76" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" /><Setter Property="VerticalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="VerticalContentAlignment" Value="Top" />
+    </Style>
+    <Style Selector="Button.calendar-day.today"><Setter Property="BorderBrush" Value="{DynamicResource ForgePrimary}" /></Style>
+    <Style Selector="Button.calendar-day.outside"><Setter Property="Opacity" Value="0.45" /></Style>
+    <Style Selector="Button.calendar-day.selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource ForgePrimaryGradientSubtle}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ForgePrimary}" /><Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="TextBlock.calendar-entry"><Setter Property="Foreground" Value="{DynamicResource ForgePrimary}" /><Setter Property="FontSize" Value="10" /></Style>
+    <Style Selector="TextBlock.calendar-weekday"><Setter Property="Foreground" Value="{DynamicResource ForgeTextSecondary}" /><Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="Margin" Value="0,8" /></Style>
+  </UserControl.Styles>
+  <StackPanel Spacing="12">
+
+    <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+      <Button Content="‹" Click="Previous_Click" AutomationProperties.Name="Previous month" />
+      <TextBlock x:Name="MonthTitle" Grid.Column="1" VerticalAlignment="Center" FontSize="20" FontWeight="SemiBold" Margin="12,0" />
+      <Button Grid.Column="2" Content="›" Click="Next_Click" AutomationProperties.Name="Next month" />
+      <Button Grid.Column="3" Content="Today" Click="Today_Click" Margin="8,0,0,0" />
+    </Grid>
+    <WrapPanel ItemSpacing="14" LineSpacing="7"><StackPanel Orientation="Horizontal" Spacing="5"><Ellipse Width="7" Height="7" Fill="#6D89DC"/><TextBlock Text="Events" Classes="caption"/></StackPanel><StackPanel Orientation="Horizontal" Spacing="5"><Ellipse Width="7" Height="7" Fill="#AF7DE4"/><TextBlock Text="Meetings" Classes="caption"/></StackPanel><StackPanel Orientation="Horizontal" Spacing="5"><Ellipse Width="7" Height="7" Fill="#DB952C"/><TextBlock Text="Tasks" Classes="caption"/></StackPanel><StackPanel Orientation="Horizontal" Spacing="5"><Ellipse Width="7" Height="7" Fill="#359B84"/><TextBlock Text="Vacation" Classes="caption"/></StackPanel><StackPanel Orientation="Horizontal" Spacing="5"><Ellipse Width="7" Height="7" Fill="#D66985"/><TextBlock Text="Holidays" Classes="caption"/></StackPanel></WrapPanel>
+    <Border BorderBrush="{DynamicResource ForgeBorder}" BorderThickness="1,1,0,0" CornerRadius="12" ClipToBounds="True">
+      <Grid x:Name="DayGrid" ColumnDefinitions="*,*,*,*,*,*,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" />
+    </Border>
+    <TextBlock x:Name="SelectedDayTitle" FontSize="18" FontWeight="SemiBold" Margin="0,8,0,0" />
+    <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+      <TextBlock Text="Choose a time to create a schedule." VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource ForgeTextSecondary}" />
+      <ComboBox x:Name="HourChoice" Grid.Column="1" SelectedIndex="9" MinWidth="65" AutomationProperties.Name="Schedule hour" />
+      <ComboBox x:Name="MinuteChoice" Grid.Column="2" SelectedIndex="0" MinWidth="65" Margin="6,0" AutomationProperties.Name="Schedule minute" />
+      <Button Grid.Column="3" Content="Create schedule" Click="Create_Click" />
+    </Grid>
+    <ScrollViewer MaxHeight="460"><StackPanel x:Name="HourlyAgenda" Spacing="0" /></ScrollViewer>
+  </StackPanel>
+</UserControl>

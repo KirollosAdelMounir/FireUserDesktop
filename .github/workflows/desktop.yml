@@ -1,0 +1,187 @@
+name: Native desktop validation
+run-name: Fire User desktop - ${{ inputs.request_id || github.run_number }}
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Package to build
+        type: choice
+        default: all
+        options: [all, win-x64, win-arm64, osx-x64, osx-arm64, linux-x64, linux-arm64]
+      request_id:
+        description: Correlation ID used by the local build command
+        type: string
+        required: false
+permissions:
+  contents: read
+jobs:
+  plan:
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - id: select
+        env:
+          BUILD_TARGET: ${{ inputs.target || 'all' }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          entries = [
+              {'os': 'windows-2022', 'rid': 'win-x64'},
+              {'os': 'ubuntu-22.04', 'rid': 'linux-x64'},
+              {'os': 'ubuntu-22.04-arm', 'rid': 'linux-arm64'},
+              {'os': 'macos-14', 'rid': 'osx-arm64'},
+              {'os': 'macos-15-intel', 'rid': 'osx-x64'},
+          ]
+          target = os.environ['BUILD_TARGET']
+          # Windows ARM uses the x64 package under Windows 11 emulation.
+          native_target = 'win-x64' if target == 'win-arm64' else target
+          selected = [item for item in entries if target == 'all' or item['rid'] == native_target]
+          if not selected:
+              raise SystemExit('Unsupported package target')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('matrix=' + json.dumps({'include': selected}) + '\n')
+          PY
+  desktop:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Linux development dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxtst-dev libfontconfig1 libice6 libsm6 libssl-dev python3 xvfb dbus-daemon libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 gstreamer1.0-plugins-base gstreamer1.0-pipewire rpm zstd squashfs-tools desktop-file-utils file
+      - name: Build and smoke-test official LiveKit C++ bridge (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/build-native.ps1 -RuntimeIdentifier '${{ matrix.rid }}'
+      - name: Build and smoke-test official LiveKit C++ bridge (Unix)
+        if: runner.os != 'Windows'
+        run: python3 scripts/build-native.py --rid '${{ matrix.rid }}'
+      - name: Check build tooling
+        run: python -m unittest discover -s Tests -p '*Build*Tests.py'
+      - name: Build Avalonia client
+        run: dotnet build UserIdentityDesktop.csproj -c Release
+      - name: Linux native startup smoke test
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          smoke_root=$(mktemp -d)
+          mkdir -p "$smoke_root/config" "$smoke_root/data" "$smoke_root/cache"
+          XDG_CONFIG_HOME="$smoke_root/config" XDG_DATA_HOME="$smoke_root/data" XDG_CACHE_HOME="$smoke_root/cache" timeout 30s xvfb-run -a "./bin/Release/net10.0/Fire User Connect" --startup-smoke-test
+      - name: Test contracts, encryption, native control policy and UI
+        run: dotnet test Tests/UserIdentityDesktop.Tests.csproj -c Release
+      - name: Package native client
+        if: runner.os != 'Linux'
+        shell: pwsh
+        run: ./scripts/publish-desktop.ps1 -RuntimeIdentifier '${{ matrix.rid }}'
+      - name: Package Linux client
+        if: runner.os == 'Linux'
+        run: dotnet publish UserIdentityDesktop.csproj -c Release -r '${{ matrix.rid }}' --self-contained true -o 'artifacts/${{ matrix.rid }}'
+      - name: Verify packaged media executable without capturing devices
+        env:
+          PACKAGE_RID: ${{ matrix.rid }}
+        run: |
+          python -c "import os,subprocess; from pathlib import Path; rid=os.environ['PACKAGE_RID']; binary=Path('artifacts')/rid/'media'/('ffmpeg.exe' if rid.startswith('win-') else 'ffmpeg'); subprocess.run([str(binary),'-version'],check=True)"
+      - name: Create OS installers
+        run: python scripts/build-installers.py --rid '${{ matrix.rid }}' --source 'artifacts/${{ matrix.rid }}' --output installers
+      - name: Upload OS installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: fire-user-installers-${{ matrix.rid }}
+          path: installers/*
+          if-no-files-found: error
+      - name: Archive package preserving Unix executable permissions
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p packages
+          tar -czf 'packages/fire-user-${{ matrix.rid }}.tar.gz' -C 'artifacts/${{ matrix.rid }}' .
+      - name: Archive Windows package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path packages -Force | Out-Null
+          tar -czf 'packages/fire-user-${{ matrix.rid }}.tar.gz' -C 'artifacts/${{ matrix.rid }}' .
+          if ($LASTEXITCODE) { throw 'Package archive failed.' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fire-user-${{ matrix.rid }}
+          path: packages/fire-user-${{ matrix.rid }}.tar.gz
+          if-no-files-found: error
+      - name: Upload Windows native validation executable
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-validation-win-x64
+          path: Native/build/win-x64/Release/bridge_smoke.exe
+          if-no-files-found: error
+      - name: Compile Windows ARM compatibility installer on x64 build host
+        if: runner.os == 'Windows'
+        run: python scripts/build-installers.py --rid win-arm64-emulated --source artifacts/win-x64 --output arm-installers
+      - name: Stage Windows ARM installer for ARM runner verification
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-validation-win-arm64
+          path: arm-installers/*
+          if-no-files-found: error
+  windows-arm:
+    name: Windows 11 ARM64 (x64 emulation)
+    needs: desktop
+    if: github.event_name != 'workflow_dispatch' || inputs.target == 'all' || inputs.target == 'win-arm64'
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: fire-user-win-x64
+          path: incoming
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-validation-win-x64
+          path: validation
+      - uses: actions/download-artifact@v4
+        with:
+          name: installer-validation-win-arm64
+          path: installers
+      - name: Verify complete x64 package on Windows ARM
+        shell: pwsh
+        run: |
+          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64') { throw 'Expected an ARM64 Windows host.' }
+          New-Item -ItemType Directory -Path artifacts/win-arm64-emulated,packages -Force | Out-Null
+          tar -xzf incoming/fire-user-win-x64.tar.gz -C artifacts/win-arm64-emulated
+          if ($LASTEXITCODE) { throw 'Package extraction failed.' }
+          Copy-Item validation/bridge_smoke.exe artifacts/win-arm64-emulated/
+          Push-Location artifacts/win-arm64-emulated
+          try {
+            & ./bridge_smoke.exe
+            if ($LASTEXITCODE) { throw 'Native runtime failed under x64 emulation.' }
+            & ./media/ffmpeg.exe -version
+            if ($LASTEXITCODE) { throw 'Media executable failed under x64 emulation.' }
+            $process = Start-Process -FilePath "$PWD/Fire User Connect.exe" -ArgumentList '--startup-smoke-test' -PassThru
+            if (-not $process.WaitForExit(30000)) { $process.Kill(); throw 'Application startup timed out under x64 emulation.' }
+            if ($process.ExitCode) { throw 'Application startup failed under x64 emulation.' }
+            Remove-Item bridge_smoke.exe
+            'Requires Windows 11 ARM64. This package runs x64 binaries through Windows emulation. It is not a native ARM64 build and does not support Windows 10 ARM.' | Set-Content COMPATIBILITY.txt
+          } finally { Pop-Location }
+          tar -czf packages/fire-user-win-arm64-emulated.tar.gz -C artifacts/win-arm64-emulated .
+          if ($LASTEXITCODE) { throw 'ARM compatibility package archive failed.' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fire-user-installers-win-arm64-emulated
+          path: installers/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fire-user-win-arm64-emulated
+          path: packages/fire-user-win-arm64-emulated.tar.gz
+          if-no-files-found: error

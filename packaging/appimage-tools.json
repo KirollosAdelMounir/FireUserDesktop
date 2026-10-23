@@ -1,0 +1,14 @@
+{
+  "x86_64": {
+    "toolUrl": "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage",
+    "toolSha256": "95cbe7cce9717fce90c484e34052ee7c7f1d7635b33c12525b4776826a7d29b6",
+    "runtimeUrl": "https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64",
+    "runtimeSha256": "617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46"
+  },
+  "aarch64": {
+    "toolUrl": "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-aarch64.AppImage",
+    "toolSha256": "a595ea34cd6136c7f595e9dcbb16f3e9725d7610efb9e43b38c3c6e86cafc270",
+    "runtimeUrl": "https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-aarch64",
+    "runtimeSha256": "9a72a744d221576c9347ec074243acc5c3c7568896b12714e0e82e9f0bf47900"
+  }
+}

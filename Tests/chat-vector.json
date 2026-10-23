@@ -1,0 +1,37 @@
+{
+  "recovery": {
+    "userId": "11111111-1111-4111-8111-111111111111",
+    "publicKey": "{\"encryptionKey\":{\"key_ops\":[\"encrypt\"],\"ext\":true,\"alg\":\"RSA-OAEP-256\",\"kty\":\"RSA\",\"n\":\"lhEs1xR2ziwZ-J-YjUGS4xGhtQqtSebW-uc6u8fz7MVOXwNThRifAj2jaFz6omOiymHuHhLCNmtJwyLUNJF8KGGCnTYoj3GFumYuzrfkW_GUdA_a7V8ixy3-cPn3r81Ft59HyxAAfT8dMy7lSZ4s4QndEkh3ZU0hpDAoC04waTdpD48mXoFYwPuuvyiwXKJLZdVw6uO3IODcBfZnjOhL2EXQT7CznxHnfhl_F2kEQSRxEI675BKQJ2wAJILdKb40LjqSjBw13wcqm3h4DDWArj8yVgoW45l56Jj8AGWXkFYmCP9aNKndRCw4xBy9uvHMsp7Kz3FQyDE3WF49kogiTQ\",\"e\":\"AQAB\"},\"signingKey\":{\"kty\":\"EC\",\"x\":\"IVdj4f0nGimkxciI9IbuaBnnTVo-AtbMAjm11YRSvgE\",\"y\":\"OS9utpk-sHckOTPhEA3mb-7xZVZ2bfEKgIVGpIJyIGk\",\"crv\":\"P-256\"}}",
+    "encryptionPrivateKey": "MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCWESzXFHbOLBn4n5iNQZLjEaG1Cq1J5tb65zq7x/PsxU5fA1OFGJ8CPaNoXPqiY6LKYe4eEsI2a0nDItQ0kXwoYYKdNiiPcYW6Zi7Ot+Rb8ZR0D9rtXyLHLf5w+fevzUW3n0fLEAB9Px0zLuVJnizhCd0SSHdlTSGkMCgLTjBpN2kPjyZegVjA+66/KLBcoktl1XDq47cg4NwF9meM6EvYRdBPsLOfEed+GX8XaQRBJHEQjrvkEpAnbAAkgt0pvjQuOpKMHDXfByqbeHgMNYCuPzJWChbjmXnomPwAZZeQViYI/1o0qd1ELDjEHL268cyynsrPcVDIMTdYXj2SiCJNAgMBAAECggEAAP88txzE8aI5NZ2+f6PBpCi8FGNC2vnsZY7Z5PZTYHhAHiFRcacuo+8WZ0KvjJrRBvtcamPmrpdgY6pB0taWRqtn2NULsxub5JePXzgOuENUNercDMCEJI127Q0QGvbSwYFOqA1OFNxG503mtT+WiJPjnYk7N9epw04+7zJLX+Dn15DLQOg5EbzP5t9G05OeiyQLz0A49aizbPfSD7Jk4FgK/BZjHD9zq0jaUXePy8WoP+uDnGBdxRQMAhMRZ3obRTFX4aMd7UHjs1SBKx9xcB7jpEKua+TnxnrQiDeo6sFRHE1GABB4p24WfvbkbRMZeuX6+v3VhSg0xraqHzRxOQKBgQDNYrz5HNqYI6CqZRz3gowV+katF6/15xTZE9rVn76FOlsUt35BNC7XwOVjw8NRBhN16tWc2HIRXVvYLfNq1dwl9mJhn8QnCDjX2xYaXf1e2HEO8fAOvHGGH65I9+zEhLAqz9GrE1JWOOdrMoDQSeYa3UuqYWkTc/9GDt+041V6xQKBgQC7DIbUmpduRuZTkQ951RJ2oHgC5zjsKpAjeittXaIpvcMlvVASHI5ZPWlBTlQRAd4P7MhXNZSNbCYnNLDGnzs6exjexQ0COSY+1A7H7N4Xm079CamguomZHP0dVXpDozM3LDbEPpvYbyAytpF1Og7Y4jvTxNBUQ4z3Q0H5f8gh6QKBgQCwNL/v8WNRF2/mAG3Do4rP6DLumd3q2GA4hSJAGJb58kDmGy8EfeKaU/H5j6BoSRA1IE44DDKA11nOtE2cIPKI10M8gjdlTVaHSn1CDdUspAELU2IjImU7Lr719054o2YItNcrMJ55PsS8YU3GZUA3WBhsirn9aI1f667doBRcCQKBgFBLV1HKrvi63MLAwZj2G3/q8LmmUmwm9UsVdbD0AdnTSQNZWhb8RSsPzrAnFLVcTNwfM/0j1gpDg7lOyBfrYLyA/TMb+bKbn8xWsaWnC8uscuLyk+uYR9r/c7R07hA87Y5gn33stm/ZfEPo1VYyPw9hRndoxFl3yfqW16pn7RyJAoGBAJSttR3IJwydGyU21h5ILlm2Mlp5O7Jx7TCSzV3hf5Gq5TAxXSi52b/jtYIK9kuYTKzpHSG4MkdKyl71h4ZnHVqfw5X0eFG8w2gozF2irR+fETkQgRuQd/o/nDJnUAySbtBMsQE0m97cFppCkMBPFptKOq13gNTf2NboDEJURqJw",
+    "signingPrivateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgh1+koTSQwcwLA7v2Xur8rIGsJtd/RFN5cxuHIRkIj/GhRANCAAQhV2Ph/ScaKaTFyIj0hu5oGedNWj4C1swCObXVhFK+ATkvbraZPrB3JDkz4RAN5m/u8WVWdm3xCoCFRqSCciBp"
+  },
+  "publicIdentity": {
+    "encryptionKey": {
+      "key_ops": [
+        "encrypt"
+      ],
+      "ext": true,
+      "alg": "RSA-OAEP-256",
+      "kty": "RSA",
+      "n": "lhEs1xR2ziwZ-J-YjUGS4xGhtQqtSebW-uc6u8fz7MVOXwNThRifAj2jaFz6omOiymHuHhLCNmtJwyLUNJF8KGGCnTYoj3GFumYuzrfkW_GUdA_a7V8ixy3-cPn3r81Ft59HyxAAfT8dMy7lSZ4s4QndEkh3ZU0hpDAoC04waTdpD48mXoFYwPuuvyiwXKJLZdVw6uO3IODcBfZnjOhL2EXQT7CznxHnfhl_F2kEQSRxEI675BKQJ2wAJILdKb40LjqSjBw13wcqm3h4DDWArj8yVgoW45l56Jj8AGWXkFYmCP9aNKndRCw4xBy9uvHMsp7Kz3FQyDE3WF49kogiTQ",
+      "e": "AQAB"
+    },
+    "signingKey": {
+      "kty": "EC",
+      "x": "IVdj4f0nGimkxciI9IbuaBnnTVo-AtbMAjm11YRSvgE",
+      "y": "OS9utpk-sHckOTPhEA3mb-7xZVZ2bfEKgIVGpIJyIGk",
+      "crv": "P-256"
+    }
+  },
+  "wire": "FU1.{\"ciphertext\":\"voWL3o-bvyMIlcdw2J-BaGFptLjjQqh3kjFabaDUXqy7lVahuPqh7RrLXBPJw3bwCFP5CW58_CrpinH8-SunrNDoJqcY_dVUj1ZpMdIvqMeRckILy79jr-LP73vHo44noV2Xq3QsIBIq46CbryCUe3_s3tecbWQMttjr14myqj7tn2C68TxRASoKHNI5DddHTOHc--iUWlU3vfLYfAKXlzo-qGEBmbXRryaLz6BUM_-wjpMJEnlzo5cT6PzAkoHUGMRNze2Aj6PqmtuiaLHzqTrPX-Ij0jYkdTrH77o-R2xEiBrc4vWtgoVDYm1wfvZfKYFqQv8TfDrWeSvRlwotEVRhZUc7PLMvVK_X9ueusS8QDuYQ27cL3DnlaEkDlwrpWZJ-akiDer4E0FSWSLCkmE0p9IQuGQAfgMJP-rodUM6BN9lwXTIa-o4Bp1bCrlfNo2y_x_Sgxfkt08W1_ShBdJrIwtGl56xpVELODQiqEp-K3MsAB4QxCw6Q0aLUygr8No5FCIp3_Kue1x_oOsb_u7uGNGJxbZMPbouY4x8ZXnstJbQojD1OIOp6RDaxEhJk1jaPofBuFWZyoxQdChQXX6tLSkTujWPkys-wZ8ScufakdWWCw-RqYk9OseSYBHLf4gBwpxSj6ft4o897zwhrouZaa_rl6wFA9zS5JthNBnC8fYmuv8DVQpdU47kmafYcTcI\",\"iv\":\"OMOX6p3Pxc8dS3Fg\",\"recipients\":[{\"encrypted_key\":\"fHhRGHyt_RNHpOGlElWVH4mUSBN8fy4BLVFfCehdysn2TO7Cu5irmeiE8D46V2f4b-to37FP64T16dRdoPtOSY4o4VB4TqE3EfANnziIRGQndg5TZB1tDWGxFApS1vhUKYm0aUmht7Rx07kT5ieB1-4IAwYZzRQ40tNKXLnzoslF8Y9mwjFk4SiT7k90b5-Y1s6unJ1fe9jNGE_U1gYVA1iM61_L3SPoM5uhGxwANdJPJpIVM7bxWOObV9GjxxYjAFRJNMBcsVRbDgwdUTJzeO5W1tJ31hppeJJt5He2qFQdRKKWP-3qY1Jd-RWNagX9TkBSncdq3PwxbNNw9X5Nbw\",\"header\":{\"kid\":\"11111111-1111-4111-8111-111111111111\"}}],\"tag\":\"WJO9Kb7m2BWAoXbvR08YRg\",\"protected\":\"eyJhbGciOiJSU0EtT0FFUC0yNTYiLCJlbmMiOiJBMjU2R0NNIiwidHlwIjoiRlVDSEFUMSJ9\"}",
+  "file": {
+    "id": "22222222-2222-4222-8222-222222222222",
+    "name": "note.txt",
+    "mimeType": "text/plain",
+    "size": 5,
+    "chunkSize": 1048576,
+    "key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+    "noncePrefix": "AwMDAwMDAwM="
+  },
+  "fileCipher": "sk+30tameBki2Yw8yXR4C37uEeJZ"
+}

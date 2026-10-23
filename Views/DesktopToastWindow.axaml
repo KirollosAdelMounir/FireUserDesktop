@@ -1,0 +1,42 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:views="using:UserIdentityDesktop.Views"
+        x:Class="UserIdentityDesktop.Views.DesktopToastWindow" x:DataType="views:DesktopToastWindow"
+        Title="Fire User Connect" Width="396" SizeToContent="Height" CanResize="False" ShowInTaskbar="False" ShowActivated="False" Topmost="True"
+        WindowDecorations="None" WindowStartupLocation="Manual" Background="Transparent" TransparencyLevelHint="Transparent">
+  <Window.Styles>
+    <Style Selector="Button.toast-open"><Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" /><Setter Property="Padding" Value="0" /><Setter Property="HorizontalContentAlignment" Value="Stretch" /></Style>
+    <Style Selector="Button.toast-open /template/ ContentPresenter"><Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" /></Style>
+    <Style Selector="Button.toast-close"><Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" /><Setter Property="Padding" Value="2" /><Setter Property="Width" Value="22" /><Setter Property="Height" Value="22" /><Setter Property="CornerRadius" Value="6" /><Setter Property="Foreground" Value="{DynamicResource ForgeTextMuted}" /></Style>
+    <Style Selector="Button.toast-close:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="#1AEF4444" /><Setter Property="TextElement.Foreground" Value="#EF4444" /></Style>
+    <Style Selector="Border#ToastCard:pointerover"><Setter Property="BorderBrush" Value="{DynamicResource ForgePrimary}" /><Setter Property="BoxShadow" Value="0 8 24 0 #40000000, 0 0 12 0 #30DD7036" /></Style>
+    <Style Selector="TextBlock.toast-hint"><Setter Property="Opacity" Value="0.7" /><Setter Property="Transitions"><Transitions><DoubleTransition Property="Opacity" Duration="0:0:0.18" /></Transitions></Setter></Style>
+    <Style Selector="Border#ToastCard:pointerover TextBlock.toast-hint"><Setter Property="Opacity" Value="1" /></Style>
+  </Window.Styles>
+  <Border x:Name="ToastCard" Margin="8" CornerRadius="14" Background="{DynamicResource ForgeSurfaceCard}" BorderBrush="{DynamicResource ForgeBorder}" BorderThickness="1" BoxShadow="0 4 16 0 #30000000" ClipToBounds="True">
+    <Border BorderBrush="{DynamicResource ForgePrimary}" BorderThickness="4,0,0,0" CornerRadius="14">
+      <Grid RowDefinitions="Auto,Auto,3">
+        <Grid ColumnDefinitions="*,22" Margin="10,14,14,14" ColumnSpacing="8">
+          <Button x:Name="OpenToast" Classes="toast-open" Click="Open_Click" AutomationProperties.Name="{Binding ActionName}">
+            <Grid ColumnDefinitions="44,*" ColumnSpacing="14">
+              <Panel Width="44" Height="44" VerticalAlignment="Top">
+                <Border CornerRadius="22" BorderThickness="2" BorderBrush="{DynamicResource ForgePrimary}" Background="{DynamicResource ForgePrimaryGradientSubtle}" IsVisible="{Binding IsChat}" ClipToBounds="True">
+                  <Panel><TextBlock Text="{Binding Initials}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource ForgePrimary}" HorizontalAlignment="Center" VerticalAlignment="Center" /><Image Source="{Binding Avatar}" Stretch="UniformToFill" IsVisible="{Binding HasAvatar}" /></Panel>
+                </Border>
+                <Border Width="12" Height="12" CornerRadius="6" Background="#10B981" BorderBrush="{DynamicResource ForgeSurfaceCard}" BorderThickness="2" HorizontalAlignment="Right" VerticalAlignment="Bottom" IsVisible="{Binding IsChat}" />
+                <Border Width="42" Height="42" CornerRadius="12" Background="{DynamicResource ForgePrimaryGradient}" IsVisible="{Binding !IsChat}" BoxShadow="0 4 14 0 #40E0531C">
+                  <PathIcon Width="23" Height="23" Foreground="White" Data="M12,2 C8,2 5,5 5,9 L5,16 2,19 22,19 19,16 19,9 C19,5 16,2 12,2 Z M9,21 C9,25 15,25 15,21 Z" />
+                </Border>
+              </Panel>
+              <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Top">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8"><TextBlock Text="{Binding ToastTitle}" FontSize="14.7" FontWeight="Bold" Foreground="{DynamicResource ForgeTextPrimary}" MaxLines="1" TextTrimming="CharacterEllipsis" /><TextBlock Grid.Column="1" Text="Just now" FontSize="11.5" Foreground="{DynamicResource ForgeTextMuted}" VerticalAlignment="Center" /></Grid>
+                <TextBlock Text="{Binding Message}" FontSize="13.4" LineHeight="18" Foreground="{DynamicResource ForgeTextSecondary}" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="Click to open chat" Classes="toast-hint" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource ForgePrimary}" IsVisible="{Binding IsChat}" />
+              </StackPanel>
+            </Grid>
+          </Button>
+          <Button Grid.Column="1" x:Name="CloseToast" Classes="toast-close" Click="Close_Click" VerticalAlignment="Top" AutomationProperties.Name="Close notification"><PathIcon Width="13" Height="13" Data="M3,2 L10,9 17,2 18,3 11,10 18,17 17,18 10,11 3,18 2,17 9,10 2,3 Z" /></Button>
+        </Grid>
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="68,0,14,12" IsVisible="{Binding HasApprovalActions}"><Button Content="{Binding ApproveLabel}" Click="Approve_Click" /><Button Content="{Binding RejectLabel}" Click="Reject_Click" /></StackPanel><Border x:Name="ToastProgress" Grid.Row="2" Height="3" Background="{DynamicResource ForgePrimaryGradient}" RenderTransformOrigin="0%,50%"><Border.RenderTransform><ScaleTransform ScaleX="1" /></Border.RenderTransform></Border>
+      </Grid>
+    </Border>
+  </Border>
+</Window>

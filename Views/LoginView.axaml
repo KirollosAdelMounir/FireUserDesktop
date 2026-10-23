@@ -1,0 +1,167 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:UserIdentityDesktop.ViewModels"
+             xmlns:views="using:UserIdentityDesktop.Views"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             x:Class="UserIdentityDesktop.Views.LoginView"
+             x:DataType="vm:LoginViewModel" views:EnterSubmit.Command="{Binding LoginCommand}"
+             Background="{DynamicResource ForgeBg}">
+
+    <Grid>
+        <!-- Background Radial Glow -->
+        <Border HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Width="550" Height="550"
+                CornerRadius="275"
+                Opacity="0.15"
+                IsHitTestVisible="False">
+            <Border.Background>
+                <RadialGradientBrush Center="50%,50%" GradientOrigin="50%,50%">
+                    <GradientStop Color="#FF4500" Offset="0.0" />
+                    <GradientStop Color="#FF7700" Offset="0.4" />
+                    <GradientStop Color="Transparent" Offset="1.0" />
+                </RadialGradientBrush>
+            </Border.Background>
+        </Border>
+
+        <!-- Login Card -->
+        <Border Width="420"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Background="{DynamicResource ForgeSurfaceCard}"
+                BorderBrush="{DynamicResource ForgeBorder}"
+                BorderThickness="1.5"
+                CornerRadius="20"
+                BoxShadow="0 12 36 0 #25000000"
+                Padding="36">
+            <StackPanel Spacing="20">
+                <!-- Brand Header -->
+                <StackPanel Spacing="10" HorizontalAlignment="Center">
+                    <Border Width="68" Height="68"
+                            CornerRadius="34"
+                            Background="{DynamicResource ForgePrimaryGradientSubtle}"
+                            BorderBrush="{DynamicResource ForgeBorder}"
+                            BorderThickness="1.5"
+                            HorizontalAlignment="Center">
+                        <Image Source="/Assets/PageLogo.png"
+                               Width="44" Height="44"
+                               Stretch="Uniform"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="Fire User Connect"
+                               FontSize="24"
+                               FontWeight="Bold"
+                               HorizontalAlignment="Center"
+                               Foreground="{DynamicResource ForgeTextPrimary}" />
+                    <TextBlock Text="Real-time chatting for User Identity"
+                               FontSize="13"
+                               Foreground="{DynamicResource ForgeTextSecondary}"
+                               HorizontalAlignment="Center" />
+                </StackPanel>
+
+                <!-- Error Message Banner -->
+                <Border Background="#25E63946"
+                        BorderBrush="{DynamicResource ForgeDanger}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="12,10"
+                        IsVisible="{Binding ErrorMessage, Converter={StaticResource NullToBoolConverter}}">
+                    <TextBlock Text="{Binding ErrorMessage}"
+                               Foreground="{DynamicResource ForgeDanger}"
+                               FontSize="13"
+                               TextWrapping="Wrap" />
+                </Border>
+
+                <!-- Inputs -->
+                <StackPanel Spacing="14">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Email Address"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource ForgeTextSecondary}" />
+                        <TextBox Classes="fire-input"
+                                 Text="{Binding Email, Mode=TwoWay}"
+                                 PlaceholderText="name@example.com" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Password"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource ForgeTextSecondary}" />
+                        <TextBox Classes="fire-input"
+                                 Text="{Binding Password, Mode=TwoWay}"
+                                 PasswordChar="•"
+                                 PlaceholderText="••••••••" />
+                    </StackPanel>
+
+                    <!-- Server URL Config Accordion -->
+                    <StackPanel Spacing="6">
+                        <Button Classes="icon-btn"
+                                Command="{Binding ToggleServerConfigCommand}"
+                                HorizontalAlignment="Left"
+                                Padding="0">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="⚙ Server Settings"
+                                           FontSize="12"
+                                           Foreground="{DynamicResource ForgePrimary}"
+                                           FontWeight="SemiBold" />
+                            </StackPanel>
+                        </Button>
+
+                        <StackPanel Spacing="6" IsVisible="{Binding ShowServerConfig}">
+                            <TextBlock Text="Backend URL"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource ForgeTextMuted}" />
+                            <TextBox Classes="fire-input"
+                                     Text="{Binding ServerUrl, Mode=TwoWay}"
+                                     FontSize="12" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Action Button -->
+                <Button Classes="fire-btn"
+                        Command="{Binding LoginCommand}"
+                    IsVisible="{Binding !IsLoading}"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        Height="44">
+                    <TextBlock Text="Sign In"
+                               FontSize="15"
+                               FontWeight="Bold"
+                               VerticalAlignment="Center" />
+                </Button>
+
+                <Border IsVisible="{Binding IsLoading}"
+                        Background="{DynamicResource ForgeSurface}"
+                        BorderBrush="{DynamicResource ForgeBorder}"
+                        BorderThickness="1"
+                        CornerRadius="10"
+                        Padding="14,10">
+                    <StackPanel Spacing="8" HorizontalAlignment="Center">
+                        <Border Width="40" Height="40"
+                                CornerRadius="20"
+                                Background="{DynamicResource ForgePrimaryGradientSubtle}"
+                                HorizontalAlignment="Center">
+                            <TextBlock Text="🔥" FontSize="20"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" />
+                        </Border>
+                        <ProgressBar Classes="forge-progress"
+                                     IsIndeterminate="True"
+                                     Width="220" />
+                        <TextBlock Text="Signing in..."
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource ForgeTextSecondary}"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>
