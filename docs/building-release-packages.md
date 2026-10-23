@@ -61,3 +61,7 @@ ldd ./libcurl.so.4
 ```
 
 The log and `ldd` identify missing libraries or incompatible symbol versions; the generic in-app message alone does not distinguish them. Loader diagnostics are emitted without logging meeting tokens.
+
+## Verified build
+
+[Run 39991431377](https://github.com/KirollosAdelMounir/FireUserDesktop/actions/runs/39991431377) completed successfully for source commit `0a6358fd61f98e5929aefdec08575f62f8d7c3b6`, producing all six installer sets and portable archives. Download or resume that exact output with `python3 scripts/build-release.py --run-id 39991431377`. Native startup ran on both Ubuntu architectures, Windows x64, Windows 11 ARM through x64 emulation, Sonoma ARM and macOS 15 Intel. Intel Sonoma itself and real camera/microphone/screen/permission workflows remain acceptance work.
