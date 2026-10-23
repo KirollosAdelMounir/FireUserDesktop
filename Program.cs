@@ -75,6 +75,6 @@ sealed class Program
 #if DEBUG
             .WithDeveloperTools()
 #endif
-            .WithInterFont().ConfigureFonts(DesktopFonts.Configure)
+            .WithInterFont().With(DesktopFonts.Defaults).ConfigureFonts(DesktopFonts.Configure)
             .LogToTrace();
 }

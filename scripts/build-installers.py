@@ -16,14 +16,14 @@ import urllib.request
 ROOT = Path(__file__).resolve().parent.parent
 TARGETS = ('win-x64', 'win-arm64-emulated', 'osx-x64', 'osx-arm64', 'linux-x64', 'linux-arm64')
 DEB_DEPS = ('libc6 (>= 2.35)', 'libicu70 | libicu72 | libicu74 | libicu76 | libicu78', 'libstdc++6', 'libgcc-s1', 'libx11-6', 'libxtst6', 'libxi6',
-            'libxext6', 'libice6', 'libsm6', 'libfontconfig1', 'libssl3 | libssl3t64', 'zlib1g',
+            'libxext6', 'libice6', 'libsm6', 'libfontconfig1', 'fonts-dejavu-core', 'libssl3 | libssl3t64', 'zlib1g',
             'libasound2 | libasound2t64', 'libpulse0', 'libgl1', 'libnotify-bin',
             'libgstreamer1.0-0', 'libgstreamer-plugins-base1.0-0')
 RPM_DEPS = ('glibc >= 2.35', 'libicu', 'libstdc++', 'libgcc', 'libX11', 'libXtst', 'libXi', 'libXext',
-            'libICE', 'libSM', 'fontconfig', 'openssl-libs', 'zlib', 'alsa-lib', 'pulseaudio-libs',
+            'libICE', 'libSM', 'fontconfig', 'dejavu-sans-fonts', 'openssl-libs', 'zlib', 'alsa-lib', 'pulseaudio-libs',
             'libglvnd-glx', 'libnotify', 'gstreamer1', 'gstreamer1-plugins-base')
 ARCH_DEPS = ('glibc>=2.35', 'icu', 'gcc-libs', 'libx11', 'libxtst', 'libxi', 'libxext', 'libice', 'libsm',
-             'fontconfig', 'openssl', 'zlib', 'alsa-lib', 'libpulse', 'libglvnd', 'libnotify',
+             'fontconfig', 'ttf-dejavu', 'openssl', 'zlib', 'alsa-lib', 'libpulse', 'libglvnd', 'libnotify',
              'gstreamer', 'gst-plugins-base-libs')
 
 
@@ -101,7 +101,7 @@ def linux(source, output, version, rid):
             f'Package: fire-user-connect\nVersion: {version}\nArchitecture: {deb_arch}\n'
             'Maintainer: Fire User\nSection: net\nPriority: optional\n'
             f'Depends: {", ".join(DEB_DEPS)}\n'
-            'Recommends: gstreamer1.0-pipewire, gstreamer1.0-plugins-good\n'
+            'Recommends: gstreamer1.0-pipewire, gstreamer1.0-plugins-good, fonts-noto-color-emoji\n'
             'Description: Fire User native chat, meetings and workplace client\n')
         for name in ('postinst', 'postrm'):
             script = control / name
@@ -120,6 +120,7 @@ Summary: Fire User native collaboration client
 License: LicenseRef-Proprietary
 BuildArch: {arch}
 Requires: {', '.join(RPM_DEPS)}
+Recommends: google-noto-emoji-color-fonts
 AutoReqProv: no
 %global debug_package %{{nil}}
 %global __os_install_post %{{nil}}
@@ -149,7 +150,8 @@ update-desktop-database -q /usr/share/applications >/dev/null 2>&1 || :
                     f'size = {size}', f'arch = {arch}', 'license = LicenseRef-Proprietary']
         metadata += [f'depend = {dependency}' for dependency in ARCH_DEPS]
         metadata += ['optdepend = gst-plugin-pipewire: Wayland screen sharing',
-                     'optdepend = gst-plugins-good: Additional capture backends']
+                     'optdepend = gst-plugins-good: Additional capture backends',
+                     'optdepend = noto-fonts-emoji: Color emoji in chat']
         (stage / '.PKGINFO').write_text('\n'.join(metadata) + '\n')
         # pacman expects .PKGINFO at the archive root, without a './' prefix.
         run('tar', '--zstd', '--owner=0', '--group=0', '--numeric-owner', '-cf',

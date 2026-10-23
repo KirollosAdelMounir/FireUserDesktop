@@ -142,7 +142,13 @@ public sealed class AttachmentTransferTests
         Assert.True(Assert.Single(window.GetVisualDescendants().OfType<ProgressBar>()).IsIndeterminate);
         presenter.Show("Ordinary notification","This will expire",()=>{});
         await Task.Delay(TimeSpan.FromSeconds(6.5),TestContext.Current.CancellationToken);Dispatcher.UIThread.RunJobs();
-        Assert.True(window.IsVisible);Assert.Empty(presenter.ActiveWindows);Assert.False(Assert.Single(tracker.Snapshot()).Finished);
+        Assert.True(window.IsVisible);Assert.False(Assert.Single(tracker.Snapshot()).Finished);
+        // The exit animation and dispatcher can finish after the deadline on a
+        // busy runner; still require the ordinary toast to close within a bound.
+        var closing=System.Diagnostics.Stopwatch.StartNew();
+        while(presenter.ActiveWindows.Count>0 && closing.Elapsed<TimeSpan.FromSeconds(2))
+        {await Task.Delay(25,TestContext.Current.CancellationToken);Dispatcher.UIThread.RunJobs();}
+        Assert.Empty(presenter.ActiveWindows);
         operation.Complete(true);Dispatcher.UIThread.RunJobs();Assert.True(window.IsVisible);Assert.Equal(100,Assert.Single(window.GetVisualDescendants().OfType<ProgressBar>()).Value);
         tracker.Clear();Dispatcher.UIThread.RunJobs();owner.Close();
     }

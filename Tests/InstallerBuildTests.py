@@ -85,11 +85,14 @@ class InstallerBuildTests(unittest.TestCase):
                     installer.build(rid, source, output, '1.2.3')
                 self.assertIn('Architecture: ' + deb_arch, metadata['deb'])
                 self.assertIn('libssl3 | libssl3t64', metadata['deb'])
+                self.assertIn('fonts-dejavu-core', metadata['deb'])
                 self.assertIn('BuildArch: ' + arch, metadata['rpm'])
                 self.assertIn('openssl-libs', metadata['rpm'])
+                self.assertIn('dejavu-sans-fonts', metadata['rpm'])
                 self.assertIn('arch = ' + arch, metadata['arch'])
                 self.assertIn('depend = glibc>=2.35', metadata['arch'])
                 self.assertIn('depend = gst-plugins-base-libs', metadata['arch'])
+                self.assertIn('depend = ttf-dejavu', metadata['arch'])
                 self.assertEqual(image.call_args.args[3], arch)
 
     def test_appimage_tools_refuse_a_wrong_checksum(self):

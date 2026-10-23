@@ -64,8 +64,11 @@ public sealed class DesktopToastPresenter(Window owner, Func<bool> reducedMotion
             if (closing) return;
             closing = true; lifetime.Cancel(); motion.Cancel();
             if (open) activate();
-            await motion.ExitAsync(toast.ToastCard, reducedMotion(), SurfaceMotionKind.Toast);
+            var exit = motion.ExitAsync(toast.ToastCard, reducedMotion(), SurfaceMotionKind.Toast);
+            await Task.WhenAny(exit, Task.Delay(TimeSpan.FromMilliseconds(400)));
+            motion.Cancel();
             toast.Close();
+            await exit;
         }
         toast.DecisionRequested += action => { if (closing || decide == null) return; decide(action); _ = Dismiss(false); };
         toast.OpenRequested += () => _ = Dismiss(true);
@@ -85,9 +88,20 @@ public sealed class DesktopToastPresenter(Window owner, Func<bool> reducedMotion
                 PositionAll();
                 var delay = Task.Delay(TimeSpan.FromSeconds(6), token);
                 var progress = reducedMotion() ? Task.CompletedTask : Progress(toast.ToastProgress, token);
-                await motion.EnterAsync(toast.ToastCard, reducedMotion(), SurfaceMotionKind.Toast);
-                await Task.WhenAll(delay, progress);
-                await Dismiss(false);
+                var animations = Task.WhenAll(progress, motion.EnterAsync(toast.ToastCard, reducedMotion(), SurfaceMotionKind.Toast));
+                try
+                {
+                    // Rendering may be throttled. The six-second lifetime must
+                    // not wait for the progress/entrance animation's clock.
+                    await delay;
+                    await Dismiss(false);
+                }
+                finally
+                {
+                    lifetime.Cancel();
+                    try { await animations; }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+                }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         }

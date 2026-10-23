@@ -59,8 +59,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Cache verified macOS media runtime
+        id: media-cache
         if: runner.os == 'macOS'
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: Native/media/${{ matrix.rid }}
           key: source-media-${{ matrix.rid }}-${{ hashFiles('scripts/media-runtimes.json', 'scripts/build-native.py') }}
@@ -81,6 +82,10 @@ jobs:
         run: python -m unittest discover -s Tests -p '*Build*Tests.py'
       - name: Build Avalonia client
         run: dotnet build UserIdentityDesktop.csproj -c Release
+      - name: Verify built macOS media runtime
+        id: mac-media
+        if: runner.os == 'macOS'
+        run: Native/media/${{ matrix.rid }}/ffmpeg -version
       - name: Linux native startup smoke test
         if: runner.os == 'Linux'
         shell: bash
@@ -102,6 +107,17 @@ jobs:
           PACKAGE_RID: ${{ matrix.rid }}
         run: |
           python -c "import os,subprocess; from pathlib import Path; rid=os.environ['PACKAGE_RID']; binary=Path('artifacts')/rid/'media'/('ffmpeg.exe' if rid.startswith('win-') else 'ffmpeg'); subprocess.run([str(binary),'-version'],check=True)"
+      - name: Verify packaged Windows or Mac application startup
+        if: runner.os != 'Linux'
+        shell: pwsh
+        env:
+          PACKAGE_RID: ${{ matrix.rid }}
+        run: |
+          $packageRoot = Join-Path $PWD "artifacts/$env:PACKAGE_RID"
+          $binary = if ($IsWindows) { Join-Path $packageRoot 'Fire User Connect.exe' } else { Join-Path $packageRoot 'Fire User Connect.app/Contents/MacOS/Fire User Connect' }
+          $process = Start-Process -FilePath $binary -ArgumentList '--startup-smoke-test' -PassThru
+          if (-not $process.WaitForExit(30000)) { $process.Kill(); throw 'Packaged application startup timed out.' }
+          if ($process.ExitCode) { throw 'Packaged application startup failed.' }
       - name: Create OS installers
         run: python scripts/build-installers.py --rid '${{ matrix.rid }}' --source 'artifacts/${{ matrix.rid }}' --output installers
       - name: Upload OS installers
@@ -144,6 +160,12 @@ jobs:
           name: installer-validation-win-arm64
           path: arm-installers/*
           if-no-files-found: error
+      - name: Save verified macOS media runtime
+        if: always() && runner.os == 'macOS' && steps.mac-media.outcome == 'success' && steps.media-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: Native/media/${{ matrix.rid }}
+          key: source-media-${{ matrix.rid }}-${{ hashFiles('scripts/media-runtimes.json', 'scripts/build-native.py') }}
   windows-arm:
     name: Windows 11 ARM64 (x64 emulation)
     needs: desktop

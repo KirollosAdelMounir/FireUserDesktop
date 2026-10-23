@@ -1,5 +1,6 @@
 using Avalonia.Headless.XUnit;
 using Avalonia.Platform;
+using Avalonia.Media;
 using UserIdentityDesktop.Service;
 using Xunit;
 
@@ -17,6 +18,7 @@ public sealed class AppIdentityTests
             Assert.True(stream.Length > 0);
         }
         Assert.NotEmpty(AssetLoader.GetAssets(new Uri("avares://Fire%20User%20Connect/Assets/Fonts"), null));
+        Assert.Equal("Outfit", new Typeface(FontManager.Current.DefaultFontFamily).GlyphTypeface.FamilyName);
     }
 
     [Fact]

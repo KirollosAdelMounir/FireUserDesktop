@@ -20,7 +20,7 @@ All five managed Release targets passed with zero warnings/errors in this audit.
 
 Both pinned LiveKit 1.12.2 SDK archives passed their manifest SHA-256 checks. Their Mach-O load commands declare macOS 12.3 for `liblivekit.dylib`; the underlying FFI library declares 10.12 on Intel and 11.0 on Apple Silicon. Those deployment versions are below Sonoma. This check does not establish that every runtime symbol, UI library or media executable is compatible.
 
-The pinned Intel macOS FFmpeg download returned HTTP 403 during this audit, so its binary deployment version and packaged media startup could not be verified. The ARM64 media executable also remains unverified. Release packaging must resolve and validate these dependencies before claiming complete macOS compatibility. No checksum verification was bypassed and no substitute binary was introduced.
+The previous pinned macOS binary supplier returned HTTP 403 both locally and on the Sonoma GitHub runner. The build now compiles the same FFmpeg 9.0.2 release from checksum-pinned official source, with a macOS 14.0 deployment target and OS-provided frameworks. No checksum verification is bypassed. The native GitHub validation run is recorded in the release-build documentation; device/session acceptance remains distinct from compilation and startup checks.
 
 Sonoma is Avalonia 12 Tier 2. It is outside the current .NET 10 supported OS list. An application may be tested for compatibility on an OS outside a dependency vendor's support policy, but that does not restore vendor support.
 

@@ -29,7 +29,7 @@ public sealed class TestApplication : Avalonia.Application
         foreach (var style in styles) Styles.Add(style);
         DataTemplates.Add(new ViewLocator());
     }
-    public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<TestApplication>().UseSkia().ConfigureFonts(DesktopFonts.Configure).UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
+    public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<TestApplication>().UseSkia().With(DesktopFonts.Defaults).ConfigureFonts(DesktopFonts.Configure).UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
 }
 
 public sealed class WorkspaceTests

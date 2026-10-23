@@ -8,7 +8,7 @@
 | Windows ARM64 compatibility | `FireUserConnect-<version>-win-arm64-emulated-Setup.exe` | Windows 11 ARM64 only, x64 emulation; clearly separate from native ARM builds |
 | macOS Intel / Apple Silicon | `FireUserConnect-<version>-osx-<arch>.pkg` | Installs the matching `.app` into `/Applications`; Sonoma 14 minimum and matching CPU architecture enforced |
 | Ubuntu/Debian family | `.deb` for amd64 / arm64 | Application/menu/icon/meeting-link registration; distro dependencies declared for apt |
-| Fedora/RHEL family | `.rpm` for x86_64 / aarch64 | Application/menu/icon/meeting-link registration; distro dependencies declared for dnf |
+| Fedora / compatible RPM distributions | `.rpm` for x86_64 / aarch64 | Application/menu/icon/meeting-link registration; distro dependencies declared for dnf |
 | Arch / Arch Linux ARM | `.pkg.tar.zst` for x86_64 / aarch64 | Native pacman package with dependencies and desktop integration; Arch Linux ARM is a separate community distribution |
 | Other compatible Linux desktops | `.AppImage` for x86_64 / aarch64 | Portable executable containing the app, .NET and packaged media; host graphics/audio/system-library requirements still apply |
 
@@ -16,7 +16,7 @@ The actual executable/process image is **Fire User Connect** (`Fire User Connect
 
 ## Dependencies and permissions
 
-The packaged .NET runtime, native bridge/SDK, FFmpeg and Windows app-local C++ redistributables come with the application. End users do not need a compiler, Python, CMake or the .NET SDK. Linux package metadata declares ICU, libc/C++ runtime, X11/XTest, OpenSSL, font, graphics, audio, notifications and GStreamer dependencies using each distribution's package names. GStreamer PipeWire plugins are optional dependencies for Wayland sharing. Wayland remote input remains unavailable.
+The packaged .NET runtime, native bridge/SDK, FFmpeg and Windows app-local C++ redistributables come with the application. Mac FFmpeg 9.0.2 is compiled from checksum-pinned official source with a Sonoma 14 deployment target, avoiding the previous supplier's HTTP 403; its license files accompany the binary. End users do not need a compiler, Python, CMake or the .NET SDK. Linux package metadata declares ICU, libc/C++ runtime, X11/XTest, OpenSSL, font, graphics, audio, notifications and GStreamer dependencies using each distribution's package names. GStreamer PipeWire plugins are optional dependencies for Wayland sharing. Wayland remote input remains unavailable.
 
 Use a dependency-resolving installer, for example `apt install ./file.deb`, `dnf install ./file.rpm` or `pacman -U ./file.pkg.tar.zst`. The Linux builds originate on Ubuntu 22.04 to keep the libc baseline older than current Fedora/Arch. Portable AppImages do not install host dependencies automatically; if FUSE is unavailable their runtime supports `--appimage-extract-and-run`. AppImage registration uses the persistent AppImage path rather than its temporary mount.
 
@@ -38,3 +38,5 @@ Windows ARM packaging is gated on the actual x64 bridge ABI/lifecycle, FFmpeg st
 | Renamed assembly retains resources and AppImage uses persistent launcher | `AppIdentityTests.BrandedAssemblyKeepsIconsAndEmbeddedFontsAccessible`, `AppImageRegistrationUsesPersistentLauncherRatherThanTemporaryMount` |
 
 Run Python build-tool tests with `python3 -m unittest discover -s Tests -p '*Build*Tests.py'`. These test observed generated data and command behavior; they do not substitute for running the native installers on their target operating systems.
+
+Local checks: 315 desktop tests passed, 4 platform/network tests skipped; 16 build-tool tests passed. All four Linux formats were built in a packaging verification container, and an actual Arch Linux container accepted the `.pkg.tar.zst` metadata using `pacman -Qip`. Packaging-test payloads compiled on Fedora are not advertised as Ubuntu-compatible release binaries; the GitHub release payloads are compiled on Ubuntu 22.04.
