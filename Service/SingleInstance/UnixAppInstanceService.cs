@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -29,8 +30,21 @@ public sealed class UnixAppInstanceService : IAppInstanceService
         var appDirectory = Path.Combine(appDataRoot, "UserIdentityDesktop");
         Directory.CreateDirectory(appDirectory);
 
-        _socketPath = Path.Combine(appDirectory, "fireuserconnect.sock");
-        _lockPath = _socketPath + ".lock";
+        _socketPath = SocketPath(appDirectory, Path.GetTempPath());
+        // Keep ownership in the existing profile directory even when the socket
+        // needs a short endpoint (macOS sun_path is only 104 bytes).
+        _lockPath = Path.Combine(appDirectory, "fireuserconnect.sock.lock");
+    }
+
+    internal static string SocketPath(string appDirectory, string temporaryRoot)
+    {
+        var normal = Path.Combine(appDirectory, "fireuserconnect.sock");
+        if (Encoding.UTF8.GetByteCount(normal) < 104) return normal;
+        var identity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(appDirectory))))[..20];
+        var compact = Path.Combine(temporaryRoot, "fu-" + identity + ".sock");
+        if (Encoding.UTF8.GetByteCount(compact) >= 104)
+            throw new IOException("The user temporary directory is too long for a Unix activation socket.");
+        return compact;
     }
 
     public bool TryAcquire()
@@ -172,6 +186,7 @@ public sealed class UnixAppInstanceService : IAppInstanceService
 
             using var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
             socket.Bind(new UnixDomainSocketEndPoint(_socketPath));
+            File.SetUnixFileMode(_socketPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
             socket.Listen(5);
 
             while (!stop.IsCancellationRequested)
