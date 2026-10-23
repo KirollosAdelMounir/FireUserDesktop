@@ -45,8 +45,8 @@ def extract(archive, destination):
             source.extractall(destination, filter='data')
 
 
-def run(*args, env=None):
-    subprocess.run([str(arg) for arg in args], check=True, env=env)
+def run(*args, env=None, cwd=None):
+    subprocess.run([str(arg) for arg in args], check=True, env=env, cwd=cwd)
 
 
 def build_environment_key():
@@ -68,9 +68,15 @@ def build_environment_key():
 def media(rid):
     definition = json.loads((ROOT / 'scripts/media-runtimes.json').read_text())[rid]
     output = ROOT / 'Native/media' / rid
-    if (output / definition['executable']).exists():
+    stamp = output / 'runtime-source.json'
+    if (output / definition['executable']).exists() and stamp.exists():
+        if json.loads(stamp.read_text()) == definition:
+            return
+    if definition.get('build') == 'macos-source-v1':
+        macos_media(rid, definition, output)
+        stamp.write_text(json.dumps(definition, indent=2))
         return
-    cache = ROOT / 'Native/sdk' / f'media-{rid}'
+    cache = ROOT / 'Native/sdk' / f'media-{rid}' / definition['sha256']
     archive = cache / ('runtime.' + definition['archive'])
     download(definition['url'], archive, definition['sha256'])
     extract(archive, cache)
@@ -82,6 +88,36 @@ def media(rid):
         if item.is_file() and item.name.upper().startswith(('LICENSE', 'COPYING', 'README', 'NOTICE')):
             shutil.copy2(item, output / item.name)
     (output / 'runtime-source.json').write_text(json.dumps(definition, indent=2))
+
+
+def macos_media(rid, definition, output):
+    # The previous binary supplier rejects automated downloads with HTTP 403.
+    # Build the same pinned release with only OS-provided frameworks/libraries.
+    if platform.system() != 'Darwin':
+        raise RuntimeError('macOS media must be built on the matching Mac host.')
+    version = definition['version']
+    cache = ROOT / 'Native/sdk/ffmpeg-source'
+    archive = cache / f'ffmpeg-{version}.tar.xz'
+    download(definition['sourceUrl'], archive, definition['sourceSha256'])
+    source = cache / f'ffmpeg-{version}'
+    if not (source / 'configure').exists():
+        extract(archive, cache)
+    build = ROOT / 'Native/build' / f'ffmpeg-{rid}-{version}-{build_environment_key()}'
+    build.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ, MACOSX_DEPLOYMENT_TARGET='14.0')
+    if not (build / 'ffmpeg').exists():
+        run(source / 'configure', '--disable-shared', '--enable-static', '--disable-doc',
+            '--disable-debug', '--disable-autodetect', '--disable-ffplay', '--disable-ffprobe',
+            '--enable-avfoundation', '--enable-videotoolbox', '--enable-audiotoolbox', '--enable-zlib',
+            '--extra-cflags=-mmacosx-version-min=14.0', '--extra-ldflags=-mmacosx-version-min=14.0',
+            cwd=build, env=env)
+        run('make', '-C', build, '-j', min(os.cpu_count() or 2, 8), env=env)
+    output.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(build / 'ffmpeg', output / 'ffmpeg')
+    (output / 'ffmpeg').chmod(0o755)
+    for item in source.glob('COPYING*'):
+        shutil.copy2(item, output / item.name)
+    shutil.copy2(source / 'LICENSE.md', output / 'LICENSE.md')
 
 
 def linux_curl(rid, cmake, build_key):

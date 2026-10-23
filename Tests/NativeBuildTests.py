@@ -11,6 +11,57 @@ spec.loader.exec_module(native)
 
 
 class NativeBuildTests(unittest.TestCase):
+    def test_media_rebuilds_legacy_supplier_output_then_reuses_matching_source_stamp(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(native, 'ROOT', Path(directory)):
+            root = Path(directory)
+            definition = {'build': 'macos-source-v1', 'executable': 'ffmpeg', 'version': '9.0.2'}
+            (root / 'scripts').mkdir()
+            (root / 'scripts/media-runtimes.json').write_text(json.dumps({'osx-arm64': definition}))
+            output = root / 'Native/media/osx-arm64'
+            output.mkdir(parents=True)
+            (output / 'ffmpeg').write_bytes(b'legacy supplier binary')
+            (output / 'runtime-source.json').write_text(json.dumps({'url': 'old vendor'}))
+            with patch.object(native, 'macos_media') as build:
+                native.media('osx-arm64')
+                build.assert_called_once_with('osx-arm64', definition, output)
+                self.assertEqual(json.loads((output / 'runtime-source.json').read_text()), definition)
+                native.media('osx-arm64')
+                self.assertEqual(build.call_count, 1)
+
+    def test_mac_source_build_pins_sonoma_target_and_packages_binary_and_license(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(native, 'ROOT', Path(directory)), \
+             patch.object(native.platform, 'system', return_value='Darwin'), \
+             patch.object(native, 'build_environment_key', return_value='host'), \
+             patch.object(native, 'download') as download:
+            root = Path(directory)
+            source = root / 'Native/sdk/ffmpeg-source/ffmpeg-9.0.2'
+            source.mkdir(parents=True)
+            for name in ('configure', 'LICENSE.md', 'COPYING.LGPLv2.1'):
+                (source / name).write_text(name)
+            calls = []
+
+            def command(*args, **kwargs):
+                calls.append((args, kwargs))
+                if args[0] == 'make':
+                    (Path(args[2]) / 'ffmpeg').write_bytes(b'compiled native media')
+
+            definition = {'version': '9.0.2', 'sourceUrl': 'https://ffmpeg.org/release', 'sourceSha256': 'verified-pin'}
+            output = root / 'Native/media/osx-arm64'
+            with patch.object(native, 'run', side_effect=command):
+                native.macos_media('osx-arm64', definition, output)
+            self.assertEqual((output / 'ffmpeg').read_bytes(), b'compiled native media')
+            self.assertEqual((output / 'LICENSE.md').read_text(), 'LICENSE.md')
+            download.assert_called_once()
+            self.assertEqual(download.call_args.args[2], 'verified-pin')
+            configure, options = calls[0]
+            self.assertIn('--extra-cflags=-mmacosx-version-min=14.0', configure)
+            self.assertIn('--extra-ldflags=-mmacosx-version-min=14.0', configure)
+            self.assertIn('--enable-avfoundation', configure)
+            self.assertEqual(options['env']['MACOSX_DEPLOYMENT_TARGET'], '14.0')
+            with patch.object(native, 'run') as command:
+                native.macos_media('osx-arm64', definition, output)
+                command.assert_not_called()
+
     def test_environment_key_is_stable_but_changes_for_distro_libc_compiler_and_checkout(self):
         with patch.object(native.platform, 'system', return_value='Linux'), \
              patch.object(native.platform, 'machine', return_value='x86_64'), \
