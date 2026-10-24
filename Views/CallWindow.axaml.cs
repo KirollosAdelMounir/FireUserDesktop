@@ -15,7 +15,7 @@ namespace UserIdentityDesktop.Views;
 
 public partial class CallWindow : Window
 {
-    private bool closingAfterCall, leaving, presentationFullscreen, windowStateCheckQueued;
+    private bool closingAfterCall, leaving, presentationFullscreen, windowStateCheckQueued, controlFullscreen;
     private WindowState previousWindowState;
     private bool previousMembers, previousChat;
     private WorkspaceViewModel? observedModel;
@@ -96,7 +96,7 @@ public partial class CallWindow : Window
     private void ExitShareFullscreen(bool restoreWindowState = true)
     {
         if (!presentationFullscreen) return;
-        presentationFullscreen = false; Classes.Remove("share-fullscreen"); SetFullscreenControls(false);
+        presentationFullscreen = false; controlFullscreen = false; Classes.Remove("share-fullscreen"); SetFullscreenControls(false);
         if (restoreWindowState) WindowState = previousWindowState;
         if (observedModel != null) { observedModel.ShowCallMembers = previousMembers; observedModel.ShowCallChat = previousChat; }
     }
@@ -108,6 +108,22 @@ public partial class CallWindow : Window
     }
     private void OnPresentationChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(WorkspaceViewModel.ControlledScreen))
+        {
+            if (observedModel?.ControlledScreen is {} controlled)
+            {
+                observedModel.FocusedVideo = controlled;
+                if (!presentationFullscreen) ToggleShareFullscreen();
+                controlFullscreen = true;
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (observedModel?.ControlledScreen != controlled || !controlled.CanControl) return;
+                    Activate();
+                    FocusedStage.GetVisualDescendants().OfType<NativeVideoView>().FirstOrDefault()?.Focus();
+                }, DispatcherPriority.Loaded);
+            }
+            else if (controlFullscreen) ExitShareFullscreen();
+        }
         if (e.PropertyName is nameof(WorkspaceViewModel.ParticipantSummary) or nameof(WorkspaceViewModel.ShowCallMembers) or nameof(WorkspaceViewModel.ShowCallChat) or nameof(WorkspaceViewModel.HasFocusedVideo)) UpdateGalleryLayout();
         if (e.PropertyName == nameof(WorkspaceViewModel.ControlRequester) && presentationFullscreen) SetFullscreenControls(observedModel?.ControlRequester != null);
         if (e.PropertyName == nameof(WorkspaceViewModel.HasFocusedScreen) && observedModel?.HasFocusedScreen != true) ExitShareFullscreen();
@@ -133,6 +149,8 @@ public partial class CallWindow : Window
         var menu = new ContextMenu();
         menu.Items.Add(new MenuItem { Header = tile.IsScreen ? "Focus screen share" : "Focus participant", Command = observedModel.FocusVideoCommand, CommandParameter = tile });
         if (tile.IsScreen) menu.Items.Add(new MenuItem { Header = presentationFullscreen ? "Exit full screen" : "Full screen", Command = new CommunityToolkit.Mvvm.Input.RelayCommand(() => { if (presentationFullscreen) ExitShareFullscreen(); else { observedModel.FocusedVideo = tile; ToggleShareFullscreen(); } }) });
+        if (tile.IsScreen && !tile.Identity.StartsWith("You · ",StringComparison.Ordinal))
+            menu.Items.Add(new MenuItem { Header = "Request remote control", Command = observedModel.RequestScreenControlCommand, CommandParameter = tile });
         menu.Items.Add(new MenuItem { Header = "Return to gallery", Command = observedModel.ClearVideoFocusCommand });
         MessageMenus.Open(target,menu,atPointer);
     }
@@ -165,8 +183,7 @@ public partial class CallWindow : Window
     private void RequestFocusedControl_Click(object? sender, RoutedEventArgs e)
     {
         if (observedModel?.FocusedVideo is not {IsScreen:true} tile) return;
-        observedModel.SelectedRemotePeer = observedModel.RemotePeers.FirstOrDefault(x=>x.Identity==tile.Identity.Split(" · ")[0]);
-        if (observedModel.CanRequestFocusedControl) observedModel.RequestControlCommand.Execute(null);
+        if (observedModel.CanRequestScreenControl(tile)) observedModel.RequestScreenControlCommand.Execute(tile);
     }
     private void OpenPanelsFromFullscreen_Click(object? sender, RoutedEventArgs e)
     {

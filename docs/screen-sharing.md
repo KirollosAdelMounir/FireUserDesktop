@@ -24,7 +24,7 @@ macOS 12.3+ enumerates `SCShareableContent` and uses ScreenCaptureKit with the s
 
 X11 sessions enumerate window IDs and monitor rectangles. FFmpeg x11grab receives `window_id` for a window or the selected monitor region. Closing/minimizing a source may end its stream; choosing it again requires a fresh source selection.
 
-Window capture remains view-only. A Linux Wayland user may enable remote control before starting a new monitor share; this uses RemoteDesktop.CreateSession → SelectDevices(keyboard|pointer) → ScreenCast.SelectSources(monitor) → RemoteDesktop.Start → ScreenCast.OpenPipeWireRemote. Hosting is advertised only if the desktop grants both input devices and returns valid monitor dimensions. Input uses that portal stream, never XTest or a privileged input device. A selected primary screen may advertise it only when its origin and dimensions exactly match the native input provider’s desktop bounds. Control still requires explicit sharer approval for each share. Browser participants can control a supported native share; browser shares remain view-only. See [call-stage-and-browser-control.md](call-stage-and-browser-control.md).
+Window capture remains view-only. A Linux Wayland monitor share always requests system permission for remote control; this uses RemoteDesktop.CreateSession → SelectDevices(keyboard|pointer) → ScreenCast.SelectSources(monitor) → RemoteDesktop.Start → ScreenCast.OpenPipeWireRemote. Hosting is advertised only if the desktop grants both input devices and returns valid monitor dimensions. Input uses that portal stream, never XTest or a privileged input device. A selected primary screen may advertise it only when its origin and dimensions exactly match the native input provider’s desktop bounds. Control still requires explicit sharer approval for each share. Browser participants can control a supported native share; browser shares remain view-only. See [call-stage-and-browser-control.md](call-stage-and-browser-control.md).
 
 ## Verification and limits
 
@@ -61,10 +61,17 @@ Windows native compilation and disconnected ABI/quality-boundary tests ran local
 
 ### Linux Wayland input verification (24 October 2026)
 
-Wayland remote control is opt-in through **Enable remote control for the next screen share**. The desktop system prompt and Fire User participant approval are both required. The setting is Linux/Wayland-only, resets when leaving a call, and is disabled while sharing. Windows SendInput and macOS Accessibility paths are unchanged by this feature; no Windows/macOS packages were published for it.
+Wayland monitor sharing always requests the combined system permission for capture, keyboard and pointer input. There is no next-share opt-in checkbox. The desktop system prompt and Fire User participant approval are both required. This system portal path is Linux/Wayland-only. Windows SendInput and macOS Accessibility paths are unchanged by this feature; no Windows/macOS packages were published for it.
 
-Portal input uses the documented RemoteDesktop D-Bus Notify methods, with physical HID keys mapped to evdev codes, per-monitor absolute coordinates, and held-input tracking. Revocation, disconnect, grant expiry and stop-sharing reject stale input and release pressed keys/buttons. Sessions request no persistent permission or restore token. Desktop implementations without RemoteDesktop remain view-only when this option is off.
+Portal input uses the documented RemoteDesktop D-Bus Notify methods, with physical HID keys mapped to evdev codes, per-monitor absolute coordinates, and held-input tracking. Revocation, disconnect, grant expiry and stop-sharing reject stale input and release pressed keys/buttons. Sessions request no persistent permission or restore token. Desktop implementations must expose the RemoteDesktop portal for a monitor share to be ready for remote input. Window shares remain view-only.
 
 On the current Wayland session the user approved the system prompt and ran an isolated input probe: its own field received `fireuser`, and the portal accepted absolute pointer movement. No real mouse-button clicks were injected. Private D-Bus protocol tests verify button codes, permission masks, geometry, cancellation, stale-grant rejection and held-input release. This is evidence for this compositor; other Wayland implementations require their own RemoteDesktop portal support.
 
 API reference: https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.RemoteDesktop.html
+
+
+## Named screen control workflow
+
+Remote screen choices and screen tiles use the participant's display name (for example, `Kirollos Adel's screen`); protocol identities remain internal. Late participant metadata refreshes those labels without replacing the security identity. Right-clicking a remote screen offers **Request remote control** when the host advertises a supported share. Requesting alone cannot enable input. A matching grant focuses that screen, enters fullscreen and focuses its native input surface. A grant received before the first screen frame waits for that frame. Revocation disables input and restores the pre-control window/panels. Escape may leave fullscreen without a later redundant status update forcing it open again. Explicit sharer consent and Ctrl+Alt+Escape revocation remain in place.
+
+Regression evidence: `NamedShareContextRequestRequiresGrantThenFocusesFullscreenAndReleasesOnRevoke`, `GrantBeforeScreenFrameWaitsForThatShareAndRenamingNeverShowsIdentifiers`, and `PortalScreenShareIsAlwaysReadyToRequestSystemControlPermission`.

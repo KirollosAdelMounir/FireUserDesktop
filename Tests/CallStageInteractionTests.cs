@@ -52,6 +52,45 @@ public sealed class CallStageInteractionTests
         window.FindControl<Button>("ExitFullscreenButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Dispatcher.UIThread.RunJobs();Assert.NotEqual(WindowState.FullScreen,window.WindowState);Assert.True(window.FindControl<ScrollViewer>("ParticipantGallery")!.IsVisible);
         window.CloseAfterCall();Dispatcher.UIThread.RunJobs();await vm.DisposeAsync();
     }
+    [AvaloniaFact]
+    public async Task NamedShareContextRequestRequiresGrantThenFocusesFullscreenAndReleasesOnRevoke()
+    {
+        var (vm,media)=Create();vm.InCall=true;
+        var owner=Guid.NewGuid().ToString();var track=owner+" · screen · track";
+        var peer=new NativePeer(owner,true,true,"scope");
+        media.RemoteControlChanged+=Raise.Event<Action<RemoteControlStatus>>(new RemoteControlStatus(new[]{peer},null,null,null));Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Participant's screen",Assert.Single(vm.RemotePeers).ScreenLabel);
+        media.ParticipantJoined+=Raise.Event<Action<MediaParticipant>>(new MediaParticipant(owner,"Kirollos Adel"));Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Kirollos Adel's screen",Assert.Single(vm.RemotePeers).ScreenLabel);
+        media.VideoReceived+=Raise.Event<Action<VideoPicture>>(new VideoPicture(track,2,2,new byte[16]));Dispatcher.UIThread.RunJobs();
+        var screen=Assert.Single(vm.Videos.Where(x=>x.Identity==track));Assert.Equal("Kirollos Adel's screen",screen.Name);Assert.False(screen.CanControl);
+        vm.ClearVideoFocusCommand.Execute(null);
+        var window=new CallWindow{DataContext=vm,Width=1200,Height=800};window.Show();Dispatcher.UIThread.RunJobs();
+        var card=window.GetVisualDescendants().OfType<Border>().Single(x=>x.Classes.Contains("participant-card")&&x.DataContext==screen);
+        var point=card.TranslatePoint(new Point(24,24),window)!.Value;window.MouseMove(point);window.MouseDown(point,MouseButton.Right);window.MouseUp(point,MouseButton.Right);Dispatcher.UIThread.RunJobs();
+        var menu=Assert.IsType<ContextMenu>(card.ContextMenu);var request=menu.Items.OfType<MenuItem>().Single(x=>x.Header?.ToString()=="Request remote control");
+        Assert.True(request.Command!.CanExecute(request.CommandParameter));request.Command.Execute(request.CommandParameter);menu.Close();Dispatcher.UIThread.RunJobs();
+        await media.Received(1).RequestControlAsync(owner);Assert.NotEqual(WindowState.FullScreen,window.WindowState);Assert.False(screen.CanControl);
+        media.RemoteControlChanged+=Raise.Event<Action<RemoteControlStatus>>(new RemoteControlStatus(new[]{peer},null,null,owner));Dispatcher.UIThread.RunJobs();
+        Assert.Same(screen,vm.FocusedVideo);Assert.True(screen.CanControl);Assert.Equal(WindowState.FullScreen,window.WindowState);Assert.Contains("Kirollos Adel",vm.RemoteControlLabel);Assert.DoesNotContain(owner,vm.RemoteControlLabel);
+        var input=window.FindControl<ContentControl>("FocusedStage")!.GetVisualDescendants().OfType<NativeVideoView>().Single();Assert.True(input.RemoteControlEnabled);Assert.True(input.IsFocused);
+        input.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.A});media.Received().SendRemoteInput(Arg.Is<RemoteInput>(x=>x.Target==track&&x.Kind==2&&x.Code==4&&x.Down));
+        media.RemoteControlChanged+=Raise.Event<Action<RemoteControlStatus>>(new RemoteControlStatus(new[]{peer},null,null,null));Dispatcher.UIThread.RunJobs();Assert.False(screen.CanControl);Assert.NotEqual(WindowState.FullScreen,window.WindowState);
+        media.ClearReceivedCalls();input.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.B});media.DidNotReceive().SendRemoteInput(Arg.Is<RemoteInput>(x=>x.Kind==2));
+        window.CloseAfterCall();Dispatcher.UIThread.RunJobs();await vm.DisposeAsync();
+    }
+    [AvaloniaFact]
+    public async Task GrantBeforeScreenFrameWaitsForThatShareAndRenamingNeverShowsIdentifiers()
+    {
+        var (vm,media)=Create();vm.InCall=true;var owner=Guid.NewGuid().ToString();var peer=new NativePeer(owner,true,true,"scope");
+        var window=new CallWindow{DataContext=vm};window.Show();Dispatcher.UIThread.RunJobs();
+        media.RemoteControlChanged+=Raise.Event<Action<RemoteControlStatus>>(new RemoteControlStatus(new[]{peer},null,null,owner));Dispatcher.UIThread.RunJobs();Assert.NotEqual(WindowState.FullScreen,window.WindowState);
+        media.VideoReceived+=Raise.Event<Action<VideoPicture>>(new VideoPicture(owner+" · screen · track",2,2,new byte[16]));Dispatcher.UIThread.RunJobs();Assert.Equal(WindowState.FullScreen,window.WindowState);Assert.True(vm.FocusedVideo!.CanControl);
+        media.ParticipantJoined+=Raise.Event<Action<MediaParticipant>>(new MediaParticipant(owner,"Dina Example"));Dispatcher.UIThread.RunJobs();Assert.Equal("Dina Example's screen",vm.FocusedVideo.Name);Assert.Equal("Dina Example's screen",Assert.Single(vm.RemotePeers).ScreenLabel);
+        window.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.Escape});Dispatcher.UIThread.RunJobs();Assert.NotEqual(WindowState.FullScreen,window.WindowState);
+        media.RemoteControlChanged+=Raise.Event<Action<RemoteControlStatus>>(new RemoteControlStatus(new[]{peer},null,null,owner));Dispatcher.UIThread.RunJobs();Assert.NotEqual(WindowState.FullScreen,window.WindowState);
+        window.CloseAfterCall();Dispatcher.UIThread.RunJobs();await vm.DisposeAsync();
+    }
     [Theory]
     [InlineData(ScreenCaptureBackend.Windows,ScreenShareKind.Screen,0,0,1920,1080,true)]
     [InlineData(ScreenCaptureBackend.X11,ScreenShareKind.Screen,0,0,1920,1080,true)]

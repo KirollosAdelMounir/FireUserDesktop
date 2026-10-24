@@ -147,6 +147,12 @@ def linux_curl(rid, cmake, build_key):
     return prefix
 
 
+def prepare_macos_install(output):
+    # CMake modifies the installed dylib rpath in place. Recopy the original before repeating that fixup.
+    for name in ('libfireuser_livekit.dylib', 'libfireuser_notifications.dylib', 'libfireuser_screencapture.dylib'):
+        (output / name).unlink(missing_ok=True)
+
+
 def native(rid, sdk, cmake):
     definition = json.loads((ROOT / 'scripts/native-runtimes.json').read_text())[rid]
     if not sdk:
@@ -171,6 +177,8 @@ def native(rid, sdk, cmake):
         options += ['-DCMAKE_OSX_DEPLOYMENT_TARGET=14.0']
     run(cmake, '-S', ROOT / 'Native', '-B', build, f'-DCMAKE_PREFIX_PATH={sdk}', '-DCMAKE_BUILD_TYPE=Release', *options)
     run(cmake, '--build', build, '--parallel', min(os.cpu_count() or 2, 8))
+    if rid.startswith('osx-'):
+        prepare_macos_install(output)
     run(cmake, '--install', build, '--prefix', output)
     for item in (sdk / 'lib').iterdir():
         if '.so' in item.name or item.suffix == '.dylib':

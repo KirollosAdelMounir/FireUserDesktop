@@ -73,7 +73,7 @@ internal sealed partial class ScreenCastPortal : IAsyncDisposable
             return portal;
         }
         catch (DBusErrorReplyException error) when(remoteControl && (error.ErrorName=="org.freedesktop.DBus.Error.UnknownInterface"||error.ErrorName=="org.freedesktop.DBus.Error.UnknownMethod"))
-        {await portal.DisposeAsync();throw new InvalidOperationException("This desktop portal does not support remote input. Turn off remote control to share view-only.",error);}
+        {await portal.DisposeAsync();throw new InvalidOperationException("This desktop portal does not support the required keyboard and pointer permission. Check that a compatible RemoteDesktop portal backend is installed.",error);}
         catch { await portal.DisposeAsync(); throw; }
     }
     private async Task<Dictionary<string, VariantValue>> RequestAsync(string method, string? sessionPath, Dictionary<string, VariantValue> options, CancellationToken ct,string? targetInterface=null)
