@@ -256,7 +256,8 @@ jobs:
               raise SystemExit('Use a numeric run and a test release tag.')
           def api(path): return json.loads(subprocess.check_output(['gh','api',path],text=True))
           build=api(f'repos/{repo}/actions/runs/{run}')
-          release=api(f'repos/{repo}/releases/tags/{tag}')
+          release=next((item for item in api(f'repos/{repo}/releases?per_page=100') if item['tag_name']==tag),None)
+          if release is None: raise SystemExit('The requested draft release does not exist.')
           if build['status']!='completed' or build['conclusion']!='success' or build['event'] not in ('push','workflow_dispatch'):
               raise SystemExit('Only a completed successful trusted build can be published.')
           if build['head_repository']['full_name']!=repo or release['target_commitish']!=build['head_sha']:
