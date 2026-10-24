@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import plistlib
+import os
 import struct
 import tempfile
 import unittest
@@ -37,7 +38,8 @@ class MacBundleTests(unittest.TestCase):
             self.assertIn(b'ic10', entries)
             self.assertEqual((app / 'Contents/MacOS/libfireuser_livekit.dylib').read_bytes(), b'native bridge')
             self.assertEqual((app / 'Contents/MacOS/media/ffmpeg').read_bytes(), b'ffmpeg')
-            self.assertEqual((app / 'Contents/MacOS/Fire User Connect').stat().st_mode & 0o777, 0o755)
+            if os.name != 'nt':
+                self.assertEqual((app / 'Contents/MacOS/Fire User Connect').stat().st_mode & 0o777, 0o755)
             self.assertEqual(mac.bundle(source), app)
             self.assertFalse((app / 'Contents/MacOS/Fire User Connect.app').exists())
 
