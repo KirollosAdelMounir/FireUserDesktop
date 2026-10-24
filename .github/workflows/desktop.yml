@@ -2,6 +2,7 @@ name: Native desktop validation
 run-name: Fire User desktop - ${{ inputs.request_id || github.run_number }}
 on:
   push:
+    branches-ignore: ['codex/publish-test-installers-*']
   pull_request:
   workflow_dispatch:
     inputs:
@@ -285,8 +286,10 @@ jobs:
           manifest=root/'SHA256SUMS.txt'
           with manifest.open('w') as output:
               for path in files:
-                  with path.open('rb') as content: digest=hashlib.file_digest(content,'sha256').hexdigest()
-                  output.write(digest+'  '+path.name+'\n')
+                  digest=hashlib.sha256()
+                  with path.open('rb') as content:
+                      for block in iter(lambda: content.read(1024*1024),b''): digest.update(block)
+                  output.write(digest.hexdigest()+'  '+path.name+'\n')
           tag=os.environ['RELEASE_TAG'];repo=os.environ['GITHUB_REPOSITORY']
           for path in sorted(root.iterdir()):
               subprocess.run(['gh','release','upload',tag,str(path),'--repo',repo,'--clobber'],check=True)
