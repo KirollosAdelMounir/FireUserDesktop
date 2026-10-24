@@ -36,6 +36,6 @@ Startup and automated checks above are complete. Interactive end-to-end device a
 - Explicit-consent remote control and permission denial/revocation on supported desktops.
 - Calendar, vacation review and notification actions.
 
-Linux Wayland remote control remains unavailable; X11/XTest is the supported Linux host-control path. macOS requires user-granted Screen Recording and Accessibility permissions. Neither compilation nor headless tests confirm these permission/device paths.
+Linux Wayland remote control is opt-in and requires a RemoteDesktop portal supporting keyboard, pointer and one approved monitor stream. The current compositor passed live keyboard delivery and pointer acceptance testing. X11/XTest remains the separate X11 host-control path. macOS requires user-granted Screen Recording and Accessibility permissions. Neither compilation nor headless tests confirm these permission/device paths.
 
 Sources: [LiveKit SDK platforms](https://github.com/livekit/client-sdk-cpp), [Windows ARM emulation](https://learn.microsoft.com/en-us/windows/arm/apps-on-arm-x86-emulation), [.NET 10 OS support](https://github.com/dotnet/core/blob/main/release-notes/10.0/supported-os.md), [Avalonia platforms](https://docs.avaloniaui.net/docs/supported-platforms).

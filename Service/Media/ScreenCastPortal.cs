@@ -11,8 +11,8 @@ namespace UserIdentityDesktop.Service.Media;
 
 public sealed class ScreenShareCanceledException() : OperationCanceledException("Screen sharing was cancelled.");
 
-/// <summary>One non-persistent, explicitly approved XDG ScreenCast session.</summary>
-internal sealed class ScreenCastPortal : IAsyncDisposable
+/// <summary>One non-persistent approved ScreenCast or combined RemoteDesktop/ScreenCast session.</summary>
+internal sealed partial class ScreenCastPortal : IAsyncDisposable
 {
     private const string Service = "org.freedesktop.portal.Desktop", Path = "/org/freedesktop/portal/desktop", Interface = "org.freedesktop.portal.ScreenCast";
     private readonly DBusConnection connection;
@@ -38,23 +38,29 @@ internal sealed class ScreenCastPortal : IAsyncDisposable
         }
         return await connection.CallMethodAsync(request, (Message message, object? _) => message.GetBodyReader().ReadVariantValue().GetUInt32()).WaitAsync(ct);
     }
-    public static async Task<ScreenCastPortal> OpenAsync(ScreenShareKind kind, CancellationToken ct, string? busAddress = null)
+    public static async Task<ScreenCastPortal> OpenAsync(ScreenShareKind kind, CancellationToken ct, string? busAddress = null, bool remoteControl = false)
     {
+        if(remoteControl && kind!=ScreenShareKind.Screen)throw new InvalidOperationException("Remote control requires a full-screen share.");
         var portal = new ScreenCastPortal(new DBusConnection(busAddress ?? DBusAddress.Session ?? throw new InvalidOperationException("The desktop session bus is unavailable.")));
+        portal.remoteDesktop=remoteControl;
         try
         {
             await portal.connection.ConnectAsync().AsTask().WaitAsync(ct);
-            var created = await portal.RequestAsync("CreateSession", null, new() { ["session_handle_token"] = "fireuser_" + Guid.NewGuid().ToString("N") }, ct);
+            var created = await portal.RequestAsync("CreateSession", null, new() { ["session_handle_token"] = "fireuser_" + Guid.NewGuid().ToString("N") }, ct, remoteControl ? RemoteInterface : Interface);
             portal.session = created["session_handle"].GetString();
             portal.closedWatch = await portal.connection.AddMatchAsync(new MatchRule { Type = MessageType.Signal, Sender = Service, Path = portal.session, Interface = "org.freedesktop.portal.Session", Member = "Closed" },
                 (Message _, object? _) => true,
                 notification => { if (notification.HasValue || notification.IsCompletion) Interlocked.Exchange(ref portal.closed, 1); }, emitOnCapturedContext: false, flags: ObserverFlags.EmitOnConnectionClosed | ObserverFlags.EmitOnReaderFailed);
+            if(remoteControl)await portal.RequestAsync("SelectDevices",portal.session,new(){["types"]=3u},ct,RemoteInterface);
             await portal.RequestAsync("SelectSources", portal.session, new() { ["types"] = kind == ScreenShareKind.Screen ? 1u : 2u, ["multiple"] = false }, ct);
-            var started = await portal.RequestAsync("Start", portal.session, new(), ct);
+            var started = await portal.RequestAsync("Start", portal.session, new(), ct,remoteControl ? RemoteInterface : Interface);
+            if(started.TryGetValue("devices",out var devices))portal.GrantedDevices=devices.GetUInt32();
             var streams = started["streams"];
             if (streams.Count != 1) throw new IOException("The compositor did not return one selected screen or window.");
             var stream = streams.GetItem(0); portal.Node = stream.GetItem(0).GetUInt32();
             var properties = stream.GetItem(1).GetDictionary<string, VariantValue>();
+            if(properties.TryGetValue("size",out var size)){portal.LogicalWidth=size.GetItem(0).GetInt32();portal.LogicalHeight=size.GetItem(1).GetInt32();}
+            portal.monitorSource=!properties.TryGetValue("source_type",out var sourceType)||sourceType.GetUInt32()==1;
             if (properties.TryGetValue("pipewire-serial", out var serial)) portal.Serial = serial.GetUInt64();
             MessageBuffer request;
             using (var writer = portal.connection.GetMessageWriter())
@@ -66,9 +72,11 @@ internal sealed class ScreenCastPortal : IAsyncDisposable
             ct.ThrowIfCancellationRequested();
             return portal;
         }
+        catch (DBusErrorReplyException error) when(remoteControl && (error.ErrorName=="org.freedesktop.DBus.Error.UnknownInterface"||error.ErrorName=="org.freedesktop.DBus.Error.UnknownMethod"))
+        {await portal.DisposeAsync();throw new InvalidOperationException("This desktop portal does not support remote input. Turn off remote control to share view-only.",error);}
         catch { await portal.DisposeAsync(); throw; }
     }
-    private async Task<Dictionary<string, VariantValue>> RequestAsync(string method, string? sessionPath, Dictionary<string, VariantValue> options, CancellationToken ct)
+    private async Task<Dictionary<string, VariantValue>> RequestAsync(string method, string? sessionPath, Dictionary<string, VariantValue> options, CancellationToken ct,string? targetInterface=null)
     {
         var token = "fireuser_" + Guid.NewGuid().ToString("N"); options["handle_token"] = token;
         var requestPath = "/org/freedesktop/portal/desktop/request/" + connection.UniqueName!.TrimStart(':').Replace('.', '_') + "/" + token;
@@ -82,7 +90,7 @@ internal sealed class ScreenCastPortal : IAsyncDisposable
             MessageBuffer request;
             using (var writer = connection.GetMessageWriter())
             {
-                writer.WriteMethodCallHeader(destination: Service, path: Path, @interface: Interface, member: method, signature: sessionPath == null ? "a{sv}" : method == "Start" ? "osa{sv}" : "oa{sv}");
+                writer.WriteMethodCallHeader(destination: Service, path: Path, @interface: targetInterface??Interface, member: method, signature: sessionPath == null ? "a{sv}" : method == "Start" ? "osa{sv}" : "oa{sv}");
                 if (sessionPath != null) writer.WriteObjectPath(sessionPath);
                 if (method == "Start") writer.WriteString(""); // Unparented portal window; no fabricated Wayland surface token.
                 writer.WriteDictionary(options); request = writer.CreateMessage();
@@ -108,6 +116,8 @@ internal sealed class ScreenCastPortal : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0) return;
+        DisableInput();
+        await ReleaseInputAsync();
         Interlocked.Exchange(ref closed, 1);
         closedWatch?.Dispose(); closedWatch = null;
         if (session != null) { try { await CloseAsync(session, "org.freedesktop.portal.Session").WaitAsync(TimeSpan.FromSeconds(2)); } catch { } session = null; }

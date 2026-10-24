@@ -44,7 +44,9 @@ public sealed class AttachmentTransferTests
         tracker.Clear();two.Report(20);two.Complete(true);Assert.Empty(tracker.Snapshot());
     }
     private sealed class Handler(byte[] bytes,HttpStatusCode status=HttpStatusCode.OK):HttpMessageHandler
-    { protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken token)=>Task.FromResult(new HttpResponseMessage(status){Content=new ByteArrayContent(bytes)}); }
+    { protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken token){
+        Assert.True(request.Options.TryGetValue(AttachmentTransferRequests.UnlimitedDuration,out var unlimited)&&unlimited);
+        return Task.FromResult(new HttpResponseMessage(status){Content=new ByteArrayContent(bytes)}); } }
     private static ChatService Service(byte[] bytes,HttpStatusCode status=HttpStatusCode.OK)
     {
         var auth=Substitute.For<IAuthService>();var config=Substitute.For<IConfigurationService>();config.ServerUrl.Returns("https://transfer-tests.invalid");
@@ -64,6 +66,30 @@ public sealed class AttachmentTransferTests
             op.FileCompleted();op.Complete(true);Assert.Equal(100,Assert.Single(service.Transfers.Snapshot()).Percentage);
         }
         finally {File.Delete(path);}
+    }
+    private sealed class SlowDownloadHandler(string source):HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
+        {
+            await Task.Delay(150,ct);
+            return new HttpResponseMessage(HttpStatusCode.OK){Content=new StreamContent(File.OpenRead(source))};
+        }
+    }
+    [Fact]
+    public async Task LargeDownloadStreamsPastRequestDeadlineWithoutMarkingBackendOffline()
+    {
+        var source=Path.GetTempFileName();var destination=Path.GetTempFileName();const long size=121L*1024*1024+419;
+        try {
+            using(var stream=File.OpenWrite(source))stream.SetLength(size);
+            var queue=new UserIdentityDesktop.Data.BackendActionQueue();queue.SetAccount("download-test");queue.SetConnected(true);
+            var auth=Substitute.For<IAuthService>();var config=Substitute.For<IConfigurationService>();config.ServerUrl.Returns("https://transfer-tests.invalid");
+            using var transport=new SlowDownloadHandler(source);
+            auth.CreateAuthenticatedClient().Returns(_=>new HttpClient(new UserIdentityDesktop.Data.QueuedAuthenticatedHandler(queue,()=>Task.FromResult<string?>("session"),transport,requestTimeout:TimeSpan.FromMilliseconds(25))){Timeout=Timeout.InfiniteTimeSpan});
+            var service=new ChatService(auth,config);using var progress=service.Transfers.Start(TransferDirection.Download,1);
+            Assert.True(await service.SaveAttachmentToFileAsync(Guid.NewGuid(),destination,progress:progress,cancellationToken:TestContext.Current.CancellationToken));
+            Assert.True(queue.IsConnected);Assert.Equal(0,queue.PendingCount);Assert.Equal(size,new FileInfo(destination).Length);
+            Assert.Equal(size,Assert.Single(service.Transfers.Snapshot()).Bytes);
+        }finally{File.Delete(source);File.Delete(destination);}
     }
     [Fact]
     public async Task InvalidCiphertextNeverReplacesDestinationOrMarksDownloadSuccessful()
@@ -87,13 +113,20 @@ public sealed class AttachmentTransferTests
     }
     private sealed class UploadHandler(TransferTracker tracker,HttpStatusCode result) : HttpMessageHandler
     {
+        private static HttpResponseMessage Json(object value)=>new(HttpStatusCode.OK){Content=System.Net.Http.Json.JsonContent.Create(value)};
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken token)
         {
-            if(request.RequestUri!.AbsolutePath.EndsWith("SendMessageWithAttachment"))
+            var path=request.RequestUri!.AbsolutePath;
+            if(path.EndsWith("/Uploads")) return Json(new{uploadId=new string('a',32),offsets=new long[]{0,0}});
+            if(path.Contains("/Files/")) {
+                var index=int.Parse(path.Split('/').Last());var bytes=await request.Content!.ReadAsByteArrayAsync(token);
+                Assert.Equal(index==0?116:216,bytes.Length);
+                return Json(new{uploadId=new string('a',32),offsets=index==0?new long[]{116,0}:new long[]{116,216}});
+            }
+            if(path.EndsWith("/Complete"))
             {
-                using var wire=new MemoryStream();await request.Content!.CopyToAsync(wire,token);
                 var pending=Assert.Single(tracker.Snapshot());Assert.Equal(332,pending.Bytes);Assert.Equal(332,pending.TotalBytes);Assert.Equal(2,pending.CompletedFiles);Assert.False(pending.Finished);Assert.Equal(99,pending.Percentage);
-                return new HttpResponseMessage(result);
+                return new HttpResponseMessage(result){Content=new StringContent("true")};
             }
             using var vector=System.Text.Json.JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory,"chat-vector.json"),token));
             var recovery=vector.RootElement.GetProperty("recovery");

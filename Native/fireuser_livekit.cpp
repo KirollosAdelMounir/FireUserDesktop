@@ -105,7 +105,9 @@ public:
         if (!stopping && data && e.participant && e.topic == "fireuser.native.v1" && !e.data.empty() && e.data.size() <= 4096)
             data(e.participant->identity().c_str(), e.data.data(), static_cast<int>(e.data.size()));
     }
-    void onDisconnected(Room&, const DisconnectedEvent&) override { signal(2); }
+    void onDisconnected(Room&, const DisconnectedEvent& e) override { signal(2, std::to_string(static_cast<int>(e.reason))); }
+    void onReconnecting(Room&, const ReconnectingEvent&) override { signal(8); }
+    void onReconnected(Room&, const ReconnectedEvent&) override { signal(9); }
     std::mutex speakers_mutex;
     std::unordered_set<std::string> active_speakers;
     void onActiveSpeakersChanged(Room&, const ActiveSpeakersChangedEvent& e) override {

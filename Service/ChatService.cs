@@ -278,44 +278,15 @@ public partial class ChatService : IChatService
         try
         {
             using var client = _authService.CreateAuthenticatedClient();
-            using var form = new MultipartFormDataContent();
-
-            form.Add(new StringContent(currentUser.Id.ToString()), "Sender");
-            form.Add(new StringContent(receiverId.ToString()), "Receiver");
-            if (conversationId != null) form.Add(new StringContent(conversationId), "ConversationId");
-            if (replyTo != null) form.Add(new StringContent(replyTo), "ReplyToMessageId");
             foreach (var path in paths) prepared.Add(await ChatEncryption.PrepareFileAsync(path));
-            long total = 0; foreach (var item in prepared) total = checked(total + new FileInfo(item.Path).Length);
-            transfer.SetTotal(total);
-            transfer.SetPhase("Waiting for connection…");
-            form.Add(new StringContent(await Protect(receiverId, conversationId, text, prepared.ConvertAll(x => x.Metadata).ToArray())), "Text");
-
-            var openStreams = new List<FileStream>();
-            try
-            {
-                foreach (var item in prepared)
-                {
-                    var path = item.Path;
-                    if (File.Exists(path))
-                    {
-                        var stream = File.OpenRead(path);
-                        openStreams.Add(stream);
-                        var fileContent = new TransferContent(stream, transfer);
-                        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-                        form.Add(fileContent, "Attachments", item.Metadata.Id + ".fua");
-                    }
-                }
-
-                var url = $"{_configService.ServerUrl}/api/Chat/SendMessageWithAttachment";
-                using var response = await client.PostAsync(url, form);
-                transfer.Complete(response.IsSuccessStatusCode);
-                return response.IsSuccessStatusCode;
-            }
-            finally
-            {
-                foreach (var s in openStreams)
-                    s.Dispose();
-            }
+            var encrypted = await Protect(receiverId, conversationId, text, prepared.ConvertAll(x => x.Metadata).ToArray());
+            if (_authService.CurrentUser?.Id != currentUser.Id) throw new OperationCanceledException("The signed-in account changed.");
+            await ResumableAttachmentUpload.SendAsync(client, _configService.ServerUrl,
+                new AttachmentUploadRequest(currentUser.Id, receiverId, conversationId, encrypted, replyTo,
+                    prepared.ConvertAll(x => new AttachmentUploadFile(x.Metadata.Id + ".fua", "application/octet-stream", new FileInfo(x.Path).Length))),
+                prepared.ConvertAll(x => x.Path), transfer);
+            transfer.Complete(true);
+            return true;
         }
         catch (Exception ex)
         {
@@ -578,7 +549,9 @@ public partial class ChatService : IChatService
             using var client = _authService.CreateAuthenticatedClient();
             var url = $"{_configService.ServerUrl}/api/User/ChatAttachment?attachmentId={attachmentId}";
 
-            using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Options.Set(AttachmentTransferRequests.UnlimitedDuration, true);
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             if (response.IsSuccessStatusCode)
             {
                 var temporary = destinationFilePath + "." + Guid.NewGuid().ToString("N") + ".partial";

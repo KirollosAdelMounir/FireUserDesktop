@@ -5,7 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using UserIdentityDesktop.Core;
 namespace UserIdentityDesktop.Data;
-internal sealed class QueuedAuthenticatedHandler(IBackendActionQueue queue,Func<Task<string?>> credential,HttpMessageHandler transport,Func<bool>? sameAccount=null) : HttpMessageHandler
+internal sealed class QueuedAuthenticatedHandler(IBackendActionQueue queue,Func<Task<string?>> credential,HttpMessageHandler transport,Func<bool>? sameAccount=null,TimeSpan? requestTimeout=null) : HttpMessageHandler
 {
     private readonly HttpMessageInvoker sender=new(transport,disposeHandler:false);
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
@@ -18,7 +18,9 @@ internal sealed class QueuedAuthenticatedHandler(IBackendActionQueue queue,Func<
             request.Content=frozen;original.Dispose();
         }
         return await queue.RunAsync(async token=>{
-        using var timeout=CancellationTokenSource.CreateLinkedTokenSource(token);timeout.CancelAfter(TimeSpan.FromSeconds(100));
+        using var timeout=CancellationTokenSource.CreateLinkedTokenSource(token);
+        if(!request.Options.TryGetValue(AttachmentTransferRequests.UnlimitedDuration,out var transfer)||!transfer)
+            timeout.CancelAfter(requestTimeout??TimeSpan.FromSeconds(100));
         if(sameAccount?.Invoke()==false)throw new OperationCanceledException("This action belongs to a previous account.");
         var bearer=await credential();timeout.Token.ThrowIfCancellationRequested();
         if(sameAccount?.Invoke()==false)throw new OperationCanceledException("This action belongs to a previous account.");

@@ -26,6 +26,16 @@ public sealed class ScreenSharingTests
     private static readonly ScreenShareSource Screen = new("monitor-0", "Screen 1", ScreenShareKind.Screen, ScreenCaptureBackend.Windows);
     private static readonly ScreenShareSource Window = new("123", "Window", ScreenShareKind.Window, ScreenCaptureBackend.Windows);
     [AvaloniaFact]
+    public async Task PortalRemoteControlIsOptInAndPassedToTheNativeShare()
+    {
+        var (vm,media)=Create();media.GetScreenSourcesAsync(Arg.Any<CancellationToken>()).Returns(new[]{Screen with{Backend=ScreenCaptureBackend.Portal}});
+        vm.ChooseScreenShareSourceAsync=_=>Task.FromResult<ScreenShareSource?>(null);
+        Assert.False(vm.AllowWaylandRemoteControl);vm.AllowWaylandRemoteControl=true;
+        await vm.ToggleScreenCommand.ExecuteAsync(null);
+        await media.Received(1).SetScreenAsync(true,Arg.Is<MediaDevices>(d=>d.AllowRemoteControl&&d.ShareSource!.Backend==ScreenCaptureBackend.Portal),Arg.Any<CancellationToken>());
+        await vm.LeaveAsync();Assert.False(vm.AllowWaylandRemoteControl);await vm.DisposeAsync();
+    }
+    [AvaloniaFact]
     public async Task SharePicker_ChoosesWindowBeforeCapture_AndStopDoesNotOpenPickerAgain()
     {
         var (vm, media) = Create(); media.GetScreenSourcesAsync(Arg.Any<CancellationToken>()).Returns(new[] { Screen, Window });

@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 import time
 import urllib.request
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent.parent
 TARGETS = ('win-x64', 'win-arm64-emulated', 'osx-x64', 'osx-arm64', 'linux-x64', 'linux-arm64')
@@ -196,7 +197,7 @@ if __name__ == '__main__':
     parser.add_argument('--rid', choices=TARGETS, required=True)
     parser.add_argument('--source', type=Path, required=True)
     parser.add_argument('--output', type=Path, default=Path('installers'))
-    parser.add_argument('--version', default='1.0.0')
+    parser.add_argument('--version', default=ET.parse(ROOT / 'UserIdentityDesktop.csproj').getroot().findtext('PropertyGroup/Version', '1.0.0'))
     args = parser.parse_args()
     try:
         build(args.rid, args.source, args.output, args.version)

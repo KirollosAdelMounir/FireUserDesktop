@@ -51,7 +51,7 @@ public sealed record MeetingCredentials(Guid Id, string Locator, string Password
 public enum ScreenShareKind { Screen, Window }
 public enum ScreenCaptureBackend { Windows, X11, Portal, MacOS }
 public sealed record ScreenShareSource(string Id, string Name, ScreenShareKind Kind, ScreenCaptureBackend Backend, int X = 0, int Y = 0, int Width = 0, int Height = 0);
-public sealed record MediaDevices(string Microphone, string Camera, string Screen, ScreenShareSource? ShareSource = null);
+public sealed record MediaDevices(string Microphone, string Camera, string Screen, ScreenShareSource? ShareSource = null, bool AllowRemoteControl = false);
 public sealed record MediaDeviceOption(string Id, string Name);
 public sealed record MediaDeviceCatalog(MediaDeviceOption[] Microphones, MediaDeviceOption[] Speakers, MediaDeviceOption[] Cameras, string? Warning = null);
 public sealed record MediaParticipantUpdate(string Identity, string Kind, string Value);
@@ -77,3 +77,5 @@ public sealed record VacationPage(System.Collections.Generic.List<VacationReques
 public sealed record VacationReadiness(bool Ready, string? Instructions);
 public sealed record MeetingUnitOption(Guid Id, string Name, int MemberCount) { public override string ToString() => $"{Name} · {MemberCount} people (including child units)"; }
 public sealed record MeetingAudiencePerson(Guid Id, string Name);
+
+public sealed record MediaConnectionState(string State, string? Reason = null, bool Retryable = false);

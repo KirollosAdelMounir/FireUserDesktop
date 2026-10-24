@@ -79,7 +79,9 @@ jobs:
         if: runner.os != 'Windows'
         run: python3 scripts/build-native.py --rid '${{ matrix.rid }}'
       - name: Check build tooling
-        run: python -m unittest discover -s Tests -p '*Build*Tests.py'
+        run: |
+          python -m unittest discover -s Tests -p '*Build*Tests.py'
+          python -m unittest discover -s Tests -p 'MacBundleTests.py'
       - name: Build Avalonia client
         run: dotnet build UserIdentityDesktop.csproj -c Release
       - name: Verify built macOS media runtime
@@ -102,6 +104,9 @@ jobs:
       - name: Package Linux client
         if: runner.os == 'Linux'
         run: dotnet publish UserIdentityDesktop.csproj -c Release -r '${{ matrix.rid }}' --self-contained true -o 'artifacts/${{ matrix.rid }}'
+      - name: Verify portable Linux ABI baseline
+        if: runner.os == 'Linux'
+        run: python3 scripts/check-linux-abi.py --source 'artifacts/${{ matrix.rid }}'
       - name: Verify packaged media executable without capturing devices
         env:
           PACKAGE_RID: ${{ matrix.rid }}

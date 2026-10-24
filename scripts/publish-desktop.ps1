@@ -14,12 +14,8 @@ $outputPath = Join-Path $projectRoot "artifacts/$RuntimeIdentifier"
 & dotnet publish (Join-Path $projectRoot 'UserIdentityDesktop.csproj') -c Release -r $RuntimeIdentifier --self-contained true -o $outputPath "-p:NativeToolchain=$Toolchain" "-p:LiveKitSdkPath=$SdkPath"
 if ($LASTEXITCODE) { throw 'Desktop publish failed.' }
 if ($RuntimeIdentifier.StartsWith('osx-')) {
-    $bundle = Join-Path $projectRoot "artifacts/$RuntimeIdentifier/Fire User Connect.app/Contents"
-    $executablePath = Join-Path $bundle 'MacOS'
-    New-Item -ItemType Directory -Path $executablePath -Force | Out-Null
-    Get-ChildItem -LiteralPath $outputPath -File | Copy-Item -Destination $executablePath
-    Get-ChildItem -LiteralPath $outputPath -Directory | Where-Object Name -NE 'Fire User Connect.app' | Copy-Item -Destination $executablePath -Recurse -Force
-    Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging/macos/Info.plist') -Destination $bundle
+    & python3 (Join-Path $PSScriptRoot 'package-macos.py') --source $outputPath
+    if ($LASTEXITCODE) { throw 'macOS bundle packaging failed.' }
     Write-Host 'Created an unsigned .app bundle. Signing/notarization and permission validation require macOS.'
 }
 Write-Host "Published files: $outputPath"

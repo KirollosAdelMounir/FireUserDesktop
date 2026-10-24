@@ -15,7 +15,7 @@ namespace UserIdentityDesktop.Views;
 
 public partial class CallWindow : Window
 {
-    private bool closingAfterCall, leaving, presentationFullscreen;
+    private bool closingAfterCall, leaving, presentationFullscreen, windowStateCheckQueued;
     private WindowState previousWindowState;
     private bool previousMembers, previousChat;
     private WorkspaceViewModel? observedModel;
@@ -43,9 +43,16 @@ public partial class CallWindow : Window
         };
         PropertyChanged += (_, e) =>
         {
-            if (e.Property != WindowStateProperty) return;
-            if (WindowState == WindowState.FullScreen && !presentationFullscreen) { WindowState = WindowState.Normal; return; }
-            if (presentationFullscreen && WindowState != WindowState.FullScreen) ExitShareFullscreen(restoreWindowState: false);
+            if (e.Property != WindowStateProperty || windowStateCheckQueued) return;
+            // X11 raises state notifications from inside its native state setter.
+            // Changing the state there recursively re-enters WindowState until stack overflow.
+            windowStateCheckQueued = true;
+            Dispatcher.UIThread.Post(() =>
+            {
+                windowStateCheckQueued = false;
+                if (WindowState == WindowState.FullScreen && !presentationFullscreen) { WindowState = WindowState.Normal; return; }
+                if (presentationFullscreen && WindowState != WindowState.FullScreen) ExitShareFullscreen(restoreWindowState: false);
+            });
         };
         Closed += (_, _) => { if (observedModel != null) { observedModel.PropertyChanged -= OnPresentationChanged; observedModel.ChooseScreenShareSourceAsync = null; } };
         Closing += async (_, args) =>

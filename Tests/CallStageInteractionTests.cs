@@ -39,7 +39,7 @@ public sealed class CallStageInteractionTests
     public async Task OnlyExplicitScreenShareFullscreen_IsAllowedAndBottomControlsHandleHoverAndFocus()
     {
         var (vm,media)=Create();var window=new CallWindow{DataContext=vm,Width=1200,Height=800};window.Show();Dispatcher.UIThread.RunJobs();
-        vm.FocusVideoCommand.Execute(vm.Videos[0]);window.WindowState=WindowState.FullScreen;Assert.NotEqual(WindowState.FullScreen,window.WindowState);
+        vm.FocusVideoCommand.Execute(vm.Videos[0]);window.WindowState=WindowState.FullScreen;Dispatcher.UIThread.RunJobs();Assert.NotEqual(WindowState.FullScreen,window.WindowState);
         window.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.F11});Assert.NotEqual(WindowState.FullScreen,window.WindowState);
         var screen=new VideoTileViewModel("one · screen · track"){Name="Alice's screen",Frame=new("one · screen · track",2,2,new byte[16])};vm.Videos.Add(screen);vm.FocusedVideo=screen;Dispatcher.UIThread.RunJobs();
         window.FindControl<Button>("FullscreenButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Dispatcher.UIThread.RunJobs();Assert.Equal(WindowState.FullScreen,window.WindowState);

@@ -93,6 +93,7 @@
         </Border>
       </Grid>
       <StackPanel x:Name="CallSupplement" Grid.Row="1" MaxHeight="180">
+        <CheckBox IsVisible="{Binding IsWaylandSession}" IsChecked="{Binding AllowWaylandRemoteControl}" IsEnabled="{Binding !ScreenEnabled}" Content="Enable remote control for the next screen share" Margin="0,6" />
         <Expander Header="Remote desktop" IsExpanded="False" IsVisible="{Binding RemoteDesktopAvailable}">
           <StackPanel Spacing="8">
             <TextBlock Text="{Binding RemoteControlLabel}" TextWrapping="Wrap" />

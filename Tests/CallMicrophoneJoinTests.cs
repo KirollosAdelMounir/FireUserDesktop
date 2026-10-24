@@ -21,6 +21,71 @@ public sealed class CallMicrophoneJoinTests
         api.MeetingTokenAsync("meeting", Arg.Any<CancellationToken>()).Returns(new MediaToken("wss://media.test", "token"));
         return (new WorkspaceViewModel(vm, api, media, auth, chat) { ReduceMotion = true }, api, media);
     }
+    [AvaloniaFact]
+    public async Task RecoverableDisconnect_RejoinsSameCallWithFreshTokenWithoutLeavingOrResumingScreen()
+    {
+        var (vm, api, media) = Create();
+        vm.Incoming = new IncomingCall("call", Guid.NewGuid(), "Caller", "audio", 1);
+        await vm.AcceptCommand.ExecuteAsync(null);
+        vm.ScreenEnabled = true;
+        media.ConnectionChanged += Raise.Event<Action<MediaConnectionState>>(new MediaConnectionState("disconnected", "14", true));
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(vm.InCall); Assert.False(vm.ConnectingCall); Assert.True(vm.MicrophoneEnabled); Assert.False(vm.ScreenEnabled);
+        Assert.Contains("reconnected", vm.Feedback);
+        await api.Received(2).CallTokenAsync("call", Arg.Any<CancellationToken>());
+        await media.Received(2).ConnectAsync(Arg.Any<MediaToken>(), Arg.Any<CancellationToken>());
+        await media.Received(1).DisconnectAsync();
+        await api.DidNotReceive().LeaveCallAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await media.DidNotReceive().SetScreenAsync(true, Arg.Any<MediaDevices>(), Arg.Any<CancellationToken>());
+        await vm.DisposeAsync();
+    }
+    [AvaloniaFact]
+    public async Task LeavingDuringRecoveryCancelsThePendingTokenAndDoesNotRejoin()
+    {
+        var (vm, api, media) = Create();
+        vm.Incoming = new IncomingCall("call", Guid.NewGuid(), "Caller", "audio", 1);
+        await vm.AcceptCommand.ExecuteAsync(null);
+        api.CallTokenAsync("call", Arg.Any<CancellationToken>()).Returns(async call =>
+        {
+            await Task.Delay(Timeout.Infinite, call.ArgAt<CancellationToken>(1));
+            return new MediaToken("wss://media.test", "unused");
+        });
+        media.ConnectionChanged += Raise.Event<Action<MediaConnectionState>>(new MediaConnectionState("disconnected", "14", true));
+        Dispatcher.UIThread.RunJobs(); Assert.True(vm.ConnectingCall);
+        await vm.LeaveCommand.ExecuteAsync(null);
+        Assert.False(vm.InCall); Assert.False(vm.ConnectingCall);
+        await media.Received(1).ConnectAsync(Arg.Any<MediaToken>(), Arg.Any<CancellationToken>());
+        await api.Received(1).LeaveCallAsync("call", Arg.Any<CancellationToken>());
+        await vm.DisposeAsync();
+    }
+    [AvaloniaFact]
+    public async Task ServerRemoval_DoesNotAutomaticallyRejoinOrLeaveTheServerCall()
+    {
+        var (vm, api, media) = Create();
+        vm.Incoming = new IncomingCall("call", Guid.NewGuid(), "Caller", "audio", 1);
+        await vm.AcceptCommand.ExecuteAsync(null);
+        media.ConnectionChanged += Raise.Event<Action<MediaConnectionState>>(new MediaConnectionState("disconnected", "4", false));
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(vm.InCall); Assert.False(vm.MicrophoneEnabled); Assert.Contains("reason 4", vm.Feedback);
+        await api.Received(1).CallTokenAsync("call", Arg.Any<CancellationToken>());
+        await media.Received(1).ConnectAsync(Arg.Any<MediaToken>(), Arg.Any<CancellationToken>());
+        await api.DidNotReceive().LeaveCallAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await vm.DisposeAsync();
+    }
+    [AvaloniaFact]
+    public async Task SdkReconnection_PreservesCallAndDoesNotCreateAnotherRoom()
+    {
+        var (vm, _, media) = Create();
+        vm.Incoming = new IncomingCall("call", Guid.NewGuid(), "Caller", "audio", 1);
+        await vm.AcceptCommand.ExecuteAsync(null);
+        media.ConnectionChanged += Raise.Event<Action<MediaConnectionState>>(new MediaConnectionState("reconnecting"));
+        Dispatcher.UIThread.RunJobs(); Assert.True(vm.InCall); Assert.True(vm.ConnectingCall);
+        media.ConnectionChanged += Raise.Event<Action<MediaConnectionState>>(new MediaConnectionState("connected"));
+        Dispatcher.UIThread.RunJobs(); Assert.True(vm.InCall); Assert.False(vm.ConnectingCall);
+        await media.Received(1).ConnectAsync(Arg.Any<MediaToken>(), Arg.Any<CancellationToken>());
+        await media.DidNotReceive().DisconnectAsync();
+        await vm.DisposeAsync();
+    }
     [AvaloniaTheory]
     [InlineData("audio")] [InlineData("video")]
     public async Task AnswerDirectCall_EnablesMicrophoneRegardlessOfMeetingPreference(string type)

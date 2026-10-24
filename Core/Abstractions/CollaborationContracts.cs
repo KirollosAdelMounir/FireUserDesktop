@@ -76,6 +76,7 @@ public interface INativeMediaSession : IAsyncDisposable
     event Action<string>? ParticipantLeft;
     event Action<MediaParticipant>? ParticipantJoined;
     event Action<MediaParticipantUpdate>? ParticipantUpdated;
+    event Action<MediaConnectionState>? ConnectionChanged;
     event Action<string>? Error;
     event Action<string>? CaptureStopped;
     event Action<RemoteControlStatus>? RemoteControlChanged;

@@ -118,6 +118,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
     public bool CanRequestFocusedControl => FocusedVideo is {IsScreen:true} tile && RemotePeers.Any(x=>x.Identity==tile.Identity.Split(" · ")[0] && x.CanHost && x.Sharing);
     public bool HasFocusedScreen => FocusedVideo?.IsScreen == true;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasFocusedVideo)), NotifyPropertyChangedFor(nameof(HasFocusedScreen))] private VideoTileViewModel? _focusedVideo;
+    public bool IsWaylandSession=>OperatingSystem.IsLinux()&&(!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY"))||string.Equals(Environment.GetEnvironmentVariable("XDG_SESSION_TYPE"),"wayland",StringComparison.OrdinalIgnoreCase));
+    [ObservableProperty] private bool _allowWaylandRemoteControl;
     [ObservableProperty] private bool _showCallMembers;
     [ObservableProperty] private bool _showCallChat;
     [ObservableProperty] private PersonSelection? _selectedCallInvitee;
@@ -278,6 +280,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         media.ParticipantUpdated += OnParticipantUpdated;
         Videos.CollectionChanged += (_, _) => { OnPropertyChanged(nameof(ParticipantSummary)); OnPropertyChanged(nameof(GalleryVideos)); };
         callClock.Tick += (_, _) => CallElapsed = (DateTimeOffset.UtcNow - callStarted).ToString(@"mm\:ss");
+        media.ConnectionChanged += OnMediaConnectionChanged;
         media.Error += OnMediaError;
         media.ParticipantLeft += OnParticipantLeft;
         media.CaptureStopped += OnCaptureStopped;
@@ -370,7 +373,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         ControlRequester = status.RequestedBy;
         OnPropertyChanged(nameof(RemoteDesktopAvailable));
         HasRemoteControl = status.Controller != null || status.Controlling != null;
-        RemoteControlLabel = status.Controller != null ? status.Controller + " is controlling your desktop · Ctrl+Alt+Escape revokes access" : status.Controlling != null ? "Controlling " + status.Controlling + " · Ctrl+Alt+Escape stops control" : "Remote control requires a supported native desktop share and the sharer’s approval. Browser participants can request control.";
+        RemoteControlLabel = status.Controller != null ? status.Controller + " is controlling your desktop · Ctrl+Alt+Escape revokes access" : status.Controlling != null ? "Controlling " + status.Controlling + " · Ctrl+Alt+Escape stops control" : status.HostUnavailableReason ?? "Remote control requires a supported native desktop share and the sharer’s approval. Browser participants can request control.";
         foreach (var tile in Videos) tile.CanControl = status.Controlling != null && tile.Identity.StartsWith(status.Controlling + " · screen · ", StringComparison.Ordinal);
         OnPropertyChanged(nameof(CanRequestControl)); OnPropertyChanged(nameof(CanRequestFocusedControl));
     });
@@ -589,7 +592,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             await RunMedia(async () =>
             {
                 var version = Volatile.Read(ref screenCaptureVersion);
-                try { await media.SetScreenAsync(true, Devices with { ShareSource = selected }, selection.Token); selection.Token.ThrowIfCancellationRequested(); ScreenEnabled = version == Volatile.Read(ref screenCaptureVersion); }
+                try { await media.SetScreenAsync(true, Devices with { ShareSource = selected, AllowRemoteControl = AllowWaylandRemoteControl }, selection.Token); selection.Token.ThrowIfCancellationRequested(); ScreenEnabled = version == Volatile.Read(ref screenCaptureVersion); }
                 catch (OperationCanceledException) when (selection.IsCancellationRequested) { }
                 catch (UserIdentityDesktop.Service.Media.ScreenShareCanceledException) { Feedback = ""; }
             });
@@ -604,7 +607,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         var tile = Videos.FirstOrDefault(x => x.Identity == (kind == "camera" ? "You" : "You · " + kind));
         if (tile != null) { if (FocusedVideo == tile) FocusedVideo = null; if (kind == "camera") tile.Frame = null; else Videos.Remove(tile); }
     }
-    [RelayCommand] public Task LeaveAsync() { shareSelection?.Cancel(); return RunMedia(LeaveCore, wait: true); }
+    [RelayCommand] public Task LeaveAsync() { mediaRecovery?.Cancel(); shareSelection?.Cancel(); return RunMedia(LeaveCore, wait: true); }
     private async Task LeaveCore()
     {
         callSounds.Play(null);
@@ -613,7 +616,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         try { await media.DisconnectAsync(); }
         finally
         {
-            InCall = false; activeCallUsers.Clear(); activeCallConversation = null; ConnectingCall = false; MicrophoneEnabled = CameraEnabled = ScreenEnabled = false;
+            AllowWaylandRemoteControl=false; InCall = false; activeCallUsers.Clear(); activeCallConversation = null; ConnectingCall = false; MicrophoneEnabled = CameraEnabled = ScreenEnabled = false;
             callClock.Stop(); FocusedVideo = null; Videos.Clear(); pendingFrames.Clear();
         }
         await UpdateCallPresence();
@@ -748,7 +751,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         chatService.AppearancePreferencesChanged -= AppearanceInvalidated;
         Clock.PropertyChanged -= OnClockFormatChanged;
         if (disposed) return;
-        disposed = true; Incoming = null; lifetime.Cancel();
+        disposed = true;
+        mediaRecovery?.Cancel(); Incoming = null; lifetime.Cancel();
         if (notifications != null) notifications.NotificationPosted -= OnNotificationPosted;
         api.MeetingChanged -= OnMeetingChanged;
         chatService.WorkplaceNotificationChanged -= OnWorkplaceNotification;
@@ -756,6 +760,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         RecentNotifications.Clear();
         chatService.WorkplaceChanged -= OnInvalidated; chatService.ConnectionStateChanged -= OnConnection;
         chatService.IncomingCallReceived -= OnIncoming; chatService.CallParticipantLeft -= OnCallLeft;
+        media.ConnectionChanged -= OnMediaConnectionChanged;
         media.VideoReceived -= OnVideo; media.Error -= OnMediaError; media.ParticipantLeft -= OnParticipantLeft;
         media.ParticipantJoined -= OnParticipantJoined; media.ParticipantUpdated -= OnParticipantUpdated; callClock.Stop();
         media.RemoteControlChanged -= OnRemoteControl;

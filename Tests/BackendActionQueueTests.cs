@@ -73,6 +73,17 @@ public sealed class BackendActionQueueTests
         using var stop=new CancellationTokenSource();var request=client.GetAsync("https://fire.invalid/api/Chat/ChatOf",stop.Token);await started.Task;stop.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>request);Assert.True(queue.IsConnected);Assert.Equal(0,queue.PendingCount);
     }
+    [Theory][InlineData(true)][InlineData(false)]
+    public async Task TransferDurationDoesNotTriggerOrdinaryRequestDeadlineOrOfflineState(bool transfer)
+    {
+        var queue=Offline();queue.SetConnected(true);
+        using var transport=new TokenHandler(async token=>{await Task.Delay(150,token);return new HttpResponseMessage(HttpStatusCode.OK);});
+        using var client=new HttpClient(new QueuedAuthenticatedHandler(queue,()=>Task.FromResult<string?>("session"),transport,requestTimeout:TimeSpan.FromMilliseconds(25))){Timeout=Timeout.InfiniteTimeSpan};
+        using var request=new HttpRequestMessage(HttpMethod.Get,"https://fire.invalid/transfer");
+        request.Options.Set(UserIdentityDesktop.Core.AttachmentTransferRequests.UnlimitedDuration,transfer);
+        if(transfer){using var response=await client.SendAsync(request,TestContext.Current.CancellationToken);Assert.Equal(HttpStatusCode.OK,response.StatusCode);Assert.True(queue.IsConnected);}
+        else{await Assert.ThrowsAsync<HttpRequestException>(()=>client.SendAsync(request,TestContext.Current.CancellationToken));Assert.False(queue.IsConnected);}
+    }
     private sealed class TokenHandler(Func<CancellationToken,Task<HttpResponseMessage>> handle):HttpMessageHandler
     {protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)=>handle(ct);}
     private sealed class Handler(Func<HttpRequestMessage,Task<HttpResponseMessage>> handle):HttpMessageHandler
