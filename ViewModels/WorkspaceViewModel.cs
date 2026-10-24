@@ -119,7 +119,6 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
     public bool HasFocusedScreen => FocusedVideo?.IsScreen == true;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasFocusedVideo)), NotifyPropertyChangedFor(nameof(HasFocusedScreen))] private VideoTileViewModel? _focusedVideo;
     public bool IsWaylandSession=>OperatingSystem.IsLinux()&&(!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY"))||string.Equals(Environment.GetEnvironmentVariable("XDG_SESSION_TYPE"),"wayland",StringComparison.OrdinalIgnoreCase));
-    [ObservableProperty] private bool _allowWaylandRemoteControl;
     [ObservableProperty] private bool _showCallMembers;
     [ObservableProperty] private bool _showCallChat;
     [ObservableProperty] private PersonSelection? _selectedCallInvitee;
@@ -168,7 +167,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
     public ObservableCollection<PersonSelection> Audience { get; } = new();
     public ObservableCollection<NativePeer> RemotePeers { get; } = new();
     [ObservableProperty] private NativePeer? _selectedRemotePeer;
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(RemoteDesktopAvailable))] private string? _controlRequester;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(RemoteDesktopAvailable)), NotifyPropertyChangedFor(nameof(ControlRequesterName))] private string? _controlRequester;
     [ObservableProperty] private string _remoteControlLabel = "";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(RemoteDesktopAvailable))] private bool _hasRemoteControl;
     [ObservableProperty] private bool _reduceMotion = Environment.GetEnvironmentVariable("FIREUSER_REDUCED_MOTION") == "1";
@@ -334,6 +333,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         var tile = Videos.FirstOrDefault(x => x.Identity == participant.Identity);
         if (tile == null && Videos.Count < 64) { tile = new VideoTileViewModel(participant.Identity, media.SendRemoteInput); Videos.Add(tile); }
         if (tile != null) { tile.Name = participant.Name; if (Guid.TryParse(participant.Identity,out var user)) _ = LoadParticipantAvatar(tile,user); }
+        foreach (var share in Videos.Where(x=>x.IsScreen && x.Identity.StartsWith(participant.Identity + " · screen",StringComparison.Ordinal))) share.Name = ParticipantName(participant.Identity) + "'s screen";
+        ApplyRemoteControl(remoteStatus);
     });
     private async Task LoadParticipantAvatar(VideoTileViewModel tile, Guid user)
     {
@@ -363,20 +364,52 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             RemoveLocalVideo(kind);
         });
     }
-    private void OnRemoteControl(RemoteControlStatus status) => Dispatcher.UIThread.Post(() =>
+    private string ParticipantName(string identity)
+    {
+        var name = Videos.FirstOrDefault(x => x.Identity == identity)?.Name;
+        if (!string.IsNullOrWhiteSpace(name) && name != identity && !Guid.TryParse(name,out _)) return name;
+        if (Guid.TryParse(identity,out var id))
+        {
+            name = People.FirstOrDefault(x => x.Id == id)?.Name;
+            if (!string.IsNullOrWhiteSpace(name)) return name;
+            if (Chat.SelectedRecipient?.ReceiverId == id && !string.IsNullOrWhiteSpace(Chat.SelectedRecipient.ReceiverName)) return Chat.SelectedRecipient.ReceiverName;
+        }
+        return "Participant";
+    }
+    public string ControlRequesterName => ControlRequester is {} id ? ParticipantName(id) : "";
+    public VideoTileViewModel? ControlledScreen => Videos.FirstOrDefault(x => x.IsScreen && x.CanControl);
+    public bool CanRequestScreenControl(VideoTileViewModel? tile) => tile is {IsScreen:true,CanControl:false} && RemotePeers.Any(x => x.Identity == tile.Identity.Split(" · ")[0] && x.CanHost && x.Sharing);
+    [RelayCommand(CanExecute=nameof(CanRequestScreenControl))]
+    private Task RequestScreenControlAsync(VideoTileViewModel? tile)
+    {
+        if (!CanRequestScreenControl(tile)) return Task.CompletedTask;
+        FocusedVideo = tile;
+        SelectedRemotePeer = RemotePeers.First(x => x.Identity == tile!.Identity.Split(" · ")[0]);
+        return RequestControlCommand.ExecuteAsync(null);
+    }
+    private void OnRemoteControl(RemoteControlStatus status) => Dispatcher.UIThread.Post(() => ApplyRemoteControl(status));
+    private void ApplyRemoteControl(RemoteControlStatus status)
     {
         if (disposed) return;
+        var previousController = remoteStatus.Controlling;
+        var previousScreen = ControlledScreen;
         remoteStatus = status;
         var selected = SelectedRemotePeer?.Identity;
-        RemotePeers.Clear(); foreach (var peer in status.Peers.Where(x => x.CanHost && x.Sharing)) RemotePeers.Add(peer);
+        RemotePeers.Clear(); foreach (var peer in status.Peers.Where(x => x.CanHost && x.Sharing)) RemotePeers.Add(peer with {DisplayName=ParticipantName(peer.Identity)});
         SelectedRemotePeer = RemotePeers.FirstOrDefault(x => x.Identity == selected);
         ControlRequester = status.RequestedBy;
         OnPropertyChanged(nameof(RemoteDesktopAvailable));
         HasRemoteControl = status.Controller != null || status.Controlling != null;
-        RemoteControlLabel = status.Controller != null ? status.Controller + " is controlling your desktop · Ctrl+Alt+Escape revokes access" : status.Controlling != null ? "Controlling " + status.Controlling + " · Ctrl+Alt+Escape stops control" : status.HostUnavailableReason ?? "Remote control requires a supported native desktop share and the sharer’s approval. Browser participants can request control.";
+        RemoteControlLabel = status.Controller != null ? ParticipantName(status.Controller) + " is controlling your desktop · Ctrl+Alt+Escape revokes access" : status.Controlling != null ? "Controlling " + ParticipantName(status.Controlling) + " · Ctrl+Alt+Escape stops control" : status.HostUnavailableReason ?? "Remote control requires a supported native desktop share and the sharer’s approval. Browser participants can request control.";
         foreach (var tile in Videos) tile.CanControl = status.Controlling != null && tile.Identity.StartsWith(status.Controlling + " · screen · ", StringComparison.Ordinal);
-        OnPropertyChanged(nameof(CanRequestControl)); OnPropertyChanged(nameof(CanRequestFocusedControl));
-    });
+        OnPropertyChanged(nameof(CanRequestControl)); OnPropertyChanged(nameof(CanRequestFocusedControl)); OnPropertyChanged(nameof(ControlRequesterName));
+        RequestScreenControlCommand.NotifyCanExecuteChanged();
+        if (previousController != status.Controlling || previousScreen != ControlledScreen)
+        {
+            if (ControlledScreen is {} controlled) FocusedVideo = controlled;
+            OnPropertyChanged(nameof(ControlledScreen));
+        }
+    }
     [RelayCommand] private Task RequestControlAsync() => RunMedia(async () =>
     {
         if (SelectedRemotePeer == null) throw new InvalidOperationException("Select a native participant sharing their screen.");
@@ -401,12 +434,12 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
                 if (!pendingFrames.TryRemove(key, out var frame)) continue;
                 var tileKey = key.Contains(" · camera", StringComparison.Ordinal) ? key.Split(" · ")[0] : key;
                 var tile = Videos.FirstOrDefault(x => x.Identity == tileKey);
-                if (tile is null && Videos.Count < 16) { tile = new VideoTileViewModel(tileKey, media.SendRemoteInput) { Name = tileKey.Contains(" · screen", StringComparison.Ordinal) ? (tileKey.StartsWith("You · ", StringComparison.Ordinal) ? "Your screen" : (Videos.FirstOrDefault(x => x.Identity == tileKey.Split(" · ")[0])?.Name ?? "Participant") + " · Screen share") : tileKey, CanControl = remoteStatus.Controlling != null && key.StartsWith(remoteStatus.Controlling + " · screen · ", StringComparison.Ordinal) }; Videos.Add(tile); }
+                if (tile is null && Videos.Count < 16) { tile = new VideoTileViewModel(tileKey, media.SendRemoteInput) { Name = tileKey.Contains(" · screen", StringComparison.Ordinal) ? (tileKey.StartsWith("You · ", StringComparison.Ordinal) ? "Your screen" : ParticipantName(tileKey.Split(" · ")[0]) + "'s screen") : tileKey, CanControl = remoteStatus.Controlling != null && key.StartsWith(remoteStatus.Controlling + " · screen · ", StringComparison.Ordinal) }; Videos.Add(tile); }
                 if (tile != null)
                 {
                     var firstFrame = tile.Frame == null;
                     tile.Frame = frame;
-                    if (firstFrame && tile.IsScreen) FocusedVideo = tile;
+                    if (firstFrame && tile.IsScreen) { FocusedVideo = tile; if (tile.CanControl) OnPropertyChanged(nameof(ControlledScreen)); }
                 }
             }
         }, DispatcherPriority.Background);
@@ -592,7 +625,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             await RunMedia(async () =>
             {
                 var version = Volatile.Read(ref screenCaptureVersion);
-                try { await media.SetScreenAsync(true, Devices with { ShareSource = selected, AllowRemoteControl = AllowWaylandRemoteControl }, selection.Token); selection.Token.ThrowIfCancellationRequested(); ScreenEnabled = version == Volatile.Read(ref screenCaptureVersion); }
+                try { await media.SetScreenAsync(true, Devices with { ShareSource = selected }, selection.Token); selection.Token.ThrowIfCancellationRequested(); ScreenEnabled = version == Volatile.Read(ref screenCaptureVersion); }
                 catch (OperationCanceledException) when (selection.IsCancellationRequested) { }
                 catch (UserIdentityDesktop.Service.Media.ScreenShareCanceledException) { Feedback = ""; }
             });
@@ -616,7 +649,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         try { await media.DisconnectAsync(); }
         finally
         {
-            AllowWaylandRemoteControl=false; InCall = false; activeCallUsers.Clear(); activeCallConversation = null; ConnectingCall = false; MicrophoneEnabled = CameraEnabled = ScreenEnabled = false;
+            InCall = false; activeCallUsers.Clear(); activeCallConversation = null; ConnectingCall = false; MicrophoneEnabled = CameraEnabled = ScreenEnabled = false;
             callClock.Stop(); FocusedVideo = null; Videos.Clear(); pendingFrames.Clear();
         }
         await UpdateCallPresence();

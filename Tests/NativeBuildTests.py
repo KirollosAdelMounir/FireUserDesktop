@@ -62,6 +62,18 @@ class NativeBuildTests(unittest.TestCase):
                 native.macos_media('osx-arm64', definition, output)
                 command.assert_not_called()
 
+    def test_mac_incremental_install_replaces_only_owned_dylibs_before_rpath_fixup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            owned = ['libfireuser_livekit.dylib', 'libfireuser_notifications.dylib', 'libfireuser_screencapture.dylib']
+            for name in owned + ['liblivekit.dylib', 'build-info.json']:
+                (output / name).write_bytes(b'keep sdk data')
+            native.prepare_macos_install(output)
+            self.assertTrue(all(not (output / name).exists() for name in owned))
+            self.assertEqual((output / 'liblivekit.dylib').read_bytes(), b'keep sdk data')
+            self.assertEqual((output / 'build-info.json').read_bytes(), b'keep sdk data')
+            native.prepare_macos_install(output)
+
     def test_environment_key_is_stable_but_changes_for_distro_libc_compiler_and_checkout(self):
         with patch.object(native.platform, 'system', return_value='Linux'), \
              patch.object(native.platform, 'machine', return_value='x86_64'), \

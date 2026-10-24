@@ -28,7 +28,7 @@ public sealed partial class NativeMediaSession
     {
         HostUnavailableReason = control.LocalScope != null && !canHost
             ? OperatingSystem.IsLinux() && ScreenSources.IsWayland
-                ? waylandInput?.RemoteControlRequested==true ? "The desktop did not approve keyboard and pointer control for this screen. Stop sharing and request system permission again." : "Enable remote control for the next screen share before starting a new share. Your desktop will ask for keyboard and pointer permission."
+                ? waylandInput?.RemoteControlRequested==true ? "The desktop did not approve keyboard and pointer control for this screen. Stop sharing and request system permission again." : "Start a desktop screen share and approve the system keyboard and pointer permission."
                 : "This share cannot host remote control. Share the supported primary desktop and allow operating-system input permissions."
             : null
     };
@@ -172,7 +172,7 @@ public sealed partial class NativeMediaSession
             RevokeLocal(); control.Sharing(sharing);
             waylandInput=sharing?portal:null;
             canHost = sharing && portal==null && !(OperatingSystem.IsLinux()&&ScreenSources.IsWayland) && LiveKitNative.fu_input_supported() == 1 && LiveKitNative.fu_desktop_bounds(out desktopWidth, out desktopHeight) == 0 && RemoteControlPolicy.SupportsDesktopSource(devices,desktopWidth,desktopHeight);
-            if(OperatingSystem.IsLinux()&&ScreenSources.IsWayland&&sharing&&portal!=null){desktopWidth=portal.LogicalWidth;desktopHeight=portal.LogicalHeight;canHost=devices.AllowRemoteControl&&devices.ShareSource?.Kind==ScreenShareKind.Screen&&portal.CanControl;}
+            if(OperatingSystem.IsLinux()&&ScreenSources.IsWayland&&sharing&&portal!=null){desktopWidth=portal.LogicalWidth;desktopHeight=portal.LogicalHeight;canHost=devices.ShareSource?.Kind==ScreenShareKind.Screen&&portal.CanControl;}
             if (oldController != null) QueuePacket(oldController, new RemotePacket("revoke"));
             SendHello(); RemoteControlChanged?.Invoke(CurrentControlStatus);
         }

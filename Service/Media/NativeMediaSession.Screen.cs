@@ -16,7 +16,7 @@ public sealed partial class NativeMediaSession
             if (selected.Backend == ScreenCaptureBackend.Portal)
             {
                 if (!OperatingSystem.IsLinux() || !ScreenSources.IsWayland) throw new InvalidOperationException("This portal source does not belong to the active desktop.");
-                var portal = await ScreenCastPortal.OpenAsync(selected.Kind, ct, remoteControl:devices.AllowRemoteControl);
+                var portal = await ScreenCastPortal.OpenAsync(selected.Kind, ct, remoteControl:selected.Kind == ScreenShareKind.Screen);
                 inputPortal=portal;
                 try { source = await Task.Run(() => new PipeWireCapture(portal), ct); }
                 catch { await portal.DisposeAsync(); throw; }

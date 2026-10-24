@@ -89,8 +89,8 @@ especially project versions, server configuration and developer tooling files.
   no longer used. Native audio uses miniaudio. Never require end users to type
   device identifiers or edit PATH. Acoustic echo cancellation remains work.
 - Windows input uses SendInput; macOS uses CoreGraphics/Accessibility; Linux
-  uses X11/XTest. Wayland capture uses ScreenCast/PipeWire; opt-in Wayland
-  control uses the consent-based RemoteDesktop portal and approved monitor coordinates. See `docs/screen-sharing.md`. Do not
+  uses X11/XTest. Wayland capture uses ScreenCast/PipeWire; Wayland
+  monitor sharing always requests control permission through the consent-based RemoteDesktop portal and approved monitor coordinates. See `docs/screen-sharing.md`. Do not
   silently fall back to input on another desktop or bypass OS permissions.
 - Use the publication's track source to identify screen shares; the SDK track
   source can be unset. Compile MSVC bridge sources as UTF-8.

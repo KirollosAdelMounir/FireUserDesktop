@@ -93,13 +93,12 @@
         </Border>
       </Grid>
       <StackPanel x:Name="CallSupplement" Grid.Row="1" MaxHeight="180">
-        <CheckBox IsVisible="{Binding IsWaylandSession}" IsChecked="{Binding AllowWaylandRemoteControl}" IsEnabled="{Binding !ScreenEnabled}" Content="Enable remote control for the next screen share" Margin="0,6" />
         <Expander Header="Remote desktop" IsExpanded="False" IsVisible="{Binding RemoteDesktopAvailable}">
           <StackPanel Spacing="8">
             <TextBlock Text="{Binding RemoteControlLabel}" TextWrapping="Wrap" />
             <WrapPanel>
-              <ComboBox ItemsSource="{Binding RemotePeers}" SelectedItem="{Binding SelectedRemotePeer}" MinWidth="220" MaxWidth="380" PlaceholderText="Native participant">
-                <ComboBox.ItemTemplate><DataTemplate x:DataType="model:NativePeer"><TextBlock Text="{Binding Identity}" TextTrimming="CharacterEllipsis" /></DataTemplate></ComboBox.ItemTemplate>
+              <ComboBox ItemsSource="{Binding RemotePeers}" SelectedItem="{Binding SelectedRemotePeer}" MinWidth="220" MaxWidth="380" PlaceholderText="Shared screen">
+                <ComboBox.ItemTemplate><DataTemplate x:DataType="model:NativePeer"><TextBlock Text="{Binding ScreenLabel}" TextTrimming="CharacterEllipsis" /></DataTemplate></ComboBox.ItemTemplate>
               </ComboBox>
               <Button Content="Request control" Command="{Binding RequestControlCommand}" IsEnabled="{Binding CanRequestControl}" Margin="8,0" />
               <Button Content="Stop control / revoke access" Command="{Binding StopControlCommand}" IsEnabled="{Binding HasRemoteControl}" />
@@ -107,7 +106,7 @@
             <Border Background="{DynamicResource ForgeBgSecondary}" BorderBrush="{DynamicResource ForgePrimary}" BorderThickness="1" Padding="12" CornerRadius="8" IsVisible="{Binding ControlRequester, Converter={StaticResource NullToBoolConverter}}">
               <StackPanel Spacing="8">
                 <TextBlock Text="A participant requests keyboard and mouse control of your shared desktop:" TextWrapping="Wrap" FontWeight="Bold" />
-                <TextBlock Text="{Binding ControlRequester}" />
+                <TextBlock Text="{Binding ControlRequesterName}" />
                 <StackPanel Orientation="Horizontal" Spacing="8"><Button Content="Allow for 5 minutes" Command="{Binding AllowControlCommand}" />
                   <Button Content="Deny" Command="{Binding DenyControlCommand}" /></StackPanel>
               </StackPanel>
@@ -128,7 +127,7 @@
           <Button Classes="call-control danger" Content="Leave call" Command="{Binding LeaveCommand}" />
         </WrapPanel>
         <TextBlock Text="{Binding Feedback}" TextWrapping="Wrap" />
-        <StackPanel IsVisible="{Binding ControlRequester, Converter={StaticResource NullToBoolConverter}}" Spacing="8"><TextBlock Text="{Binding ControlRequester, StringFormat='{}{0} requests control of your shared desktop'}" TextWrapping="Wrap" /><StackPanel Orientation="Horizontal" Spacing="8"><Button Content="Allow for 5 minutes" Command="{Binding AllowControlCommand}" /><Button Content="Deny" Command="{Binding DenyControlCommand}" /></StackPanel></StackPanel>
+        <StackPanel IsVisible="{Binding ControlRequester, Converter={StaticResource NullToBoolConverter}}" Spacing="8"><TextBlock Text="{Binding ControlRequesterName, StringFormat='{}{0} requests control of your shared desktop'}" TextWrapping="Wrap" /><StackPanel Orientation="Horizontal" Spacing="8"><Button Content="Allow for 5 minutes" Command="{Binding AllowControlCommand}" /><Button Content="Deny" Command="{Binding DenyControlCommand}" /></StackPanel></StackPanel>
         </StackPanel>
       </Border>
     </Border>

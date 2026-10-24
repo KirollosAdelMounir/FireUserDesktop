@@ -51,7 +51,7 @@ public sealed record MeetingCredentials(Guid Id, string Locator, string Password
 public enum ScreenShareKind { Screen, Window }
 public enum ScreenCaptureBackend { Windows, X11, Portal, MacOS }
 public sealed record ScreenShareSource(string Id, string Name, ScreenShareKind Kind, ScreenCaptureBackend Backend, int X = 0, int Y = 0, int Width = 0, int Height = 0);
-public sealed record MediaDevices(string Microphone, string Camera, string Screen, ScreenShareSource? ShareSource = null, bool AllowRemoteControl = false);
+public sealed record MediaDevices(string Microphone, string Camera, string Screen, ScreenShareSource? ShareSource = null);
 public sealed record MediaDeviceOption(string Id, string Name);
 public sealed record MediaDeviceCatalog(MediaDeviceOption[] Microphones, MediaDeviceOption[] Speakers, MediaDeviceOption[] Cameras, string? Warning = null);
 public sealed record MediaParticipantUpdate(string Identity, string Kind, string Value);
