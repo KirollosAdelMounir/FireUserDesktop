@@ -10,6 +10,14 @@ on:
         type: choice
         default: all
         options: [all, win-x64, win-arm64, osx-x64, osx-arm64, linux-x64, linux-arm64]
+      release_run_id:
+        description: Publish installers from this completed successful run (leave empty to build)
+        type: string
+        required: false
+      release_tag:
+        description: Existing draft test release tag for the exact build commit
+        type: string
+        required: false
       request_id:
         description: Correlation ID used by the local build command
         type: string
@@ -21,6 +29,7 @@ permissions:
   contents: read
 jobs:
   plan:
+    if: inputs.release_run_id == ''
     runs-on: ubuntu-22.04
     outputs:
       matrix: ${{ steps.select.outputs.matrix }}
@@ -224,3 +233,62 @@ jobs:
           name: fire-user-win-arm64-emulated
           path: packages/fire-user-win-arm64-emulated.tar.gz
           if-no-files-found: error
+
+  publish-test-installers:
+    if: github.event_name == 'workflow_dispatch' && inputs.release_run_id != ''
+    runs-on: ubuntu-22.04
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_RUN: ${{ inputs.release_run_id }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - name: Verify completed build and pinned draft release
+        shell: bash
+        run: |
+          python3 - <<'PYTHON'
+          import json, os, re, subprocess
+          repo=os.environ['GITHUB_REPOSITORY'];run=os.environ['RELEASE_RUN'];tag=os.environ['RELEASE_TAG']
+          if not run.isdigit() or not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+-test\.[0-9]{8}',tag):
+              raise SystemExit('Use a numeric run and a test release tag.')
+          def api(path): return json.loads(subprocess.check_output(['gh','api',path],text=True))
+          build=api(f'repos/{repo}/actions/runs/{run}')
+          release=api(f'repos/{repo}/releases/tags/{tag}')
+          if build['status']!='completed' or build['conclusion']!='success' or build['event'] not in ('push','workflow_dispatch'):
+              raise SystemExit('Only a completed successful trusted build can be published.')
+          if build['head_repository']['full_name']!=repo or release['target_commitish']!=build['head_sha']:
+              raise SystemExit('The release must be pinned to this repository and exact build commit.')
+          if not release['draft'] or not release['prerelease']:
+              raise SystemExit('Publication requires an existing draft test release.')
+          expected={'fire-user-installers-'+rid for rid in ('linux-x64','linux-arm64','win-x64','win-arm64-emulated','osx-x64','osx-arm64')}
+          names={x['name'] for x in api(f'repos/{repo}/actions/runs/{run}/artifacts?per_page=100')['artifacts'] if not x['expired']}
+          if not expected.issubset(names): raise SystemExit('A platform installer artifact is missing.')
+          print('Verified complete platform builds and exact release commit.')
+          PYTHON
+      - name: Download verified installer artifacts
+        run: gh run download "$RELEASE_RUN" --repo "$GITHUB_REPOSITORY" --pattern 'fire-user-installers-*' --dir installers
+      - name: Publish installers and checksums
+        shell: bash
+        run: |
+          python3 - <<'PYTHON'
+          import hashlib, os, pathlib, shutil, subprocess
+          root=pathlib.Path('release-assets');root.mkdir()
+          for path in pathlib.Path('installers').rglob('*'):
+              if path.is_file():
+                  destination=root/path.name
+                  if destination.exists(): raise SystemExit('Duplicate installer asset name: '+path.name)
+                  shutil.copy2(path,destination)
+          files=sorted(root.iterdir())
+          if not files: raise SystemExit('No installers to publish.')
+          manifest=root/'SHA256SUMS.txt'
+          with manifest.open('w') as output:
+              for path in files:
+                  with path.open('rb') as content: digest=hashlib.file_digest(content,'sha256').hexdigest()
+                  output.write(digest+'  '+path.name+'\n')
+          tag=os.environ['RELEASE_TAG'];repo=os.environ['GITHUB_REPOSITORY']
+          for path in sorted(root.iterdir()):
+              subprocess.run(['gh','release','upload',tag,str(path),'--repo',repo,'--clobber'],check=True)
+          subprocess.run(['gh','release','edit',tag,'--repo',repo,'--draft=false','--prerelease'],check=True)
+          PYTHON
