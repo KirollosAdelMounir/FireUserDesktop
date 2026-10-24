@@ -15,7 +15,7 @@ if(APPLE)
     add_library(fireuser_screencapture SHARED screen_capture.mm)
     target_compile_features(fireuser_screencapture PRIVATE cxx_std_20)
     target_compile_options(fireuser_screencapture PRIVATE -fobjc-arc)
-    target_link_libraries(fireuser_screencapture PRIVATE "-framework Foundation" "-framework ScreenCaptureKit" "-framework CoreMedia" "-framework CoreVideo")
+    target_link_libraries(fireuser_screencapture PRIVATE "-framework Foundation" "-framework ScreenCaptureKit" "-framework CoreMedia" "-framework CoreVideo" "-framework CoreGraphics")
     install(TARGETS fireuser_screencapture LIBRARY DESTINATION .)
 endif()
 # IDEs configure this directory directly, without the native build script's

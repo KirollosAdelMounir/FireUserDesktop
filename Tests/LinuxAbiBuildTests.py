@@ -15,7 +15,7 @@ class LinuxAbiBuildTests(unittest.TestCase):
             with patch.object(abi.subprocess,'check_output',return_value=text):
                 return abi.check(directory)
     def test_accepts_supported_requirements_and_ignores_definitions(self):
-        self.assertEqual(self.check(['GLIBC_2.35','GLIBCXX_3.4.30','OPENSSL_3.0.0']),1)
+        self.assertEqual(self.check(['GLIBC_2.35','GLIBCXX_3.4.30','OPENSSL_3.0.0','GLIBC_PRIVATE']),1)
     def test_rejects_new_glibc_openssl_cpp_and_tls_abi(self):
         for version in ['GLIBC_2.43','OPENSSL_3.2.0','GLIBCXX_3.4.33','GLIBC_ABI_GNU2_TLS']:
             with self.subTest(version=version),self.assertRaisesRegex(ValueError,version):

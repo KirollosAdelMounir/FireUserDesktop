@@ -29,6 +29,10 @@ def check(source, limits=None):
         checked += 1
         text = subprocess.check_output(['readelf', '--version-info', str(path)], text=True)
         for name in required_versions(text):
+            # The pinned FFmpeg runtime uses GLIBC_PRIVATE with an old libc baseline.
+            # Private symbols have no numeric ordering: baseline execution is checked separately in CI.
+            if name == 'GLIBC_PRIVATE':
+                continue
             family, version = name.split('_', 1)
             if not re.fullmatch(r'\d+(?:\.\d+)+', version):
                 raise ValueError(f'{path.name} requires unsupported ABI {name}; rebuild on the supported Linux baseline.')
