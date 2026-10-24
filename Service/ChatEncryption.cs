@@ -180,6 +180,57 @@ public sealed class ChatEncryption(IAuthService auth, IConfigurationService conf
         finally { CryptographicOperations.ZeroMemory(cek); }
     }
 
+    public async Task<RecipientDto> DecryptPreviewAsync(RecipientDto recipient)
+    {
+        if (recipient.LastMessage?.StartsWith("FU1.", StringComparison.Ordinal) != true) return recipient;
+        await gate.WaitAsync();
+        try
+        {
+            var owner = auth.CurrentUser?.Id ?? throw new InvalidOperationException("Sign in first.");
+            var epoch = identityEpoch;
+            var identity = await Identity(owner);
+            var sender = ReadAuthenticatedAuthor(recipient.LastMessage, identity);
+            var author = await Public(sender, owner);
+            var payload = Open(recipient.LastMessage, identity, author, sender);
+            if (auth.CurrentUser?.Id != owner || epoch != identityEpoch) throw new CryptographicException("Session changed.");
+            ValidatePreviewDestination(payload, recipient, owner);
+            recipient.LastMessage = payload.Text;
+            recipient.AttachmentsCount = payload.Files.Length;
+            recipient.LastMessageHasAttachments = payload.Files.Length > 0;
+        }
+        catch { recipient.LastMessage = "Unlock chat to view this message"; recipient.AttachmentsCount = 0; recipient.LastMessageHasAttachments = false; }
+        finally { gate.Release(); }
+        return recipient;
+    }
+
+    public static void ValidatePreviewDestination(Payload payload, RecipientDto recipient, Guid owner)
+    {
+        if (payload.ConversationId != recipient.ConversationId || !payload.Audience.Contains(owner) ||
+            (recipient.ConversationId == null && !((payload.Sender == owner && payload.Receiver == recipient.ReceiverId) ||
+                (payload.Sender == recipient.ReceiverId && payload.Receiver == owner))))
+            throw new CryptographicException("Preview destination changed.");
+        foreach (var file in payload.Files) ValidateFile(file);
+    }
+
+    // The author hint is read only after AEAD authentication. Open then verifies its signature and audience.
+    private static Guid ReadAuthenticatedAuthor(string wire, Recovery identity)
+    {
+        using var envelope = JsonDocument.Parse(wire[4..]); var root = envelope.RootElement;
+        var header = root.GetProperty("protected").GetString()!;
+        var entry = root.GetProperty("recipients").EnumerateArray().Single(x => x.GetProperty("header").GetProperty("kid").GetString() == identity.UserId.ToString("D"));
+        using var rsa = RSA.Create(); rsa.ImportPkcs8PrivateKey(Convert.FromBase64String(identity.EncryptionPrivateKey), out _);
+        var key = rsa.Decrypt(Decode(entry.GetProperty("encrypted_key").GetString()!), RSAEncryptionPadding.OaepSHA256);
+        try
+        {
+            var cipher = Decode(root.GetProperty("ciphertext").GetString()!); var plain = new byte[cipher.Length];
+            using var aes = new AesGcm(key, 16);
+            aes.Decrypt(Decode(root.GetProperty("iv").GetString()!), cipher, Decode(root.GetProperty("tag").GetString()!), plain, Encoding.ASCII.GetBytes(header));
+            try { var signed = Encoding.UTF8.GetString(plain).Split('.'); using var signature = JsonDocument.Parse(Decode(signed[0])); return signature.RootElement.GetProperty("kid").GetGuid(); }
+            finally { CryptographicOperations.ZeroMemory(plain); }
+        }
+        finally { CryptographicOperations.ZeroMemory(key); }
+    }
+
     public async Task<ChatMessage> DecryptAsync(ChatMessage message)
     {
         if (message.Text?.StartsWith("FU1.", StringComparison.Ordinal) != true) return message;
@@ -233,7 +284,7 @@ public sealed class ChatEncryption(IAuthService auth, IConfigurationService conf
         }
         catch { File.Delete(temporary); throw; }
     }
-    public static async Task TransformFileAsync(Stream source, Stream destination, EncryptedFile file, bool encrypt)
+    public static async Task TransformFileAsync(Stream source, Stream destination, EncryptedFile file, bool encrypt, CancellationToken cancellationToken = default)
     {
         ValidateFile(file);
         var key = Convert.FromBase64String(file.Key);
@@ -251,15 +302,15 @@ public sealed class ChatEncryption(IAuthService auth, IConfigurationService conf
                 var aad = JsonSerializer.SerializeToUtf8Bytes(new object[] { "FUATT", 1, file.Id, index, file.Size, file.ChunkSize });
                 if (encrypt)
                 {
-                    await source.ReadExactlyAsync(plain.AsMemory(0, count));
+                    await source.ReadExactlyAsync(plain.AsMemory(0, count), cancellationToken);
                     aes.Encrypt(nonce, plain.AsSpan(0, count), cipher.AsSpan(0, count), tag, aad);
-                    await destination.WriteAsync(cipher.AsMemory(0, count)); await destination.WriteAsync(tag);
+                    await destination.WriteAsync(cipher.AsMemory(0, count), cancellationToken); await destination.WriteAsync(tag, cancellationToken);
                 }
                 else
                 {
-                    await source.ReadExactlyAsync(cipher.AsMemory(0, count)); await source.ReadExactlyAsync(tag);
+                    await source.ReadExactlyAsync(cipher.AsMemory(0, count), cancellationToken); await source.ReadExactlyAsync(tag, cancellationToken);
                     aes.Decrypt(nonce, cipher.AsSpan(0, count), tag, plain.AsSpan(0, count), aad);
-                    await destination.WriteAsync(plain.AsMemory(0, count));
+                    await destination.WriteAsync(plain.AsMemory(0, count), cancellationToken);
                 }
             }
             if (source.ReadByte() != -1) throw new CryptographicException("Attachment length changed.");

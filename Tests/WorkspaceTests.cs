@@ -29,7 +29,7 @@ public sealed class TestApplication : Avalonia.Application
         foreach (var style in styles) Styles.Add(style);
         DataTemplates.Add(new ViewLocator());
     }
-    public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<TestApplication>().UseSkia().ConfigureFonts(DesktopFonts.Configure).UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
+    public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<TestApplication>().UseSkia().With(DesktopFonts.Defaults).ConfigureFonts(DesktopFonts.Configure).UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
 }
 
 public sealed class WorkspaceTests
@@ -170,7 +170,7 @@ public sealed class WorkspaceTests
     public async Task NavigationMotion_RapidChangesCancelWithoutLeavingInvisibleContent()
     {
         var (vm, _, _) = Workspace(); vm.ReduceMotion = false;
-        var view = new WorkspaceView { DataContext = vm };
+        var view = new WorkspaceView { DataContext = vm, ShowReviewAsync = (_, _, _) => Task.FromResult(true) };
         var window = new Window { Width = 1200, Height = 850, Content = view };
         window.Show(); Dispatcher.UIThread.RunJobs();
         var tabs = view.FindControl<TabControl>("WorkspaceTabs")!;
@@ -207,7 +207,7 @@ public sealed class WorkspaceTests
     public async Task CallUsesIndependentWindow_AndClosingItLeavesAndHidesRemoteControlWithoutNativeShare()
     {
         var (vm, _, media) = Workspace(); vm.ReduceMotion = true; vm.InCall = true; vm.CallTitle = "Team call";
-        var view = new WorkspaceView { DataContext = vm };
+        var view = new WorkspaceView { DataContext = vm, ShowReviewAsync = (_, _, _) => Task.FromResult(true) };
         var owner = new Window { Width = 1200, Height = 850, Content = view };
         owner.Show(); Dispatcher.UIThread.RunJobs();
         var child = Assert.IsType<CallWindow>(view.ActiveCallWindow);
@@ -248,7 +248,7 @@ public sealed class WorkspaceTests
         vm.SelectedRemotePeer = new NativePeer("browser", false, false, null); Assert.False(vm.CanRequestControl);
         Assert.True(vm.RemoteDesktopAvailable);
         Assert.Equal("native", vm.ControlRequester);
-        var window = new Window { Width = 1200, Height = 900, Content = new WorkspaceView { DataContext = vm } };
+        var window = new Window { Width = 1200, Height = 900, Content = new WorkspaceView { DataContext = vm, ShowReviewAsync = (_, _, _) => Task.FromResult(true) } };
         window.Show(); Dispatcher.UIThread.RunJobs();
         using var frame = window.CaptureRenderedFrame(); Assert.NotNull(frame);
         window.Close(); await vm.DisposeAsync();
@@ -262,7 +262,7 @@ public sealed class WorkspaceTests
         api.CalendarAsync(Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>()).Returns(new List<CalendarItem>());
         api.AnnouncementsAsync(Arg.Any<CancellationToken>()).Returns(new List<Announcement>());
         var chatVm = new ChatViewModel(auth, chat, Substitute.For<IUserService>(), Substitute.For<IImageService>(), Substitute.For<IFileService>(), Substitute.For<INotificationService>());
-        return (new WorkspaceViewModel(chatVm, api, media, auth, chat), api, media);
+        return (new WorkspaceViewModel(chatVm, api, media, auth, chat) { ConfirmActionAsync = (_, _) => Task.FromResult(true) }, api, media);
     }
 
     [AvaloniaFact]
@@ -291,7 +291,7 @@ public sealed class WorkspaceTests
         api.CreateCallAsync(Arg.Any<Guid>(), false, Arg.Any<CancellationToken>()).Returns(new CallSession("call-1", "audio", new(), null));
         api.CallTokenAsync("call-1", Arg.Any<CancellationToken>()).Returns(new MediaToken("wss://media.test", "token"));
         await vm.StartVoiceCommand.ExecuteAsync(null);
-        Assert.True(vm.InCall); Assert.False(vm.MicrophoneEnabled); Assert.False(vm.CameraEnabled);
+        Assert.True(vm.InCall); Assert.True(vm.MicrophoneEnabled); Assert.False(vm.CameraEnabled);
         api.LeaveCallAsync("call-1", Arg.Any<CancellationToken>()).Returns(Task.FromException(new HttpRequestException("Server unavailable")));
         await vm.LeaveCommand.ExecuteAsync(null);
         await media.Received().DisconnectAsync(); Assert.False(vm.InCall); Assert.Empty(vm.Videos);
@@ -325,7 +325,7 @@ public sealed class WorkspaceTests
         Avalonia.Application.Current!.RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light;
         vm.Calendar.Add(new CalendarItem(Guid.NewGuid(), "Meeting", "Product planning", "Team sync", DateTime.UtcNow, DateTime.UtcNow.AddHours(1), Guid.NewGuid(), 0, 1));
         vm.Announcements.Add(new Announcement(Guid.NewGuid(), "Welcome to Fire User", "Team updates appear here in real time.", "General", DateTime.UtcNow, DateTime.UtcNow.AddDays(7), true, true, 1, false));
-        var view = new WorkspaceView { DataContext = vm };
+        var view = new WorkspaceView { DataContext = vm, ShowReviewAsync = (_, _, _) => Task.FromResult(true) };
         var window = new Window { Width = 1200, Height = 850, Content = view };
         window.Show(); Dispatcher.UIThread.RunJobs();
         var tabs = view.FindControl<TabControl>("WorkspaceTabs")!;

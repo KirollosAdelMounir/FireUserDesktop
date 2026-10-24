@@ -1,8 +1,9 @@
 {
   "osx-x64": {
-    "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2/ffmpeg.zip",
-    "archive": "zip",
-    "sha256": "7c6b4125b191cbf773832dc51f424cf2b6bb7da43007d1e066f95909e47cacd4",
+    "build": "macos-source-v1",
+    "version": "9.0.2",
+    "sourceUrl": "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz",
+    "sourceSha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e",
     "executable": "ffmpeg"
   },
   "win-x64": {
@@ -24,9 +25,10 @@
     "executable": "ffmpeg"
   },
   "osx-arm64": {
-    "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip",
-    "archive": "zip",
-    "sha256": "c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924",
+    "build": "macos-source-v1",
+    "version": "9.0.2",
+    "sourceUrl": "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz",
+    "sourceSha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e",
     "executable": "ffmpeg"
   }
 }

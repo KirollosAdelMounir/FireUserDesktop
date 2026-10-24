@@ -14,8 +14,35 @@ public partial class ChatViewModel
     private void ReplaceMessage(System.Collections.Generic.IList<ChatMessageItemViewModel> items, UserIdentityDesktop.Core.Models.ChatMessage message)
     {
         var old = items.FirstOrDefault(x => x.Id == message.Id);
-        if (old != null) items[items.IndexOf(old)] = new ChatMessageItemViewModel(message, old.IsMine, _chatService, _fileService, _imageService);
+        if (old != null)
+        {
+            message.PlayedDetails = MessageDetailsViewModel.MergePlayback(message.PlayedDetails,old.Message.PlayedDetails);
+            items[items.IndexOf(old)] = new ChatMessageItemViewModel(message, old.IsMine, _chatService, _fileService, _imageService);
+        }
     }
+    private void OnAttachmentPlayed(UserIdentityDesktop.Core.Models.PlaybackReceipt receipt) => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+    {
+        foreach(var item in Messages.Concat(historyCache.Values.SelectMany(x=>x.Items)).Where(x=>x.Id==receipt.MessageId))
+        {
+            item.Message.PlayedDetails=MessageDetailsViewModel.MergePlayback(item.Message.PlayedDetails,new[]{new UserIdentityDesktop.Core.Models.PlayedReceipt(receipt.UserId,receipt.AttachmentId,receipt.PlayedAt)});
+        }
+    });
+    internal async Task<string?> GetPersonNameAsync(Guid id)
+    {
+        if(id==CurrentUser.Id)return string.IsNullOrWhiteSpace(CurrentUser.DisplayName)?"You":CurrentUser.DisplayName;
+        var known=Workspace?.People.FirstOrDefault(x=>x.Id==id)?.Name ?? Recipients.FirstOrDefault(x=>!x.IsGroup&&x.ReceiverId==id)?.ReceiverName;
+        if(!string.IsNullOrWhiteSpace(known))return known;
+        var profile=await _userService.GetUserProfileAsync(id);return string.IsNullOrWhiteSpace(profile?.FullName)?null:profile.FullName;
+    }
+    internal MessageDetailsViewModel CreateMessageDetails(ChatMessageItemViewModel item) => new(item.Message,_chatService,CurrentUser.Id,async id =>
+    {
+        if(id==CurrentUser.Id)return "You";
+        var known=Recipients.FirstOrDefault(x=>!x.IsGroup && x.ReceiverId==id)?.ReceiverName
+            ?? Workspace?.People.FirstOrDefault(x=>x.Id==id)?.Name;
+        if(!string.IsNullOrWhiteSpace(known))return known;
+        if(id==item.Sender && !string.IsNullOrWhiteSpace(item.Message.SenderName))return item.Message.SenderName;
+        var profile=await _userService.GetUserProfileAsync(id);return profile?.FullName;
+    });
     private void OnMessageDeleted(string id) => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
     {
         foreach (var items in historyCache.Values.Select(x => (System.Collections.Generic.IList<ChatMessageItemViewModel>)x.Items).Append(Messages))

@@ -1,4 +1,9 @@
 cmake_minimum_required(VERSION 3.24)
+# Keep release builds on newer Macs compatible with the Sonoma target.
+# This must precede project(), which initializes the compiler deployment flags.
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
+endif()
 project(FireUserLiveKit LANGUAGES CXX)
 
 if(APPLE)
@@ -10,7 +15,7 @@ if(APPLE)
     add_library(fireuser_screencapture SHARED screen_capture.mm)
     target_compile_features(fireuser_screencapture PRIVATE cxx_std_20)
     target_compile_options(fireuser_screencapture PRIVATE -fobjc-arc)
-    target_link_libraries(fireuser_screencapture PRIVATE "-framework Foundation" "-framework ScreenCaptureKit" "-framework CoreMedia" "-framework CoreVideo")
+    target_link_libraries(fireuser_screencapture PRIVATE "-framework Foundation" "-framework ScreenCaptureKit" "-framework CoreMedia" "-framework CoreVideo" "-framework CoreGraphics")
     install(TARGETS fireuser_screencapture LIBRARY DESTINATION .)
 endif()
 # IDEs configure this directory directly, without the native build script's

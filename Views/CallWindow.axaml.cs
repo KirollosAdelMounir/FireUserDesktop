@@ -15,10 +15,16 @@ namespace UserIdentityDesktop.Views;
 
 public partial class CallWindow : Window
 {
-    private bool closingAfterCall, leaving, presentationFullscreen;
+    private bool closingAfterCall, leaving, presentationFullscreen, windowStateCheckQueued;
     private WindowState previousWindowState;
     private bool previousMembers, previousChat;
     private WorkspaceViewModel? observedModel;
+    private async void ChooseCallAttendees_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is not WorkspaceViewModel vm) return;
+        vm.CallAttendees.AllowsMeetingGuests = vm.IsMeetingCall;
+        await new AttendeePickerWindow(vm.CallAttendees, vm.ReduceMotion).ShowDialog(this);
+    }
     public CallWindow()
     {
         InitializeComponent();
@@ -35,7 +41,19 @@ public partial class CallWindow : Window
             if (observedModel != null) { observedModel.PropertyChanged += OnPresentationChanged; observedModel.ChooseScreenShareSourceAsync = ChooseScreenShareSource; }
             UpdateGalleryLayout();
         };
-        PropertyChanged += (_, e) => { if (e.Property == WindowStateProperty && presentationFullscreen && WindowState != WindowState.FullScreen) ExitShareFullscreen(restoreWindowState: false); };
+        PropertyChanged += (_, e) =>
+        {
+            if (e.Property != WindowStateProperty || windowStateCheckQueued) return;
+            // X11 raises state notifications from inside its native state setter.
+            // Changing the state there recursively re-enters WindowState until stack overflow.
+            windowStateCheckQueued = true;
+            Dispatcher.UIThread.Post(() =>
+            {
+                windowStateCheckQueued = false;
+                if (WindowState == WindowState.FullScreen && !presentationFullscreen) { WindowState = WindowState.Normal; return; }
+                if (presentationFullscreen && WindowState != WindowState.FullScreen) ExitShareFullscreen(restoreWindowState: false);
+            });
+        };
         Closed += (_, _) => { if (observedModel != null) { observedModel.PropertyChanged -= OnPresentationChanged; observedModel.ChooseScreenShareSourceAsync = null; } };
         Closing += async (_, args) =>
         {
@@ -73,11 +91,12 @@ public partial class CallWindow : Window
         previousWindowState = WindowState; previousMembers = vm.ShowCallMembers; previousChat = vm.ShowCallChat;
         vm.ShowCallMembers = vm.ShowCallChat = false;
         presentationFullscreen = true; Classes.Add("share-fullscreen"); WindowState = WindowState.FullScreen;
+        SetFullscreenControls(false);
     }
     private void ExitShareFullscreen(bool restoreWindowState = true)
     {
         if (!presentationFullscreen) return;
-        presentationFullscreen = false; Classes.Remove("share-fullscreen");
+        presentationFullscreen = false; Classes.Remove("share-fullscreen"); SetFullscreenControls(false);
         if (restoreWindowState) WindowState = previousWindowState;
         if (observedModel != null) { observedModel.ShowCallMembers = previousMembers; observedModel.ShowCallChat = previousChat; }
     }
@@ -89,14 +108,15 @@ public partial class CallWindow : Window
     }
     private void OnPresentationChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(WorkspaceViewModel.ParticipantSummary) or nameof(WorkspaceViewModel.ShowCallMembers) or nameof(WorkspaceViewModel.ShowCallChat)) UpdateGalleryLayout();
+        if (e.PropertyName is nameof(WorkspaceViewModel.ParticipantSummary) or nameof(WorkspaceViewModel.ShowCallMembers) or nameof(WorkspaceViewModel.ShowCallChat) or nameof(WorkspaceViewModel.HasFocusedVideo)) UpdateGalleryLayout();
+        if (e.PropertyName == nameof(WorkspaceViewModel.ControlRequester) && presentationFullscreen) SetFullscreenControls(observedModel?.ControlRequester != null);
         if (e.PropertyName == nameof(WorkspaceViewModel.HasFocusedScreen) && observedModel?.HasFocusedScreen != true) ExitShareFullscreen();
     }
     private void UpdateGalleryLayout()
     {
         if (observedModel == null) return;
         var available = (Bounds.Width > 0 ? Bounds.Width : Width) - 40 - (observedModel.ShowCallMembers ? 266 : 0) - (observedModel.ShowCallChat ? 318 : 0);
-        observedModel.GalleryColumns = Math.Max(1, Math.Min(Math.Max(1, observedModel.Videos.Count), Math.Min(3, (int)(available / 380))));
+        observedModel.GalleryColumns = observedModel.HasFocusedVideo ? 1 : Math.Max(1, Math.Min(Math.Max(1, observedModel.Videos.Count), Math.Min(3, (int)(available / 380))));
     }
     private void FocusedTile_ContextRequested(object? sender, ContextRequestedEventArgs e)
     {
@@ -112,7 +132,7 @@ public partial class CallWindow : Window
         if (observedModel == null) return;
         var menu = new ContextMenu();
         menu.Items.Add(new MenuItem { Header = tile.IsScreen ? "Focus screen share" : "Focus participant", Command = observedModel.FocusVideoCommand, CommandParameter = tile });
-        if (tile.IsScreen) menu.Items.Add(new MenuItem { Header = presentationFullscreen ? "Exit full screen" : "Full screen", Command = new CommunityToolkit.Mvvm.Input.RelayCommand(() => { if (presentationFullscreen) ExitShareFullscreen(); else { observedModel.FocusVideoCommand.Execute(tile); ToggleShareFullscreen(); } }) });
+        if (tile.IsScreen) menu.Items.Add(new MenuItem { Header = presentationFullscreen ? "Exit full screen" : "Full screen", Command = new CommunityToolkit.Mvvm.Input.RelayCommand(() => { if (presentationFullscreen) ExitShareFullscreen(); else { observedModel.FocusedVideo = tile; ToggleShareFullscreen(); } }) });
         menu.Items.Add(new MenuItem { Header = "Return to gallery", Command = observedModel.ClearVideoFocusCommand });
         MessageMenus.Open(target,menu,atPointer);
     }
@@ -125,6 +145,33 @@ public partial class CallWindow : Window
     {
         if (e.Source is Control origin && (origin is Button || origin.FindAncestorOfType<Button>() != null)) return;
         if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed && DataContext is WorkspaceViewModel vm && sender is Control { DataContext: VideoTileViewModel tile }) vm.FocusVideoCommand.Execute(tile);
+    }
+    private void FocusedTile_Pressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (presentationFullscreen || observedModel?.FocusedVideo is not {} tile || tile.CanControl || e.Handled) return;
+        if (e.Source is Control origin && (origin is Button || origin.FindAncestorOfType<Button>() != null)) return;
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) observedModel.FocusVideoCommand.Execute(tile);
+    }
+    private void SetFullscreenControls(bool show)
+    {
+        show = show || presentationFullscreen && observedModel?.ControlRequester != null;
+        FullscreenToolbar.Opacity = show ? 1 : 0;
+        FullscreenToolbar.IsHitTestVisible = show;
+    }
+    private void FullscreenControls_Entered(object? sender, PointerEventArgs e) => SetFullscreenControls(true);
+    private void FullscreenControls_Exited(object? sender, PointerEventArgs e) { if (!FullscreenControls.IsKeyboardFocusWithin) SetFullscreenControls(false); }
+    private void FullscreenControls_Focused(object? sender, RoutedEventArgs e) => SetFullscreenControls(true);
+    private void FullscreenControls_Blurred(object? sender, RoutedEventArgs e) => Dispatcher.UIThread.Post(() => { if (!FullscreenControls.IsKeyboardFocusWithin && !FullscreenControls.IsPointerOver) SetFullscreenControls(false); });
+    private void RequestFocusedControl_Click(object? sender, RoutedEventArgs e)
+    {
+        if (observedModel?.FocusedVideo is not {IsScreen:true} tile) return;
+        observedModel.SelectedRemotePeer = observedModel.RemotePeers.FirstOrDefault(x=>x.Identity==tile.Identity.Split(" · ")[0]);
+        if (observedModel.CanRequestFocusedControl) observedModel.RequestControlCommand.Execute(null);
+    }
+    private void OpenPanelsFromFullscreen_Click(object? sender, RoutedEventArgs e)
+    {
+        ExitShareFullscreen();
+        if (observedModel != null) observedModel.ShowCallMembers = observedModel.ShowCallChat = true;
     }
     private void Devices_Click(object? sender, RoutedEventArgs e)
     {

@@ -67,13 +67,20 @@ public partial class App : Avalonia.Application
             };
             desktop.MainWindow = mainWindow;
             var toasts = new DesktopToastPresenter(mainWindow, () => Program.StartupSmokeTest || Environment.GetEnvironmentVariable("FIREUSER_REDUCED_MOTION") == "1" || MainViewModelInstance?.CurrentView is WorkspaceViewModel { ReduceMotion: true });
+            var transferTracker = Services.GetRequiredService<ITransferTracker>();
+            toasts.ObserveTransfers(transferTracker);
+            var transferAuth = Services.GetRequiredService<IAuthService>();
+            var transferOwner = transferAuth.CurrentUser?.Id;
+            void TransferAccountChanged(UserData? user) { if (transferOwner != user?.Id) { transferOwner=user?.Id; transferTracker.Clear(); } }
+            transferAuth.CurrentUserChanged += TransferAccountChanged;
+            mainWindow.Closed += (_, _) => transferAuth.CurrentUserChanged -= TransferAccountChanged;
             systemNotifications.ShowDesktopToast = (title, message, target) =>
             {
                 var link = Uri.TryCreate(target, UriKind.Absolute, out var parsed) ? parsed : null;
                 var chat = link?.Host is "chat" or "conversation";
                 var workspace = MainViewModelInstance?.CurrentView as WorkspaceViewModel;
                 var peer = workspace?.Chat.Recipients.FirstOrDefault(x => link?.Host == "conversation" ? x.ConversationId == link.AbsolutePath.Trim('/') : x.ReceiverId.ToString() == link?.AbsolutePath.Trim('/'));
-                toasts.Show(title, message, () => systemNotifications.ActivateLink(target), chat, peer?.Avatar);
+                toasts.Show(title, message, () => systemNotifications.ActivateLink(target), chat, peer?.Avatar, action => systemNotifications.ActivateLink(target + "?action=" + action));
             };
             systemNotifications.NotificationLinkActivated += target => _ = HandleDeepLinkAsync(target);
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -110,13 +117,16 @@ public partial class App : Avalonia.Application
                 _ = MainViewModelInstance?.OpenConversationAsync(userId);
             };
 
-            var signOut = new NativeMenuItem { Header = "Sign out" };
+            var signOutIcon = DesktopIconography.NativeIcon("Sign out", mainWindow);
+            var exitIcon = DesktopIconography.NativeIcon("Exit", mainWindow);
+            desktop.Exit += (_, _) => { signOutIcon.Dispose(); exitIcon.Dispose(); };
+            var signOut = new NativeMenuItem { Header = "Sign out", Icon = signOutIcon };
             signOut.Click += async (_, _) =>
             {
                 await MainViewModelInstance?.LogoutAsync()!;
                 mainWindow.ShowFromTray();
             };
-            var exit = new NativeMenuItem { Header = "Exit" };
+            var exit = new NativeMenuItem { Header = "Exit", Icon = exitIcon };
             exit.Click += (_, _) =>
             {
                 exit.IsEnabled = false;
@@ -125,7 +135,7 @@ public partial class App : Avalonia.Application
 
             var tray = new TrayIcon
             {
-                Icon = new WindowIcon(Avalonia.Platform.AssetLoader.Open(new Uri("avares://UserIdentityDesktop/Assets/favicon.ico"))),
+                Icon = new WindowIcon(Avalonia.Platform.AssetLoader.Open(new Uri("avares://Fire%20User%20Connect/Assets/favicon.ico"))),
                 ToolTipText = "Fire User Connect",
                 Menu = new NativeMenu { Items = { signOut, exit } }
             };

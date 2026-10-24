@@ -136,7 +136,7 @@ public sealed class VoiceNoteTests
         var metadata = new EncryptedFile(Guid.NewGuid().ToString(), "voice.m4a", "audio/mp4", 10, 1048576, "key", "nonce");
         var attachment = new ChatAttachment { Id = Guid.NewGuid(), FileName = "voice.m4a", MimeType = "audio/mp4", Encryption = metadata };
         string? destination = null;
-        service.SaveAttachmentToFileAsync(attachment.Id, Arg.Any<string>(), metadata).Returns(call =>
+        service.SaveAttachmentToFileAsync(attachment.Id, Arg.Any<string>(), metadata, Arg.Any<CancellationToken>(),Arg.Any<IProgress<long>?>()).Returns(call =>
         {
             destination = call.ArgAt<string>(1); File.WriteAllBytes(destination, new byte[] { 1, 2, 3 }); return success;
         });

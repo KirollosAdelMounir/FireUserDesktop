@@ -18,6 +18,13 @@ public sealed class ScreenCastPortalTests
         public required string Address { get; init; }
         public required Process Bus { get; init; }
         public ConcurrentQueue<string> Methods { get; } = new();
+        public uint DeviceTypes {get;private set;}
+        public uint GrantedDevices {get;set;}=3;
+        public bool Geometry {get;set;}=true;
+        public uint SourceType {get;set;}=1;
+        public string? StartInterface {get;private set;}
+        public ConcurrentQueue<(string Method,int Code,uint State)> Inputs {get;}=new();
+        public ConcurrentQueue<(uint Stream,double X,double Y)> Points {get;}=new();
         public uint Types { get; private set; }
         public bool Multiple { get; private set; }
         public bool Persist { get; private set; }
@@ -51,15 +58,27 @@ public sealed class ScreenCastPortalTests
             {
                 using var reply = context.CreateReplyWriter("h"); reply.WriteHandle(remote); context.Reply(reply.CreateMessage()); return default;
             }
+            if(member is "NotifyKeyboardKeycode" or "NotifyPointerButton") {
+                reader.ReadObjectPath();reader.ReadDictionaryOfStringToVariantValue();Inputs.Enqueue((member,reader.ReadInt32(),reader.ReadUInt32()));using var reply=context.CreateReplyWriter(null);context.Reply(reply.CreateMessage());return default;
+            }
+            if(member=="NotifyPointerMotionAbsolute") {
+                reader.ReadObjectPath();reader.ReadDictionaryOfStringToVariantValue();Points.Enqueue((reader.ReadUInt32(),reader.ReadDouble(),reader.ReadDouble()));using var reply=context.CreateReplyWriter(null);context.Reply(reply.CreateMessage());return default;
+            }
             if (member != "CreateSession") reader.ReadObjectPath();
-            if (member == "Start") reader.ReadString();
+            if (member == "Start") { reader.ReadString(); StartInterface=context.Request.InterfaceAsString; }
             var options = reader.ReadDictionaryOfStringToVariantValue(); Persist |= options.ContainsKey("persist_mode") || options.ContainsKey("restore_token");
+            if(member=="SelectDevices")DeviceTypes=options["types"].GetUInt32();
             if (member == "SelectSources") { Types = options["types"].GetUInt32(); Multiple = options["multiple"].GetBool(); }
             var token = options["handle_token"].GetString(); var sender = context.Request.SenderAsString!;
             var path = "/org/freedesktop/portal/desktop/request/" + sender.TrimStart(':').Replace('.', '_') + "/" + token;
             var results = new Dictionary<string, VariantValue>();
             if (member == "CreateSession") results["session_handle"] = SessionPath;
-            if (member == "Start") results["streams"] = new Tmds.DBus.Protocol.Array<Struct<uint, Dict<string, VariantValue>>> { Struct.Create(42u, new Dict<string, VariantValue> { ["pipewire-serial"] = 123456ul }) };
+            if(member=="Start") {
+                var props=new Dict<string,VariantValue>{["pipewire-serial"]=123456ul,["source_type"]=SourceType};
+                if(Geometry)props["size"]=Struct.Create(1920,1080);
+                results["devices"]=GrantedDevices;
+                results["streams"]=new Tmds.DBus.Protocol.Array<Struct<uint,Dict<string,VariantValue>>>{Struct.Create(42u,props)};
+            }
             // Intentionally deliver Response before the method reply to exercise the race.
             if (member != "Start" || !HoldStart)
             {
@@ -121,4 +140,52 @@ public sealed class ScreenCastPortalTests
         for (var i = 0; i < 100 && !portal.Closed; i++) await Task.Delay(20, TestContext.Current.CancellationToken);
         Assert.True(portal.Closed);
     }
+    [Fact]
+    public async Task RemoteDesktopSessionScopesInputToApprovedStreamAndReleasesOnRevoke()
+    {
+        using var server=await FakePortal.Create();using var ct=new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var portal=await ScreenCastPortal.OpenAsync(ScreenShareKind.Screen,ct.Token,server.Address,remoteControl:true);
+        Assert.Equal(3u,server.DeviceTypes);Assert.Equal(1u,server.Types);Assert.False(server.Multiple);Assert.False(server.Persist);
+        Assert.Equal("org.freedesktop.portal.RemoteDesktop",server.StartInterface);Assert.True(portal.CanControl);
+        var grant=portal.EnableInput();
+        Assert.True(await portal.ApplyInputAsync(new("peer",0,.5,.25),grant));
+        var point=Assert.Single(server.Points);Assert.Equal(42u,point.Stream);Assert.Equal(959.5,point.X);Assert.Equal(269.75,point.Y);
+        Assert.True(await portal.ApplyInputAsync(new("peer",2,Code:4,Down:true),grant));
+        Assert.True(await portal.ApplyInputAsync(new("peer",1,Code:2,Down:true),grant));
+        portal.DisableInput();await portal.ReleaseInputAsync();
+        Assert.Contains(("NotifyKeyboardKeycode",30,0u),server.Inputs);Assert.Contains(("NotifyPointerButton",0x111,0u),server.Inputs);
+        Assert.False(await portal.ApplyInputAsync(new("peer",2,Code:5,Down:true),grant));
+        var renewed=portal.EnableInput();Assert.NotEqual(grant,renewed);Assert.False(await portal.ApplyInputAsync(new("peer",2,Code:5,Down:true),grant));
+        Assert.True(await portal.ApplyInputAsync(new("peer",2,Code:5,Down:true),renewed));
+        Assert.DoesNotContain(server.Inputs,x=>x.Code==48&&x.State==0u);
+        await portal.DisposeAsync();Assert.Contains(("NotifyKeyboardKeycode",48,0u),server.Inputs);
+    }
+    [Theory]
+    [InlineData(1u,true,1u)] [InlineData(3u,false,1u)] [InlineData(3u,true,2u)]
+    public async Task IncompletePermissionOrGeometryNeverEnablesInput(uint granted,bool geometry,uint source)
+    {
+        using var server=await FakePortal.Create();server.GrantedDevices=granted;server.Geometry=geometry;server.SourceType=source;
+        using var ct=new CancellationTokenSource(TimeSpan.FromSeconds(10));await using var portal=await ScreenCastPortal.OpenAsync(ScreenShareKind.Screen,ct.Token,server.Address,remoteControl:true);
+        Assert.False(portal.CanControl);Assert.Throws<InvalidOperationException>(()=>portal.EnableInput());
+        Assert.False(await portal.ApplyInputAsync(new("peer",2,Code:4,Down:true),1));Assert.Empty(server.Inputs);
+    }
+    [Fact]
+    public async Task ViewOnlyPortalAndWindowSelectionNeverPermitInjection()
+    {
+        using var server=await FakePortal.Create();using var ct=new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var portal=await ScreenCastPortal.OpenAsync(ScreenShareKind.Screen,ct.Token,server.Address);
+        Assert.False(portal.CanControl);Assert.False(await portal.ApplyInputAsync(new("peer",2,Code:4,Down:true),1));Assert.Empty(server.Inputs);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>ScreenCastPortal.OpenAsync(ScreenShareKind.Window,ct.Token,server.Address,remoteControl:true));
+    }
+    [Theory]
+    [InlineData(4,30)] [InlineData(29,44)] [InlineData(30,2)] [InlineData(39,11)] [InlineData(40,28)] [InlineData(58,59)] [InlineData(67,68)] [InlineData(68,87)] [InlineData(69,88)] [InlineData(79,106)] [InlineData(224,29)] [InlineData(231,126)] [InlineData(0,-1)] [InlineData(232,-1)]
+    public void PhysicalHidKeysMapToEvdevWithoutAnX11Offset(int hid,int expected)=>Assert.Equal(expected,ScreenCastPortal.EvdevKey(hid));
+    [Fact]
+    public async Task RemoteDesktopCancellationClosesSessionBeforeAnyInput()
+    {
+        using var server=await FakePortal.Create();server.Result=1;using var ct=new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await Assert.ThrowsAsync<ScreenShareCanceledException>(()=>ScreenCastPortal.OpenAsync(ScreenShareKind.Screen,ct.Token,server.Address,remoteControl:true));
+        Assert.Contains("Close",server.Methods);Assert.Empty(server.Inputs);Assert.DoesNotContain("OpenPipeWireRemote",server.Methods);
+    }
+
 }

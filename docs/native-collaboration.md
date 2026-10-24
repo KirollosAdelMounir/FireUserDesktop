@@ -30,10 +30,10 @@ SDK's public track interface does not expose equivalent live sender-parameter
 writes. Native WebRTC still adapts actual transmission below its ceiling.
 Local preview delivery is capped at 10 fps without capping transmitted frames.
 Video subscriptions use a one-frame queue, UI delivery retains the latest
-frame per tile, and bitmap allocations are reused. Up to 16 video frame producers, 64 participant placeholders and 32 native media readers are retained. Bitmap copying occurs only during rendering, so a hidden gallery avoids copying while a share is focused. These are rendering/resource limits, not
+frame per tile, and bitmap allocations are reused. Up to 16 video frame producers, 64 participant placeholders and 32 native media readers are retained. Bitmap copying occurs only during rendering, so a hidden gallery avoids copying during share-only full screen. These are rendering/resource limits, not
 attachment upload limits. No production CPU/latency benchmark has been measured.
 
-Native calls join with devices off. Stopping a source stops its process before
+Direct native calls enable the microphone after the explicit Answer/Start/Join action. Meetings honor the prejoin mute checkbox; calendar links open those choices before joining. Camera and sharing stay off until enabled. If microphone activation fails after joining, the call stays connected with a visible muted-device error. Stopping a source stops its process before
 unpublishing. Leave/sign-out/application exit stop capture, cancel audio players,
 join native readers and destroy the room. Local cleanup runs even when the API
 cannot acknowledge leaving. Capture failure updates device state. Call teardown
@@ -55,14 +55,14 @@ permission identity can depend on how it is installed/launched, so validate the
 signed packaged app and its capture executable together. No macOS permission or
 notarization success is claimed from a Windows build.
 
-Screen sharing first opens a native screen/window picker. Wayland uses the compositor's ScreenCast portal and an approved PipeWire FD through native GStreamer; it does not fall back to XWayland. X11/Windows capture the selected monitor rectangle or window ID. macOS uses the selected ScreenCaptureKit display/window. OS permissions still apply. Scoped sources do not advertise default-desktop remote input. See [screen-sharing.md](screen-sharing.md) for runtime dependencies, cancellation/cleanup and platform validation limits. Windows elevated/secure desktops are not targeted and privilege escalation is not attempted.
+Screen sharing first opens a native screen/window picker. Wayland uses the compositor's ScreenCast portal and an approved PipeWire FD through native GStreamer; it does not fall back to XWayland. X11/Windows capture the selected monitor rectangle or window ID. macOS uses the selected ScreenCaptureKit display/window. OS permissions still apply. Windows/macOS/X11 primary-screen input keeps its existing bounds checks. Linux Wayland can opt into a combined RemoteDesktop/ScreenCast session for one approved monitor; its input uses that stream’s compositor coordinates and requires both keyboard and pointer approval. Window shares remain view-only. See [screen-sharing.md](screen-sharing.md) for runtime dependencies, cancellation/cleanup and platform validation limits. Windows elevated/secure desktops are not targeted and privilege escalation is not attempted.
 
 ## Remote-control consent and protocol
 
-1. Native participants exchange versioned capability packets on the reliable
-   `fireuser.native.v1` LiveKit data topic. The ordinary web client does not
-   implement this protocol; its control actions remain disabled.
-2. A request is permitted only while the host is sharing its default desktop and
+1. Native and Angular participants exchange versioned capability packets on the
+   reliable `fireuser.native.v1` LiveKit data topic. Angular advertises controller
+   support only (`canHost:false`); browser screen shares remain view-only.
+2. A request is permitted only while the host is sharing its supported desktop (or approved Wayland monitor) and
    the OS input provider is available. The sharing user sees the request and
    must explicitly approve that participant. Merely joining never grants input.
 3. The host issues a random grant bound to the authenticated LiveKit sender and
@@ -195,3 +195,7 @@ packaging details and remaining platform limits. International keyboard/IME beha
 needs coverage beyond the current basic key mappings. No running backend,
 database, deployment configuration or frontend source was modified for these
 checks.
+
+See [call-stage-and-browser-control.md](call-stage-and-browser-control.md) for share-only full-screen controls, focus behavior and current verification.
+
+See [Call recovery and Linux fullscreen](call-recovery-and-linux-crash.md) for reconnect behavior, disconnect diagnostics and the native window-state crash correction.

@@ -13,7 +13,7 @@ public sealed partial class IncomingCallWindow : Window
 {
     private readonly WorkspaceViewModel? model;
     private readonly string? callId;
-    public IncomingCallWindow() { InitializeComponent(); _ = new WindowMotion(this); }
+    public IncomingCallWindow() { InitializeComponent(); _ = new WindowMotion(this, SurfaceMotionKind.Toast); }
     public IncomingCallWindow(WorkspaceViewModel vm) : this()
     {
         model = vm; callId = vm.Incoming!.CallId;
@@ -31,11 +31,17 @@ public sealed partial class IncomingCallWindow : Window
         decline.Click += async (_, _) => { if (vm.Incoming?.CallId == callId) await vm.DeclineCommand.ExecuteAsync(null); };
         void PlaceAlert()
         {
-            if (Screens.Primary is {} screen) Position = new PixelPoint(screen.WorkingArea.Right - (int)((Bounds.Width > 0 ? Bounds.Width : Width) * screen.Scaling) - 20, screen.WorkingArea.Bottom - (int)((Bounds.Height > 0 ? Bounds.Height : Height) * screen.Scaling) - 20);
+            if (Screens.Primary is {} screen) Position = RightCenter(screen.WorkingArea, Bounds.Width > 0 ? Bounds.Width : Width, Bounds.Height > 0 ? Bounds.Height : Height, screen.Scaling);
         }
         Opened += (_, _) => PlaceAlert(); SizeChanged += (_, _) => PlaceAlert();
         vm.PropertyChanged += Changed;
         Closed += (_, _) => vm.PropertyChanged -= Changed;
+    }
+    internal static PixelPoint RightCenter(PixelRect area, double width, double height, double scale)
+    {
+        var gap = (int)Math.Round(20 * scale);
+        return new PixelPoint(Math.Max(area.X, area.Right - (int)Math.Round(width * scale) - gap),
+            area.Y + Math.Max(0, (area.Height - (int)Math.Round(height * scale)) / 2));
     }
     private void Changed(object? sender, PropertyChangedEventArgs e)
     {

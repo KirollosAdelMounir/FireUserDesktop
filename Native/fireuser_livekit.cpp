@@ -8,6 +8,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace {
 using namespace livekit;
@@ -97,14 +98,32 @@ public:
         if (!stopping && event) event(kind, identity.c_str());
     }
     void onParticipantDisconnected(Room&, const ParticipantDisconnectedEvent& e) override {
-        if (e.participant) signal(1, e.participant->identity());
+        if (e.participant) { { std::lock_guard lock(speakers_mutex); active_speakers.erase(e.participant->identity()); } signal(1, e.participant->identity()); }
     }
     void onParticipantConnected(Room&, const ParticipantConnectedEvent& e) override { if (e.participant) { signal(4, e.participant->identity()); signal(6, e.participant->identity() + "\n" + e.participant->name()); } }
     void onUserPacketReceived(Room&, const UserDataPacketEvent& e) override {
         if (!stopping && data && e.participant && e.topic == "fireuser.native.v1" && !e.data.empty() && e.data.size() <= 4096)
             data(e.participant->identity().c_str(), e.data.data(), static_cast<int>(e.data.size()));
     }
-    void onDisconnected(Room&, const DisconnectedEvent&) override { signal(2); }
+    void onDisconnected(Room&, const DisconnectedEvent& e) override { signal(2, std::to_string(static_cast<int>(e.reason))); }
+    void onReconnecting(Room&, const ReconnectingEvent&) override { signal(8); }
+    void onReconnected(Room&, const ReconnectedEvent&) override { signal(9); }
+    std::mutex speakers_mutex;
+    std::unordered_set<std::string> active_speakers;
+    void onActiveSpeakersChanged(Room&, const ActiveSpeakersChangedEvent& e) override {
+        std::unordered_set<std::string> next;
+        for (const auto* participant : e.speakers) {
+            if (participant && next.size() < 64) next.insert(participant->identity());
+        }
+        std::vector<std::pair<std::string, bool>> changes;
+        {
+            std::lock_guard lock(speakers_mutex);
+            for (const auto& identity : active_speakers) if (!next.contains(identity)) changes.emplace_back(identity, false);
+            for (const auto& identity : next) if (!active_speakers.contains(identity)) changes.emplace_back(identity, true);
+            active_speakers = std::move(next);
+        }
+        for (const auto& [identity, speaking] : changes) signal(7, identity + "\nspeaking\n" + (speaking ? "1" : "0"));
+    }
     void onConnectionQualityChanged(Room&, const ConnectionQualityChangedEvent& e) override {
         if (e.participant) signal(7, e.participant->identity() + "\nquality\n" + std::to_string(static_cast<int>(e.quality)));
     }

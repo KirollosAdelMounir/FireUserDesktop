@@ -5,11 +5,12 @@
       <Setter Property="Background" Value="{DynamicResource ForgeSurfaceCard}" />
       <Setter Property="Foreground" Value="{DynamicResource ForgeTextPrimary}" />
       <Setter Property="BorderBrush" Value="{DynamicResource ForgeBorder}" />
-      <Setter Property="BorderThickness" Value="0,0,1,1" /><Setter Property="CornerRadius" Value="0" />
+      <Setter Property="BorderThickness" Value="1" /><Setter Property="CornerRadius" Value="9" /><Setter Property="Margin" Value="2" />
       <Setter Property="Padding" Value="8" /><Setter Property="MinHeight" Value="76" />
       <Setter Property="HorizontalAlignment" Value="Stretch" /><Setter Property="VerticalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="VerticalContentAlignment" Value="Top" />
     </Style>
+    <Style Selector="Button.calendar-day.today"><Setter Property="BorderBrush" Value="{DynamicResource ForgePrimary}" /></Style>
     <Style Selector="Button.calendar-day.outside"><Setter Property="Opacity" Value="0.45" /></Style>
     <Style Selector="Button.calendar-day.selected /template/ ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource ForgePrimaryGradientSubtle}" />
@@ -19,13 +20,14 @@
     <Style Selector="TextBlock.calendar-weekday"><Setter Property="Foreground" Value="{DynamicResource ForgeTextSecondary}" /><Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="Margin" Value="0,8" /></Style>
   </UserControl.Styles>
   <StackPanel Spacing="12">
+
     <Grid ColumnDefinitions="Auto,*,Auto,Auto">
       <Button Content="‹" Click="Previous_Click" AutomationProperties.Name="Previous month" />
       <TextBlock x:Name="MonthTitle" Grid.Column="1" VerticalAlignment="Center" FontSize="20" FontWeight="SemiBold" Margin="12,0" />
       <Button Grid.Column="2" Content="›" Click="Next_Click" AutomationProperties.Name="Next month" />
       <Button Grid.Column="3" Content="Today" Click="Today_Click" Margin="8,0,0,0" />
     </Grid>
-    <WrapPanel><TextBlock Text="● Event    " Foreground="#6D89DC" FontSize="11" /><TextBlock Text="● Meeting    " Foreground="#AF7DE4" FontSize="11" /><TextBlock Text="● Task    " Foreground="#DB952C" FontSize="11" /><TextBlock Text="● Vacation    " Foreground="#359B84" FontSize="11" /><TextBlock Text="● Public holiday" Foreground="#D66985" FontSize="11" /></WrapPanel>
+    <WrapPanel ItemSpacing="14" LineSpacing="7"><StackPanel Orientation="Horizontal" Spacing="5"><Ellipse Width="7" Height="7" Fill="#6D89DC"/><TextBlock Text="Events" Classes="caption"/></StackPanel><StackPanel Orientation="Horizontal" Spacing="5"><Ellipse Width="7" Height="7" Fill="#AF7DE4"/><TextBlock Text="Meetings" Classes="caption"/></StackPanel><StackPanel Orientation="Horizontal" Spacing="5"><Ellipse Width="7" Height="7" Fill="#DB952C"/><TextBlock Text="Tasks" Classes="caption"/></StackPanel><StackPanel Orientation="Horizontal" Spacing="5"><Ellipse Width="7" Height="7" Fill="#359B84"/><TextBlock Text="Vacation" Classes="caption"/></StackPanel><StackPanel Orientation="Horizontal" Spacing="5"><Ellipse Width="7" Height="7" Fill="#D66985"/><TextBlock Text="Holidays" Classes="caption"/></StackPanel></WrapPanel>
     <Border BorderBrush="{DynamicResource ForgeBorder}" BorderThickness="1,1,0,0" CornerRadius="12" ClipToBounds="True">
       <Grid x:Name="DayGrid" ColumnDefinitions="*,*,*,*,*,*,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" />
     </Border>

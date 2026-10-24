@@ -1,8 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <AssemblyName>Fire User Connect</AssemblyName>
+    <RootNamespace>UserIdentityDesktop</RootNamespace>
     <AssemblyTitle>Fire User Connect</AssemblyTitle>
     <Product>Fire User Connect</Product>
+    <Version>1.0.1</Version>
     <Description>Fire User Connect</Description>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
@@ -57,11 +60,11 @@
     <NativeSdkArgument Condition="'$(LiveKitSdkPath)' != ''">--sdk &quot;$(LiveKitSdkPath)&quot;</NativeSdkArgument>
     <PythonExe Condition="'$(PythonExe)' == ''">python3</PythonExe>
   </PropertyGroup>
-  <ItemGroup><NativeBridgeInput Include="Native/*.cpp;Native/*.mm;Native/*.h;Native/CMakeLists.txt;scripts/build-native.ps1;scripts/build-native.py;scripts/native-runtimes.json" /></ItemGroup>
-  <Target Name="BuildNativeBridge" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true'" Inputs="@(NativeBridgeInput)" Outputs="Native/artifacts/$(NativeRuntimeIdentifier)/$(NativeBridgeFile)">
+  <!-- Always validate the native build environment, even when copied artifacts
+       are newer than sources. CMake handles compilation incrementally. -->
+  <Target Name="BuildNativeBridge" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true'">
     <Exec Condition="'$(OS)' == 'Windows_NT'" EnvironmentVariables="$(_NativePowerShellEnvironment)" Command="&quot;$(PowerShellExe)&quot; -NoProfile -File &quot;$(MSBuildProjectDirectory)/scripts/build-native.ps1&quot; -RuntimeIdentifier $(NativeRuntimeIdentifier) -Toolchain $(NativeToolchain) $(NativeWindowsSdkArgument)" />
     <Exec Condition="'$(OS)' != 'Windows_NT'" Command="&quot;$(PythonExe)&quot; &quot;$(MSBuildProjectDirectory)/scripts/build-native.py&quot; --rid $(NativeRuntimeIdentifier) $(NativeSdkArgument)" />
-    <Touch Files="Native/artifacts/$(NativeRuntimeIdentifier)/$(NativeBridgeFile)" AlwaysCreate="false" />
   </Target>
   <Target Name="PrepareMediaRuntime" BeforeTargets="AssignTargetPaths" Condition="'$(DesignTimeBuild)' != 'true'">
     <Exec Condition="'$(OS)' == 'Windows_NT'" EnvironmentVariables="$(_NativePowerShellEnvironment)" Command="&quot;$(PowerShellExe)&quot; -NoProfile -File &quot;$(MSBuildProjectDirectory)/scripts/setup-media.ps1&quot; -RuntimeIdentifier $(NativeRuntimeIdentifier)" />
@@ -69,7 +72,7 @@
     <ItemGroup>
       <_NativeArtifacts Include="Native/artifacts/$(NativeRuntimeIdentifier)/*" />
       <_MediaRuntime Include="Native/media/$(NativeRuntimeIdentifier)/**/*" />
-      <Content Include="@(_NativeArtifacts)" Link="%(_NativeArtifacts.Filename)%(_NativeArtifacts.Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+      <Content Include="@(_NativeArtifacts)" Link="%(_NativeArtifacts.Filename)%(_NativeArtifacts.Extension)" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
       <Content Include="@(_MediaRuntime)" Link="media/%(_MediaRuntime.RecursiveDir)%(_MediaRuntime.Filename)%(_MediaRuntime.Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     </ItemGroup>
   </Target>

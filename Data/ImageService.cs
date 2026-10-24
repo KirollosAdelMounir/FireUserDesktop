@@ -22,6 +22,7 @@ public class ImageService : IImageService
 
     public async Task<Bitmap?> GetProfilePictureAsync(Guid userId)
     {
+        if (userId == Guid.Empty) return null;
         var key = $"profile_{userId}";
         if (_cache.TryGetValue(key, out var cached))
             return cached;
@@ -31,7 +32,7 @@ public class ImageService : IImageService
             using var client = _authService.CreateAuthenticatedClient();
             var url = $"{_configService.ServerUrl}/api/User/GetProfilePictureCompressed?userId={userId}";
 
-            var response = await client.GetAsync(url);
+            using var response = await client.GetAsync(url);
             if (response.IsSuccessStatusCode && response.Content.Headers.ContentLength != 0)
             {
                 var bytes = await response.Content.ReadAsByteArrayAsync();
@@ -98,7 +99,7 @@ public class ImageService : IImageService
             using var client = _authService.CreateAuthenticatedClient();
             var url = $"{_configService.ServerUrl}/api/User/ChatAttachment?attachmentId={attachmentId}";
 
-            var response = await client.GetAsync(url);
+            using var response = await client.GetAsync(url);
             if (response.IsSuccessStatusCode)
             {
                 var bytes = await response.Content.ReadAsByteArrayAsync();

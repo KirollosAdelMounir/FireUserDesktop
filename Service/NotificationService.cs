@@ -52,7 +52,7 @@ public class SystemNotificationService : INotificationService
     {
         try
         {
-            var executablePath = Environment.ProcessPath;
+            var executablePath = LinuxLauncherPath();
             if (string.IsNullOrWhiteSpace(executablePath))
                 throw new InvalidOperationException("The current executable path is unavailable.");
 
@@ -100,7 +100,7 @@ public class SystemNotificationService : INotificationService
     {
         try
         {
-            var executablePath = Environment.ProcessPath;
+            var executablePath = LinuxLauncherPath();
             if (string.IsNullOrWhiteSpace(executablePath))
                 throw new InvalidOperationException("The current executable path is unavailable.");
 
@@ -153,6 +153,12 @@ public class SystemNotificationService : INotificationService
             entries.Add(entry);
     }
 
+    private static string? LinuxLauncherPath() => ResolveLinuxLauncherPath(Environment.GetEnvironmentVariable("APPIMAGE"), Environment.ProcessPath);
+
+    internal static string? ResolveLinuxLauncherPath(string? appImage, string? processPath) =>
+        !string.IsNullOrWhiteSpace(appImage) && Path.IsPathRooted(appImage) && File.Exists(appImage)
+            ? appImage : processPath;
+
     private static string EscapeDesktopExecPath(string path)
     {
         return $"\"{path.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"";
@@ -194,7 +200,7 @@ public class SystemNotificationService : INotificationService
 
             if (!File.Exists(iconPath))
             {
-                var uri = new Uri("avares://UserIdentityDesktop/Assets/PageLogo.png");
+                var uri = new Uri("avares://Fire%20User%20Connect/Assets/PageLogo.png");
                 if (AssetLoader.Exists(uri))
                 {
                     using var stream = AssetLoader.Open(uri);

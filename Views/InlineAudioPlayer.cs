@@ -20,7 +20,11 @@ public sealed class InlineAudioPlayer : UserControl
     public static readonly StyledProperty<string?> LocalPathProperty = AvaloniaProperty.Register<InlineAudioPlayer, string?>(nameof(LocalPath));
     public static readonly StyledProperty<ChatAttachmentItemViewModel?> AttachmentProperty = AvaloniaProperty.Register<InlineAudioPlayer, ChatAttachmentItemViewModel?>(nameof(Attachment));
     public static readonly StyledProperty<bool> IsSentProperty = AvaloniaProperty.Register<InlineAudioPlayer, bool>(nameof(IsSent), true);
+    public bool IsPreview { get; set; }
+    private bool previewApplied;
+    private double volume = 1;
     public bool IsSent { get => GetValue(IsSentProperty); set => SetValue(IsSentProperty, value); }
+    internal double PlaybackVolume => Volatile.Read(ref volume);
     internal double PlaybackSpeed => rates[rateIndex];
     private static readonly double[] rates = { .5, 1, 1.5, 2 };
     private int rateIndex = 1;
@@ -33,9 +37,11 @@ public sealed class InlineAudioPlayer : UserControl
     public string? LocalPath { get => GetValue(LocalPathProperty); set => SetValue(LocalPathProperty, value); }
     public ChatAttachmentItemViewModel? Attachment { get => GetValue(AttachmentProperty); set => SetValue(AttachmentProperty, value); }
     private readonly Button play = new() { Width = 25, Height = 25, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), CornerRadius = new CornerRadius(13), BorderThickness = new Thickness(0), HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center };
+    private readonly Slider volumeSlider = new() { Minimum=0, Maximum=100, Value=100, Width=110 };
+    private readonly Button stopButton = new() { Content="Stop", Classes={ "quiet" } };
     private readonly Slider seek = new() { Minimum = 0, Maximum = 1, MinWidth = 45, Height = 48, Opacity = .001, IsEnabled = false, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
     private readonly TextBlock time = new() { Text = "0:00", FontSize = 11, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-    private CancellationTokenSource? cancellation, metadata;
+    private CancellationTokenSource? cancellation, metadata, preparing;
     private Task playback = Task.CompletedTask;
     private string? cachedPath;
     private double current, duration;
@@ -55,15 +61,35 @@ public sealed class InlineAudioPlayer : UserControl
         Grid.SetColumn(waveFocus, 1); Grid.SetColumn(speed, 2); Grid.SetColumn(timePill, 3);
         surface = new Border { Child = grid, Padding = new Thickness(12), CornerRadius = new CornerRadius(20) }; Content = surface;
         ApplyTheme(); SetPlayIcon(false); UpdateSpeedLabel();
-        Avalonia.Automation.AutomationProperties.SetName(play, "Play voice note"); Avalonia.Automation.AutomationProperties.SetName(seek, "Seek voice note");
+        Avalonia.Automation.AutomationProperties.SetName(play, IsPreview ? "Play audio" : "Play voice note"); Avalonia.Automation.AutomationProperties.SetName(seek, "Seek voice note");
         speed.Click += (_, _) => _ = CycleSpeed();
         play.Click += (_, _) => _ = Toggle();
         seek.PropertyChanged += (_, e) => { if (e.Property == Slider.ValueProperty && !updating) seeking = true; };
         seek.AddHandler(PointerReleasedEvent, (_, _) => { if (seeking) _ = Seek(); }, Avalonia.Interactivity.RoutingStrategies.Bubble, true);
         seek.KeyUp += (_, _) => { if (seeking) _ = Seek(); };
         PropertyChanged += (_, e) => { if (e.Property == IsSentProperty) ApplyTheme(); if (e.Property == LocalPathProperty || e.Property == AttachmentProperty) { Reset(); _ = LoadPreviewDuration(); } };
-        AttachedToVisualTree += (_, _) => { ApplyTheme(); _ = LoadPreviewDuration(); };
+        AttachedToVisualTree += (_, _) => { ApplyPreviewMode(); ApplyTheme(); _ = LoadPreviewDuration(); };
+        volumeSlider.PropertyChanged += (_, e) => { if(e.Property==Slider.ValueProperty) Volatile.Write(ref volume,volumeSlider.Value/100); };
+        Avalonia.Automation.AutomationProperties.SetName(volumeSlider,"Audio volume");
+        stopButton.Click += async (_, _) => await StopPlaybackAsync();
         DetachedFromVisualTree += (_, _) => Reset();
+    }
+    private void ApplyPreviewMode()
+    {
+        if (!IsPreview || previewApplied || surface.Child is not Grid grid) return;
+        previewApplied=true;
+        MaxWidth=720; seek.Opacity=1; seek.Height=34;
+        var old=seek.Parent as Panel; old?.Children.Remove(seek);
+        var layout=new Grid { RowDefinitions=new RowDefinitions("Auto,Auto,Auto"), RowSpacing=14 };
+        surface.Child=null; layout.Children.Add(grid); Grid.SetRow(seek,1); layout.Children.Add(seek);
+        var options=new StackPanel { Orientation=Avalonia.Layout.Orientation.Horizontal, Spacing=12 };
+        options.Children.Add(stopButton);options.Children.Add(new ContentControl { Content=DesktopIconography.Label("Volume"),VerticalAlignment=Avalonia.Layout.VerticalAlignment.Center });options.Children.Add(volumeSlider);
+        Grid.SetRow(options,2);layout.Children.Add(options);surface.Child=layout;
+        Avalonia.Automation.AutomationProperties.SetName(play,"Play audio");Avalonia.Automation.AutomationProperties.SetName(seek,"Seek audio");
+    }
+    internal async Task StopPlaybackAsync()
+    {
+        version++; preparing?.Cancel(); Pause(); await playback; seeking=false;busy=false;play.IsEnabled=true;UpdatePosition(0);
     }
     protected override Size MeasureOverride(Size availableSize)
     {
@@ -113,7 +139,7 @@ public sealed class InlineAudioPlayer : UserControl
     }
     private void Reset()
     {
-        version++; metadata?.Cancel(); waveCancellation?.Cancel(); waveCancellation = null; hasWaveform = false; waveform.Peaks = Attachment?.Attachment.Encryption?.Waveform?.Take(48).ToArray(); hasWaveform = waveform.Peaks?.Length > 0; Pause(); busy = false; play.IsEnabled = true; seeking = false; current = duration = 0; UpdatePosition(0);
+        version++; preparing?.Cancel(); metadata?.Cancel(); waveCancellation?.Cancel(); waveCancellation = null; hasWaveform = false; waveform.Peaks = Attachment?.Attachment.Encryption?.Waveform?.Take(48).ToArray(); hasWaveform = waveform.Peaks?.Length > 0; Pause(); busy = false; play.IsEnabled = true; seeking = false; current = duration = 0; UpdatePosition(0);
         var old = cachedPath; cachedPath = null;
         var stop = cancellation; cancellation = null;
         _ = DeleteAfterPlayback(old, playback, stop);
@@ -140,7 +166,7 @@ public sealed class InlineAudioPlayer : UserControl
     private void Pause()
     {
         playing = false; cancellation?.Cancel(); SetPlayIcon(false);
-        Avalonia.Automation.AutomationProperties.SetName(play, "Play voice note");
+        Avalonia.Automation.AutomationProperties.SetName(play, IsPreview ? "Play audio" : "Play voice note");
         if (active == this) active = null;
     }
     private async Task Toggle()
@@ -148,40 +174,47 @@ public sealed class InlineAudioPlayer : UserControl
         if (playing) { Pause(); return; }
         if (busy) return;
         busy = true; var generation = version; play.IsEnabled = false;
+        using var load = new CancellationTokenSource(); preparing = load;
         try
         {
             await playback;
             var path = LocalPath;
             if (path == null && Attachment != null)
             {
-                path = cachedPath ?? await Attachment.PrepareAudioPlaybackAsync();
+                path = cachedPath ?? await Attachment.PrepareAudioPlaybackAsync(load.Token);
                 if (generation != version || !this.IsAttachedToVisualTree()) { File.Delete(path); return; }
                 cachedPath = path;
             }
             if (path == null || generation != version || !this.IsAttachedToVisualTree()) return;
-            duration = await AudioNotePlayback.DurationAsync(path, CancellationToken.None);
+            duration = await AudioNotePlayback.DurationAsync(path, load.Token);
             if (generation != version || !this.IsAttachedToVisualTree()) return;
             if (current >= duration) current = 0;
             _ = LoadWaveform(path, generation);
             active?.Pause(); active = this;
             cancellation?.Dispose(); cancellation = new CancellationTokenSource();
-            playing = true; SetPlayIcon(true); Avalonia.Automation.AutomationProperties.SetName(play, "Pause voice note");
+            playing = true; SetPlayIcon(true); Avalonia.Automation.AutomationProperties.SetName(play, IsPreview ? "Pause audio" : "Pause voice note");
             playback = Run(path, current, cancellation.Token, generation);
         }
         catch (Exception ex) { if (generation == version) { time.Text = "Retry"; ToolTip.SetTip(this, ex.Message); } }
-        finally { if (generation == version) { busy = false; play.IsEnabled = true; } }
+        finally { if (preparing == load) preparing = null; if (generation == version) { busy = false; play.IsEnabled = true; } }
     }
     private async Task Run(string path, double start, CancellationToken ct, int generation)
     {
+        var receiptAttachment=Attachment;
         try
         {
-            await AudioNotePlayback.PlayAsync(path, start, value => Dispatcher.UIThread.Post(() => { if (!ct.IsCancellationRequested && generation == version) UpdatePosition(value); }), ct, PlaybackSpeed);
+            await AudioNotePlayback.PlayAsync(path, start, value => Dispatcher.UIThread.Post(() => { if (!ct.IsCancellationRequested && generation == version) UpdatePosition(value); }), ct, PlaybackSpeed, () => Volatile.Read(ref volume), () => { if(!ct.IsCancellationRequested) _ = ReportPlaybackStarted(receiptAttachment); });
             if (generation == version && !ct.IsCancellationRequested) UpdatePosition(duration);
         }
         catch (OperationCanceledException) { }
         catch (Exception) when (ct.IsCancellationRequested) { }
         catch (Exception ex) { if (generation == version) { time.Text = "Retry"; ToolTip.SetTip(this, ex.Message); } }
         finally { if (generation == version) Pause(); }
+    }
+    private async Task ReportPlaybackStarted(ChatAttachmentItemViewModel? item)
+    {
+        try { if(item != null) await item.ReportPlaybackStartedAsync(); }
+        catch(Exception) { await Dispatcher.UIThread.InvokeAsync(()=>ToolTip.SetTip(this,"Unable to update the playback receipt.")); }
     }
     private async Task Seek()
     {
@@ -198,7 +231,7 @@ public sealed class InlineAudioPlayer : UserControl
         seek.IsEnabled = duration > 0; seek.Maximum = Math.Max(1, duration); if (!seeking) seek.Value = Math.Min(value, seek.Maximum); updating = false;
         static string Format(double seconds) => $"{(int)seconds / 60}:{(int)seconds % 60:00}";
         waveform.Progress = duration > 0 ? Math.Clamp(value / duration, 0, 1) : 0;
-        time.Text = Format(playing || value > 0 ? value : duration);
+        time.Text = IsPreview ? Format(value) + " / " + Format(duration) : Format(playing || value > 0 ? value : duration);
         Avalonia.Automation.AutomationProperties.SetHelpText(seek, Format(value) + " of " + Format(duration));
     }
 }

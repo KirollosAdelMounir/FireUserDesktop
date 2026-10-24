@@ -5,7 +5,16 @@ The UI preserves the orange Fire User theme in light and dark modes. LiveKit
 voice, video, screen sharing and remote-control data travel through the official
 C++ SDK and a small C ABI bridge. There is no WebView or JavaScript media runtime.
 
+Compatibility targets and outstanding device validation are recorded in
+[platform compatibility](docs/platform-compatibility.md). Sonoma 14 is the
+explicit macOS build/bundle minimum for Intel and Apple Silicon. Windows ARM64
+currently requires Windows 11 x64 emulation; there is no native Windows ARM64
+calling package. Linux packages target x64 and ARM64, not 32-bit ARM.
+
 ## Build and run
+
+To start Windows/macOS/Linux builds from Fedora and download complete packages,
+see [building release packages](docs/building-release-packages.md).
 
 For development install .NET 10, PowerShell 7, CMake 3.24+ and a C++20 compiler.
 On Windows install Visual Studio's Desktop development with C++ workload.

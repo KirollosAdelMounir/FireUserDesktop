@@ -107,7 +107,7 @@ int fu_desktop_bounds(int* width, int* height) {
     std::lock_guard lock(input_mutex);
     if(!width || !height)return -1;
 #ifdef _WIN32
-    *width=GetSystemMetrics(SM_CXVIRTUALSCREEN); *height=GetSystemMetrics(SM_CYVIRTUALSCREEN);
+    *width=GetSystemMetrics(SM_CXSCREEN); *height=GetSystemMetrics(SM_CYSCREEN);
 #elif defined(__APPLE__)
     auto bounds=CGDisplayBounds(CGMainDisplayID()); *width=static_cast<int>(bounds.size.width); *height=static_cast<int>(bounds.size.height);
 #else
@@ -142,7 +142,7 @@ int fu_apply_input(int kind, double x, double y, int code, int down) {
     if(kind == 0) {
 #ifdef _WIN32
         INPUT input{}; input.type=INPUT_MOUSE; input.mi.dx=static_cast<LONG>(x*65535); input.mi.dy=static_cast<LONG>(y*65535);
-        input.mi.dwFlags=MOUSEEVENTF_MOVE|MOUSEEVENTF_ABSOLUTE|MOUSEEVENTF_VIRTUALDESK; return SendInput(1,&input,sizeof(input))==1 ? 0 : -1;
+        input.mi.dwFlags=MOUSEEVENTF_MOVE|MOUSEEVENTF_ABSOLUTE; return SendInput(1,&input,sizeof(input))==1 ? 0 : -1;
 #elif defined(__APPLE__)
         auto type=held_buttons.contains(1) ? kCGEventLeftMouseDragged : held_buttons.contains(2) ? kCGEventRightMouseDragged : kCGEventMouseMoved;
         auto event=CGEventCreateMouseEvent(nullptr,type,CGPointMake(x*(width-1),y*(height-1)),held_buttons.contains(2) ? kCGMouseButtonRight : kCGMouseButtonLeft);

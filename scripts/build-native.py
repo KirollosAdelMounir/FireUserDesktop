@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import shlex
 import shutil
 import subprocess
 import sys
@@ -44,16 +45,38 @@ def extract(archive, destination):
             source.extractall(destination, filter='data')
 
 
-def run(*args, env=None):
-    subprocess.run([str(arg) for arg in args], check=True, env=env)
+def run(*args, env=None, cwd=None):
+    subprocess.run([str(arg) for arg in args], check=True, env=env, cwd=cwd)
+
+
+def build_environment_key():
+    # A RID describes CPU/OS, not the distro's libc or C++ ABI. Never reuse
+    # Fedora object files or curl when the checkout moves to Ubuntu (or back).
+    compiler = shlex.split(os.environ.get('CXX', 'c++'))
+    identity = subprocess.check_output([*compiler, '--version'], text=True).strip()
+    release = platform.freedesktop_os_release() if platform.system() == 'Linux' else {}
+    environment = {
+        'root': str(ROOT.resolve()), 'system': platform.system(),
+        'machine': platform.machine(), 'release': platform.mac_ver()[0],
+        'distro': {key: release.get(key, '') for key in ('ID', 'VERSION_ID')},
+        'libc': platform.libc_ver(), 'compiler': identity,
+        'flags': {key: os.environ.get(key, '') for key in ('CC', 'CXX', 'CFLAGS', 'CXXFLAGS', 'LDFLAGS')},
+    }
+    return hashlib.sha256(json.dumps(environment, sort_keys=True).encode()).hexdigest()[:20]
 
 
 def media(rid):
     definition = json.loads((ROOT / 'scripts/media-runtimes.json').read_text())[rid]
     output = ROOT / 'Native/media' / rid
-    if (output / definition['executable']).exists():
+    stamp = output / 'runtime-source.json'
+    if (output / definition['executable']).exists() and stamp.exists():
+        if json.loads(stamp.read_text()) == definition:
+            return
+    if definition.get('build') == 'macos-source-v1':
+        macos_media(rid, definition, output)
+        stamp.write_text(json.dumps(definition, indent=2))
         return
-    cache = ROOT / 'Native/sdk' / f'media-{rid}'
+    cache = ROOT / 'Native/sdk' / f'media-{rid}' / definition['sha256']
     archive = cache / ('runtime.' + definition['archive'])
     download(definition['url'], archive, definition['sha256'])
     extract(archive, cache)
@@ -67,13 +90,43 @@ def media(rid):
     (output / 'runtime-source.json').write_text(json.dumps(definition, indent=2))
 
 
-def linux_curl(rid, cmake):
+def macos_media(rid, definition, output):
+    # The previous binary supplier rejects automated downloads with HTTP 403.
+    # Build the same pinned release with only OS-provided frameworks/libraries.
+    if platform.system() != 'Darwin':
+        raise RuntimeError('macOS media must be built on the matching Mac host.')
+    version = definition['version']
+    cache = ROOT / 'Native/sdk/ffmpeg-source'
+    archive = cache / f'ffmpeg-{version}.tar.xz'
+    download(definition['sourceUrl'], archive, definition['sourceSha256'])
+    source = cache / f'ffmpeg-{version}'
+    if not (source / 'configure').exists():
+        extract(archive, cache)
+    build = ROOT / 'Native/build' / f'ffmpeg-{rid}-{version}-{build_environment_key()}'
+    build.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ, MACOSX_DEPLOYMENT_TARGET='14.0')
+    if not (build / 'ffmpeg').exists():
+        run(source / 'configure', '--disable-shared', '--enable-static', '--disable-doc',
+            '--disable-debug', '--disable-autodetect', '--disable-ffplay', '--disable-ffprobe',
+            '--enable-avfoundation', '--enable-videotoolbox', '--enable-audiotoolbox', '--enable-zlib',
+            '--extra-cflags=-mmacosx-version-min=14.0', '--extra-ldflags=-mmacosx-version-min=14.0',
+            cwd=build, env=env)
+        run('make', '-C', build, '-j', min(os.cpu_count() or 2, 8), env=env)
+    output.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(build / 'ffmpeg', output / 'ffmpeg')
+    (output / 'ffmpeg').chmod(0o755)
+    for item in source.glob('COPYING*'):
+        shutil.copy2(item, output / item.name)
+    shutil.copy2(source / 'LICENSE.md', output / 'LICENSE.md')
+
+
+def linux_curl(rid, cmake, build_key):
     # The official Ubuntu SDK requires CURL_OPENSSL_4; Fedora uses a different
     # system symbol namespace. Bundle our own HTTPS-enabled ABI-compatible curl.
     version = '8.23.0'
     cache = ROOT / 'Native/sdk'
     archive = cache / f'curl-{version}.tar.xz'
-    prefix = cache / f'curl-{rid}'
+    prefix = cache / f'curl-{version}-{rid}-{build_key}'
     library = prefix / 'lib/libcurl.so.4'
     if not library.exists():
         download(f'https://github.com/curl/curl/releases/download/curl-8_23_0/{archive.name}', archive,
@@ -81,7 +134,7 @@ def linux_curl(rid, cmake):
         source = cache / f'curl-{version}'
         if not source.exists():
             extract(archive, cache)
-        build = cache / f'curl-build-{rid}'
+        build = cache / f'curl-build-{version}-{rid}-{build_key}'
         run(cmake, '-S', source, '-B', build, '-DCMAKE_BUILD_TYPE=Release',
             f'-DCMAKE_INSTALL_PREFIX={prefix}', '-DCMAKE_INSTALL_LIBDIR=lib',
             '-DBUILD_SHARED_LIBS=ON', '-DBUILD_STATIC_LIBS=OFF', '-DBUILD_CURL_EXE=OFF',
@@ -109,10 +162,13 @@ def native(rid, sdk, cmake):
     header = ROOT / 'Native/sdk/miniaudio/miniaudio.h'
     download('https://raw.githubusercontent.com/mackron/miniaudio/0.11.23/miniaudio.h', header,
              '7e4f3f13c8fe66df2080ac3dd12a89193e3c2463cb7f067c798abd7331cd8ee6')
-    build = ROOT / 'Native/build' / rid
+    build_key = build_environment_key()
+    build = ROOT / 'Native/build' / f'{rid}-{build_key}'
     output = ROOT / 'Native/artifacts' / rid
-    curl = linux_curl(rid, cmake) if rid.startswith('linux-') else None
+    curl = linux_curl(rid, cmake, build_key) if rid.startswith('linux-') else None
     options = [f'-DFIREUSER_CURL_LIBRARY={curl / "lib/libcurl.so.4"}'] if curl else []
+    if rid.startswith('osx-'):
+        options += ['-DCMAKE_OSX_DEPLOYMENT_TARGET=14.0']
     run(cmake, '-S', ROOT / 'Native', '-B', build, f'-DCMAKE_PREFIX_PATH={sdk}', '-DCMAKE_BUILD_TYPE=Release', *options)
     run(cmake, '--build', build, '--parallel', min(os.cpu_count() or 2, 8))
     run(cmake, '--install', build, '--prefix', output)
@@ -130,6 +186,7 @@ def native(rid, sdk, cmake):
     env[key] = str(output) + os.pathsep + env.get(key, '')
     ctest = Path(shutil.which(cmake) or cmake).resolve().parent / 'ctest'
     run(ctest, '--test-dir', build, '--output-on-failure', env=env)
+    (output / 'build-host.json').write_text(json.dumps({'rid': rid, 'buildKey': build_key}, indent=2))
 
 
 if __name__ == '__main__':

@@ -41,7 +41,7 @@ public sealed class RemoteControlPolicy(TimeProvider? clock = null)
     }
     public RemotePacket BeginRequest(string peer)
     {
-        if (!Peers.TryGetValue(peer, out var remote) || !remote.CanHost || !remote.Sharing) throw new InvalidOperationException("Remote control requires a native client sharing its desktop. Browser clients cannot offer remote control.");
+        if (!Peers.TryGetValue(peer, out var remote) || !remote.CanHost || !remote.Sharing) throw new InvalidOperationException("Remote control requires a participant sharing a supported native desktop with control enabled.");
         outgoingRequest = peer; return new RemotePacket("request", Scope: remote.Scope);
     }
     public bool AcceptGrant(string sender, RemotePacket packet)
@@ -71,6 +71,12 @@ public sealed class RemoteControlPolicy(TimeProvider? clock = null)
     public void Revoke() { Controller = null; RequestedBy = null; localGrant = null; receivedSequence = 0; }
     public void StopControlling() { Controlling = null; remoteGrant = null; outgoingRequest = null; }
     public void Clear() { Revoke(); StopControlling(); LocalScope = null; Peers.Clear(); }
+    public static bool SupportsDesktopSource(MediaDevices devices, int width, int height)
+    {
+        if (width <= 0 || height <= 0) return false;
+        if (devices.ShareSource is not {} source) return string.IsNullOrWhiteSpace(devices.Screen);
+        return source.Kind == ScreenShareKind.Screen && source.Backend is ScreenCaptureBackend.Windows or ScreenCaptureBackend.X11 or ScreenCaptureBackend.MacOS && source.X == 0 && source.Y == 0 && source.Width == width && source.Height == height;
+    }
     public static bool TryMapScreenPoint(double x, double y, int width, int height, out double screenX, out double screenY)
     {
         screenX = screenY = 0;

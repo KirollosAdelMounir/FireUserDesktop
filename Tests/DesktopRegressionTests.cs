@@ -122,7 +122,7 @@ public sealed class DesktopRegressionTests
         api.AnnouncementsAsync(Arg.Any<CancellationToken>()).Returns(new List<Announcement>());
         api.CatalogAsync(Arg.Any<CancellationToken>()).Returns(new WorkplaceCatalog(new()));
         var vm = new ChatViewModel(auth, chat, Substitute.For<IUserService>(), Substitute.For<IImageService>(), Substitute.For<IFileService>(), notifications ?? Substitute.For<INotificationService>());
-        return (new WorkspaceViewModel(vm, api, media, auth, chat, notifications) { ReduceMotion = true }, chat, api, media);
+        return (new WorkspaceViewModel(vm, api, media, auth, chat, notifications) { ReduceMotion = true, ConfirmActionAsync = (_,_) => Task.FromResult(true) }, chat, api, media);
     }
     [AvaloniaFact]
     public async Task History_ReconcilesLiveArrival_AndCachesConversationAcrossSelection()
@@ -156,16 +156,17 @@ public sealed class DesktopRegressionTests
         vm.Chat.UnregisterEvents(); await vm.DisposeAsync();
     }
     [AvaloniaFact]
-    public async Task AcceptCall_ShowsConnectingBeforeTokenReturns_ThenOpensMediaWithoutDevices()
+    public async Task AcceptCall_ShowsConnectingBeforeTokenReturns_ThenEnablesMicrophone()
     {
         var (vm, _, api, media) = Create(); var pending = new TaskCompletionSource<MediaToken>();
         api.CallTokenAsync("call", Arg.Any<CancellationToken>()).Returns(pending.Task);
         vm.Incoming = new("call", Guid.NewGuid(), "Peer", "audio", 2);
         var accept = vm.AcceptCommand.ExecuteAsync(null);
         Assert.True(vm.ConnectingCall); Assert.True(vm.CallWindowVisible); Assert.False(vm.InCall);
-        pending.SetResult(new("wss://media.test", "test-only")); await accept;
-        Assert.True(vm.InCall); Assert.False(vm.ConnectingCall); Assert.Null(vm.Incoming);
         await media.DidNotReceive().SetMicrophoneAsync(Arg.Any<bool>(), Arg.Any<MediaDevices>(), Arg.Any<CancellationToken>());
+        pending.SetResult(new("wss://media.test", "test-only")); await accept;
+        Assert.True(vm.InCall); Assert.False(vm.ConnectingCall); Assert.Null(vm.Incoming); Assert.True(vm.MicrophoneEnabled);
+        await media.Received(1).SetMicrophoneAsync(true, Arg.Any<MediaDevices>(), Arg.Any<CancellationToken>());
         vm.Chat.UnregisterEvents(); await vm.DisposeAsync();
     }
     [AvaloniaFact]

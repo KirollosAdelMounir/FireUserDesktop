@@ -19,7 +19,7 @@ public sealed class CollaborationParityTests
         var auth = Substitute.For<IAuthService>(); auth.CurrentUser.Returns(new UserData { Id = Guid.NewGuid() });
         var chat = Substitute.For<IChatService>(); var api = Substitute.For<ICollaborationApi>(); var media = Substitute.For<INativeMediaSession>();
         var vm = new ChatViewModel(auth, chat, Substitute.For<IUserService>(), Substitute.For<IImageService>(), Substitute.For<IFileService>(), Substitute.For<INotificationService>());
-        return (new WorkspaceViewModel(vm, api, media, auth, chat), api, media, chat);
+        return (new WorkspaceViewModel(vm, api, media, auth, chat) { ConfirmActionAsync = (_, _) => Task.FromResult(true) }, api, media, chat);
     }
     private static async Task Start(WorkspaceViewModel vm, ICollaborationApi api)
     {
@@ -60,14 +60,15 @@ public sealed class CollaborationParityTests
         window.CloseAfterCall(); Dispatcher.UIThread.RunJobs(); await vm.DisposeAsync();
     }
     [AvaloniaFact]
-    public async Task PendingMeetingInvitation_DoesNotRequestTokenOrStartDevices()
+    public async Task PendingInvitationJoinDoesNotRequireRsvpAndKeepsHostReadinessEnforced()
     {
         var (vm, api, media, _) = Create(); vm.MeetingCode = "invite";
         api.MeetingAsync("invite", Arg.Any<CancellationToken>()).Returns(new MeetingDetail(Guid.NewGuid(), "invite", "Review", true, "", 0, false, true, Guid.NewGuid(), 7));
+        api.MeetingTokenAsync("invite",Arg.Any<CancellationToken>()).Returns(Task.FromException<MediaToken>(new InvalidOperationException("Wait for the host to start the meeting.")));
         await vm.JoinMeetingCommand.ExecuteAsync(null);
-        await api.DidNotReceive().MeetingTokenAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
-        await media.DidNotReceive().ConnectAsync(Arg.Any<MediaToken>(), Arg.Any<CancellationToken>());
-        Assert.Contains("Accept this invitation", vm.Feedback); Assert.NotNull(vm.PendingMeetingInvitation);
+        await api.Received(1).MeetingTokenAsync("invite",Arg.Any<CancellationToken>());
+        await media.DidNotReceive().ConnectAsync(Arg.Any<MediaToken>(),Arg.Any<CancellationToken>());
+        Assert.Contains("Wait for the host",vm.Feedback);Assert.Null(vm.PendingMeetingInvitation);
         await vm.DisposeAsync();
     }
     [AvaloniaFact]
@@ -99,7 +100,7 @@ public sealed class CollaborationParityTests
             if (++catalogs > 8) return Task.FromException<WorkplaceCatalog>(new InvalidOperationException("Unexpected snapshot loop"));
             return Task.FromResult(new WorkplaceCatalog(new() { new(self, "Me"), new(report, "Report " + catalogs, ReportingDistance: 1) }));
         });
-        var view = new WorkspaceView { DataContext = vm }; vm.SelectedWorkspaceTab = 2;
+        var view = new WorkspaceView { DataContext = vm, ShowReviewAsync = (_, _, _) => Task.FromResult(true) }; vm.SelectedWorkspaceTab = 2;
         var window = new Window { Width = 1200, Height = 850, Content = view }; window.Show(); Dispatcher.UIThread.RunJobs();
         try
         {
@@ -130,7 +131,7 @@ public sealed class CollaborationParityTests
             if (++calls > 8) return Task.FromException<WorkplaceCatalog>(new InvalidOperationException("Unexpected snapshot loop"));
             return Task.FromResult(new WorkplaceCatalog(includeReport ? new() { new(self, "Me"), new(report, "Report", ReportingDistance: 1) } : new() { new(self, "Me") }));
         });
-        var view = new WorkspaceView { DataContext = vm }; vm.SelectedWorkspaceTab = 2;
+        var view = new WorkspaceView { DataContext = vm, ShowReviewAsync = (_, _, _) => Task.FromResult(true) }; vm.SelectedWorkspaceTab = 2;
         var window = new Window { Width = 1200, Height = 850, Content = view }; window.Show(); Dispatcher.UIThread.RunJobs();
         try
         {
@@ -205,17 +206,18 @@ public sealed class CollaborationParityTests
     public async Task VacationSubmissionUsesReviewedToken_AndDraftChangesRequireNewPreview()
     {
         var (vm, api, _, _) = Create(); vm.VacationReason = "Family";
-        api.PreviewVacationAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), 1, "Family", Arg.Any<CancellationToken>()).Returns(new VacationPreview(new(), "preview", new()));
+        api.VacationReadinessAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>()).Returns(new VacationReadiness(true, null));
+        api.PreviewVacationRangeAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), "Family", Arg.Any<CancellationToken>()).Returns(new VacationPreview(new(), "preview", new()));
         await vm.PreviewVacationCommand.ExecuteAsync(null); Assert.Equal("preview", vm.VacationReview!.PreviewToken); Assert.False(vm.IsLoading); Assert.False(vm.MediaBusy);
-        vm.VacationDays = "2"; Assert.Null(vm.VacationReview);
+        vm.VacationEnd = vm.VacationStart!.Value.AddDays(-1); Assert.Null(vm.VacationReview);
         await vm.SubmitVacationCommand.ExecuteAsync(null);
-        await api.DidNotReceive().SubmitVacationAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<int>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
-        vm.VacationDays = "1"; await vm.PreviewVacationCommand.ExecuteAsync(null);
+        await api.DidNotReceive().SubmitVacationRangeAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        vm.VacationEnd = vm.VacationStart; await vm.PreviewVacationCommand.ExecuteAsync(null);
         api.VacationsAsync(1, Arg.Any<CancellationToken>()).Returns(new VacationPage(new(), false, 1));
         api.CatalogAsync(Arg.Any<CancellationToken>()).Returns(new WorkplaceCatalog(new())); api.AnnouncementsAsync(Arg.Any<CancellationToken>()).Returns(new List<Announcement>());
         api.CalendarAsync(Arg.Any<Guid>(),Arg.Any<DateTime>(),Arg.Any<DateTime>(),Arg.Any<CancellationToken>()).Returns(new List<CalendarItem>());
         await vm.SubmitVacationCommand.ExecuteAsync(null);
-        await api.Received(1).SubmitVacationAsync(vm.Chat.CurrentUser.Id, Arg.Any<DateOnly>(),1,"Family","preview",Arg.Any<CancellationToken>());
+        await api.Received(1).SubmitVacationRangeAsync(vm.Chat.CurrentUser.Id, Arg.Any<DateOnly>(),Arg.Any<DateOnly>(),"Family","preview",Arg.Any<CancellationToken>());
         Assert.Null(vm.VacationReview); await vm.DisposeAsync();
     }
     [AvaloniaFact]
@@ -243,7 +245,7 @@ public sealed class CollaborationParityTests
         var id = Guid.NewGuid(); var pending = new MeetingDetail(Guid.NewGuid(), "invitation", "Planning", true,"",1,false,true,id,3);
         api.MeetingAsync("invitation",Arg.Any<CancellationToken>()).Returns(pending, pending with { InvitationPending = false });
         api.ReviewResponseAsync(Arg.Is<CalendarItem>(x => x.Id == id && x.Version == 3),Arg.Any<CancellationToken>()).Returns(new CalendarReview(new() { new CalendarConflict(Guid.NewGuid(),"Meeting","Overlap",DateTime.UtcNow,DateTime.UtcNow.AddHours(1),false) },"review"));
-        await vm.JoinMeetingCommand.ExecuteAsync(null); await vm.ReviewMeetingInvitationCommand.ExecuteAsync(null);
+        await vm.OpenMeetingInvitationCommand.ExecuteAsync(null); await vm.ReviewMeetingInvitationCommand.ExecuteAsync(null);
         await vm.AcceptMeetingInvitationCommand.ExecuteAsync(null);
         await api.DidNotReceive().RespondAsync(Arg.Any<CalendarItem>(),Arg.Any<int>(),Arg.Any<string>(),Arg.Any<bool>(),Arg.Any<CancellationToken>());
         vm.AcknowledgeMeetingConflicts = true; await vm.AcceptMeetingInvitationCommand.ExecuteAsync(null);

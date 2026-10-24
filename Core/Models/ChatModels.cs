@@ -66,7 +66,8 @@ public class ChatAttachment
 
     [JsonIgnore]
     public bool IsVideo =>
-        !string.IsNullOrEmpty(MimeType) && MimeType.StartsWith("video", StringComparison.OrdinalIgnoreCase);
+        (!string.IsNullOrEmpty(MimeType) && MimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase)) ||
+        System.IO.Path.GetExtension(FileName).ToLowerInvariant() is ".mp4" or ".webm" or ".mov" or ".mkv" or ".avi" or ".m4v";
 
     [JsonIgnore]
     public bool IsAudio =>
@@ -90,6 +91,8 @@ public class ChatAttachment
 
 public sealed record ChatSecurityStatus(bool PinEnabled, bool DeviceTrusted);
 public sealed record ChatReaction(Guid UserId, string Emoji);
+public sealed record PlaybackReceipt(string MessageId, Guid AttachmentId, Guid UserId, DateTime PlayedAt);
+public sealed record PlayedReceipt(Guid UserId, Guid AttachmentId, DateTime PlayedAt);
 public sealed record SeenReceipt(Guid UserId, DateTime SeenAt);
 public sealed record CallSummary(string CallId, string CallType, string Status, string CallerName, bool IsActive, int? DurationSeconds);
 public class ChatMessage
@@ -102,6 +105,9 @@ public class ChatMessage
     public string? ReplyToSenderName { get; set; }
     public List<ChatReaction>? Reactions { get; set; }
     public List<SeenReceipt>? SeenDetails { get; set; }
+    public List<Guid>? SeenBy { get; set; }
+    public List<PlayedReceipt>? PlayedDetails { get; set; }
+    public bool SuppressReadReceipts { get; set; }
     public CallSummary? CallSummary { get; set; }
     private readonly string fallbackId = Guid.NewGuid().ToString("N");
     public string? ConversationId { get; set; }
@@ -169,6 +175,8 @@ public class RecipientDto
 
     [JsonPropertyName("lastMessage")]
     public string? LastMessage { get; set; }
+    public int AttachmentsCount { get; set; }
+    public bool LastMessageHasAttachments { get; set; }
 
     [JsonPropertyName("lastSent")]
     public DateTime LastSent { get; set; }

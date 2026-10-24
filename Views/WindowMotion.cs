@@ -8,10 +8,11 @@ internal sealed class WindowMotion
     private readonly Window window;
     private readonly SurfaceMotion motion = new();
     private bool closing, closed;
-    public WindowMotion(Window window)
+    private readonly SurfaceMotionKind kind;
+    public WindowMotion(Window window, SurfaceMotionKind kind = SurfaceMotionKind.Popup)
     {
-        this.window = window;
-        window.Opened += (_, _) => { if (window.Content is Control content) _ = motion.EnterAsync(content, SurfaceMotion.Reduced(window), SurfaceMotionKind.Popup); };
+        this.window = window; this.kind = kind;
+        window.Opened += (_, _) => { if (window.Content is Control content) _ = motion.EnterAsync(content, SurfaceMotion.Reduced(window), kind); };
         window.Closed += (_, _) => { closed = true; motion.Cancel(); };
         window.Closing += (_, e) =>
         {
@@ -23,7 +24,7 @@ internal sealed class WindowMotion
     {
         if (closing) return;
         closing = true;
-        if (window.Content is Control content) await motion.ExitAsync(content, SurfaceMotion.Reduced(window));
+        if (window.Content is Control content) await motion.ExitAsync(content, SurfaceMotion.Reduced(window), kind);
         if (!closed) window.Close(result);
     }
 }

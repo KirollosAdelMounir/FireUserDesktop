@@ -4,6 +4,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="UserIdentityDesktop.Tests" />
     <ProjectReference Include="..\Core\UserIdentityDesktop.Core.csproj" />
     <PackageReference Include="Avalonia" Version="12.1.2" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.22.0" />

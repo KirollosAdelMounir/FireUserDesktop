@@ -10,6 +10,14 @@ using UserIdentityDesktop.Core.Models;
 namespace UserIdentityDesktop.Service;
 public partial class ChatService
 {
+    public async Task<ChatMessage?> GetMessageAsync(string messageId, System.Threading.CancellationToken cancellationToken = default)
+    {
+        using var client=_authService.CreateAuthenticatedClient();
+        using var response=await client.GetAsync($"{_configService.ServerUrl}/api/Chat/Message/{Uri.EscapeDataString(messageId)}",cancellationToken);
+        var message=await ApiPayload.ReadAsync<ChatMessage>(response,cancellationToken);
+        return message == null ? null : await _encryption.DecryptAsync(message);
+    }
+
     private async Task<string> Protect(Guid receiver, string? conversation, string? text, EncryptedFile[]? files = null)
     {
         Guid[]? audience = null;
@@ -23,9 +31,10 @@ public partial class ChatService
     }
     public async Task<bool> SendConversationAsync(string conversationId, string text, string? replyTo = null)
     {
-        if (_hubConnection?.State != HubConnectionState.Connected) return false;
+        var sender=_authService.CurrentUser?.Id ?? throw new InvalidOperationException("Sign in first.");
         var encrypted = await Protect(Guid.Empty, conversationId, text);
-        await _hubConnection.InvokeAsync("SendMessageToConversation", new ChatDto { Sender = _authService.CurrentUser!.Id, Receiver = Guid.Empty, ConversationId = conversationId, Text = encrypted, ReplyToMessageId = replyTo });
+        if(_authService.CurrentUser?.Id!=sender)throw new OperationCanceledException("The signed-in account changed.");
+        await QueueHubAction("SendMessageToConversation", new ChatDto { Sender = sender, Receiver = Guid.Empty, ConversationId = conversationId, Text = encrypted, ReplyToMessageId = replyTo });
         return true;
     }
     public async Task<List<ChatMessage>> GetConversationHistoryAsync(string id, int page = 0)
@@ -73,20 +82,18 @@ public partial class ChatService
     }
     public async Task<bool> SendReplyAsync(Guid receiverId, string text, string replyTo)
     {
-        if (_hubConnection?.State != HubConnectionState.Connected) return false;
         var encrypted = await _encryption.EncryptAsync(receiverId, text);
-        await _hubConnection.InvokeAsync("SendMessageToUser", new ChatDto { Sender = _authService.CurrentUser!.Id, Receiver = receiverId, Text = encrypted, ReplyToMessageId = replyTo });
+        await QueueHubAction("SendMessageToUser", new ChatDto { Sender = _authService.CurrentUser!.Id, Receiver = receiverId, Text = encrypted, ReplyToMessageId = replyTo });
         return true;
     }
     public async Task EditMessageAsync(ChatMessage message, string text)
     {
-        if (_hubConnection?.State != HubConnectionState.Connected) throw new InvalidOperationException("Reconnect before editing.");
 
         var files = message.Attachments?.Select(x => x.Encryption ?? throw new InvalidOperationException("Unlock attachments before editing.")).ToArray();
         var encrypted = await Protect(message.Receiver, message.ConversationId, text, files);
-        await _hubConnection.InvokeAsync("EditMessage", new { messageId = message.Id, text = encrypted });
+        await QueueHubAction("EditMessage", new { messageId = message.Id, text = encrypted });
     }
-    public Task MarkConversationSeenAsync(string conversationId) => _hubConnection?.InvokeAsync("MarkConversationSeen", conversationId) ?? Task.CompletedTask;
-    public Task DeleteMessageAsync(string id) => _hubConnection?.InvokeAsync("DeleteMessage", id) ?? Task.FromException(new InvalidOperationException("Reconnect first."));
-    public Task ReactAsync(string id, string emoji) => _hubConnection?.InvokeAsync("SetMessageReaction", new { messageId = id, emoji }) ?? Task.FromException(new InvalidOperationException("Reconnect first."));
+    public Task MarkConversationSeenAsync(string conversationId) => QueueHubAction("MarkConversationSeen",conversationId);
+    public Task DeleteMessageAsync(string id) => QueueHubAction("DeleteMessage",id);
+    public Task ReactAsync(string id, string emoji) => QueueHubAction("SetMessageReaction",new{messageId=id,emoji});
 }

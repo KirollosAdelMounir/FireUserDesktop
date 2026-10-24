@@ -1,10 +1,10 @@
-<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:UserIdentityDesktop.ViewModels"
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:UserIdentityDesktop.ViewModels" xmlns:views="using:UserIdentityDesktop.Views"
         x:Class="UserIdentityDesktop.Views.MainWindow" x:DataType="vm:MainViewModel" Icon="/Assets/favicon.ico" Title="Fire User Connect"
         MinWidth="800" MinHeight="550" Width="1280" Height="820" FontSize="13" WindowStartupLocation="CenterScreen" Background="{DynamicResource ForgeBg}">
   <Grid RowDefinitions="Auto,*">
     <Border Background="{DynamicResource ForgeSurface}" BorderBrush="{DynamicResource ForgeBorder}" BorderThickness="0,0,0,1" Padding="20,10">
-      <Grid ColumnDefinitions="Auto,*,Auto"><Image Source="/Assets/PageLogo.png" Width="28" Height="28" Stretch="Uniform" /><TextBlock Grid.Column="1" Text="Fire User Connect" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource ForgeTextPrimary}" VerticalAlignment="Center" Margin="10,0" />
-        <Button Grid.Column="2" Classes="quiet square" Command="{Binding ToggleThemeCommand}" ToolTip.Tip="Switch appearance" AutomationProperties.Name="Switch light or dark theme"><PathIcon Width="17" Height="17" Data="M12,2 A10,10 0 1 0 22,12 C15,17 7,9 12,2 Z" /></Button>
+      <Grid ColumnDefinitions="*,Auto,*" ColumnSpacing="22"><StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center"><Image Source="/Assets/PageLogo.png" Width="28" Height="28" Stretch="Uniform"/><TextBlock Text="Fire User Connect" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource ForgeTextPrimary}" VerticalAlignment="Center"/></StackPanel>
+        <ContentControl Grid.Column="1" Content="{Binding Chat}" IsVisible="{Binding IsChatView}" Width="430" HorizontalAlignment="Center"><ContentControl.ContentTemplate><DataTemplate x:DataType="vm:ChatViewModel"><views:PeopleSearchBox/></DataTemplate></ContentControl.ContentTemplate></ContentControl>
       </Grid>
     </Border>
     <ContentControl Grid.Row="1" Content="{Binding CurrentView}" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />

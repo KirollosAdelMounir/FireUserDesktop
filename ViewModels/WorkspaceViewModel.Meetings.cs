@@ -24,6 +24,18 @@ public partial class WorkspaceViewModel
     [ObservableProperty] private bool _acknowledgeMeetingConflicts;
     private MeetingDetail? reviewedMeetingInvitation;
     private static CalendarItem InvitationItem(MeetingDetail detail) => new(detail.CalendarEntryId, "Meeting", detail.Title, null, detail.StartUtc, detail.EndUtc, Guid.Empty, 0, detail.CalendarVersion);
+    [RelayCommand] private Task OpenMeetingInvitationAsync() => Work(async()=>
+    {
+        var detail=await api.MeetingAsync(MeetingCode.Trim(),lifetime.Token);
+        PendingMeetingInvitation=detail.InvitationPending?detail:null;MeetingInvitationReview=null;
+        if(!detail.InvitationPending)Feedback="This invitation has already been answered.";
+    });
+    [RelayCommand] private Task DeclineMeetingInvitationAsync() => Work(async()=>
+    {
+        if(PendingMeetingInvitation is not {} detail)return;
+        await api.RespondAsync(InvitationItem(detail),2,ct:lifetime.Token);
+        PendingMeetingInvitation=null;MeetingInvitationReview=null;Feedback="Invitation declined.";
+    });
     [RelayCommand] private Task ReviewMeetingInvitationAsync() => Work(async () =>
     {
         var detail = PendingMeetingInvitation ?? throw new InvalidOperationException("Open the meeting invitation first.");

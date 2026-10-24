@@ -19,6 +19,7 @@ public class AuthService : IAuthService
     private static readonly SocketsHttpHandler authenticatedTransport = new() { PooledConnectionLifetime = TimeSpan.FromMinutes(5), ConnectTimeout = TimeSpan.FromSeconds(10), UseCookies = false };
     private readonly IConfigurationService _configService;
     private readonly HttpClient _httpClient;
+    public IBackendActionQueue Actions { get; }
     private Timer? _refreshTimer;
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
 
@@ -30,8 +31,9 @@ public class AuthService : IAuthService
     public event Action<UserData?>? CurrentUserChanged;
     public event Action<bool>? AuthenticationStateChanged;
 
-    public AuthService(IConfigurationService configService, HttpClient? httpClient = null)
+    public AuthService(IConfigurationService configService, HttpClient? httpClient = null, IBackendActionQueue? actions=null)
     {
+        Actions=actions??new BackendActionQueue();
         _configService = configService;
         _httpClient = httpClient ?? new HttpClient();
     }
@@ -97,7 +99,7 @@ public class AuthService : IAuthService
                 }
             }
 
-            await LogoutAsync();
+            if(response.StatusCode is System.Net.HttpStatusCode.BadRequest or System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)await LogoutAsync();
             return false;
         }
         catch
@@ -108,6 +110,7 @@ public class AuthService : IAuthService
 
     public async Task LogoutAsync()
     {
+        Actions.SetAccount("");
         StopRefreshTimer();
 
         var refresh = RefreshToken;
@@ -140,7 +143,8 @@ public class AuthService : IAuthService
 
     public HttpClient CreateAuthenticatedClient()
     {
-        var client = new HttpClient(authenticatedTransport, disposeHandler: false);
+        var owner=CurrentUser?.Id;var server=_configService.ServerUrl;
+        var client = new HttpClient(new QueuedAuthenticatedHandler(Actions,FreshCredential,authenticatedTransport,()=>CurrentUser?.Id==owner&&IsAuthenticated&&_configService.ServerUrl==server)) { Timeout=Timeout.InfiniteTimeSpan };
         if (!string.IsNullOrEmpty(AccessToken))
         {
             client.DefaultRequestHeaders.Authorization =
@@ -149,12 +153,21 @@ public class AuthService : IAuthService
         return client;
     }
 
+    public Task<string?> GetCurrentCredentialAsync()=>FreshCredential();
+    private async Task<string?> FreshCredential()
+    {
+        if(string.IsNullOrEmpty(AccessToken))return null;
+        var token=new JwtSecurityTokenHandler().ReadJwtToken(AccessToken);
+        if(token.ValidTo<=DateTime.UtcNow.AddSeconds(30) && !await RefreshTokenAsync())return null;
+        return AccessToken;
+    }
     private void SetTokens(string accessToken, string refreshToken)
     {
         AccessToken = accessToken;
         RefreshToken = refreshToken;
 
         CurrentUser = ParseUserDataFromToken(accessToken);
+        Actions.SetAccount(CurrentUser==null?"":_configService.ServerUrl+"|"+CurrentUser.Id);
         CurrentUserChanged?.Invoke(CurrentUser);
         AuthenticationStateChanged?.Invoke(IsAuthenticated);
 

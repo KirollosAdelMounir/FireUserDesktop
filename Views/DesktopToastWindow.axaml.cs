@@ -15,6 +15,12 @@ public sealed partial class DesktopToastWindow : Window
     public bool HasAvatar => Avatar != null;
     public string Initials => string.Concat(ToastTitle.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(x => x[0])).ToUpperInvariant();
     public string ActionName => ToastTitle + ". " + Message + (IsChat ? ". Open chat" : ". Open notification details");
+    public bool HasApprovalActions => !IsChat && ToastTitle is "Vacation approval requested" or "Calendar invitation or update";
+    public string ApproveLabel => ToastTitle == "Calendar invitation or update" ? "Accept" : "Approve";
+    public string RejectLabel => ToastTitle == "Calendar invitation or update" ? "Decline" : "Reject";
+    public event Action<string>? DecisionRequested;
+    private void Approve_Click(object? sender, RoutedEventArgs e) => DecisionRequested?.Invoke("Approve");
+    private void Reject_Click(object? sender, RoutedEventArgs e) => DecisionRequested?.Invoke("Reject");
     public event Action? OpenRequested;
     public event Action? DismissRequested;
     public DesktopToastWindow() : this("Notification", "", false) { }

@@ -13,7 +13,7 @@
   </Window.Styles>
   <Border x:Name="ToastCard" Margin="8" CornerRadius="14" Background="{DynamicResource ForgeSurfaceCard}" BorderBrush="{DynamicResource ForgeBorder}" BorderThickness="1" BoxShadow="0 4 16 0 #30000000" ClipToBounds="True">
     <Border BorderBrush="{DynamicResource ForgePrimary}" BorderThickness="4,0,0,0" CornerRadius="14">
-      <Grid RowDefinitions="Auto,3">
+      <Grid RowDefinitions="Auto,Auto,3">
         <Grid ColumnDefinitions="*,22" Margin="10,14,14,14" ColumnSpacing="8">
           <Button x:Name="OpenToast" Classes="toast-open" Click="Open_Click" AutomationProperties.Name="{Binding ActionName}">
             <Grid ColumnDefinitions="44,*" ColumnSpacing="14">
@@ -35,7 +35,7 @@
           </Button>
           <Button Grid.Column="1" x:Name="CloseToast" Classes="toast-close" Click="Close_Click" VerticalAlignment="Top" AutomationProperties.Name="Close notification"><PathIcon Width="13" Height="13" Data="M3,2 L10,9 17,2 18,3 11,10 18,17 17,18 10,11 3,18 2,17 9,10 2,3 Z" /></Button>
         </Grid>
-        <Border x:Name="ToastProgress" Grid.Row="1" Height="3" Background="{DynamicResource ForgePrimaryGradient}" RenderTransformOrigin="0%,50%"><Border.RenderTransform><ScaleTransform ScaleX="1" /></Border.RenderTransform></Border>
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="68,0,14,12" IsVisible="{Binding HasApprovalActions}"><Button Content="{Binding ApproveLabel}" Click="Approve_Click" /><Button Content="{Binding RejectLabel}" Click="Reject_Click" /></StackPanel><Border x:Name="ToastProgress" Grid.Row="2" Height="3" Background="{DynamicResource ForgePrimaryGradient}" RenderTransformOrigin="0%,50%"><Border.RenderTransform><ScaleTransform ScaleX="1" /></Border.RenderTransform></Border>
       </Grid>
     </Border>
   </Border>

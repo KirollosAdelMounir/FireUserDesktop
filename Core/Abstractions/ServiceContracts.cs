@@ -27,6 +27,8 @@ public interface IConfigurationService
 
 public interface IAuthService
 {
+    IBackendActionQueue? Actions => null;
+    Task<string?> GetCurrentCredentialAsync() => Task.FromResult(AccessToken);
     UserData? CurrentUser { get; }
     string? AccessToken { get; }
     string? RefreshToken { get; }
@@ -57,14 +59,20 @@ public interface IImageService
 
 public interface IChatService
 {
+    ITransferTracker? Transfers => null;
     event Action? WorkplaceChanged;
+    event Action? AppearancePreferencesChanged;
     event Action<Guid>? WorkplaceNotificationChanged;
     event Action? WorkplaceNotificationsRead;
+    Task RespondToMeetingInvitationAsync(string locator, Guid invitationId, bool accept);
     event Action<IncomingCall>? IncomingCallReceived;
     event Action<CallParticipantLeft>? CallParticipantLeft;
     HubConnectionState State { get; }
     event Action<ChatMessage>? MessageReceived;
     event Action<ChatMessage>? MessageUpdated;
+    event Action<PlaybackReceipt>? AttachmentPlayed;
+    Task MarkAttachmentPlayedAsync(string messageId, Guid attachmentId);
+    Task<ChatMessage?> GetMessageAsync(string messageId, CancellationToken cancellationToken = default);
     event Action<string>? MessageDeleted;
     event Action<List<RecipientDto>>? RecipientsUpdated;
     event Action<Guid, Guid, DateTime>? ReadReceiptReceived;
@@ -101,7 +109,7 @@ public interface IChatService
     Task<UserPresence?> GetUserPresenceAsync(Guid userId);
     Task<List<RecipientDto>> GetRecipientsAsync();
     Task<List<ChatMessage>> GetChatHistoryAsync(Guid receiverId, int page = 0);
-    Task<bool> SaveAttachmentToFileAsync(Guid attachmentId, string destinationFilePath, EncryptedFile? encryption = null);
+    Task<bool> SaveAttachmentToFileAsync(Guid attachmentId, string destinationFilePath, EncryptedFile? encryption = null, CancellationToken cancellationToken = default, IProgress<long>? progress = null);
 }
 
 public interface IUserService

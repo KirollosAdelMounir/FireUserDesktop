@@ -25,7 +25,7 @@ public sealed class WorkspaceInteractionTests
         api.CalendarAsync(Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>()).Returns(new List<CalendarItem>());
         api.AnnouncementsAsync(Arg.Any<CancellationToken>()).Returns(new List<Announcement>());
         api.VacationsAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(new VacationPage(new(), false, 1));
-        return (new WorkspaceViewModel(vm, api, Substitute.For<INativeMediaSession>(), auth, chat) { ReduceMotion = true }, api, chat);
+        return (new WorkspaceViewModel(vm, api, Substitute.For<INativeMediaSession>(), auth, chat) { ReduceMotion = true, ConfirmActionAsync = (_, _) => Task.FromResult(true) }, api, chat);
     }
     [AvaloniaFact]
     public async Task VacationActions_RequireTheRightOwnerReportingDistanceAndState()
@@ -39,7 +39,7 @@ public sealed class WorkspaceInteractionTests
         var request = vm.SelectedVacation; await vm.DecideVacationCommand.ExecuteAsync("Approve"); await api.Received(1).DecideVacationAsync(request, "Approve", Arg.Any<CancellationToken>());
         vm.SelectedVacation = request with { UserId = grandchild }; Assert.False(vm.CanApproveVacation);
         vm.SelectedVacation = request with { UserId = self, State = 1 }; Assert.True(vm.CanRequestVacationCancellation); Assert.False(vm.CanWithdrawVacation);
-        vm.SelectedVacation = request with { State = 4 }; Assert.True(vm.CanConfirmVacationCancellation); Assert.False(vm.CanApproveVacation);
+        vm.SelectedVacation = request with { State = 4 }; Assert.False(vm.CanConfirmVacationCancellation); Assert.False(vm.CanApproveVacation);
         vm.SelectedVacation = request with { State = 2 }; Assert.False(vm.CanConfirmVacationCancellation); Assert.False(vm.CanApproveVacation);
         vm.Chat.UnregisterEvents(); await vm.DisposeAsync();
     }
@@ -59,12 +59,13 @@ public sealed class WorkspaceInteractionTests
     public async Task AllCreationSurfaces_OpenOwnedWindows_AndShowSuccessAfterSavingAndRefresh(bool light)
     {
         var (vm, api, _) = Create(); vm.SelectedWorkspaceTab = 2;
-        var view = new WorkspaceView { DataContext = vm }; var messages = new List<string>(); view.ShowSubmissionMessageAsync = (_, text) => { messages.Add(text); return Task.CompletedTask; };
+        var view = new WorkspaceView { DataContext = vm, ShowReviewAsync = (_, _, _) => Task.FromResult(true) }; var messages = new List<string>(); view.ShowSubmissionMessageAsync = (_, text) => { messages.Add(text); return Task.CompletedTask; };
         var owner = new Window { Content = view, Width = 1200, Height = 850, RequestedThemeVariant = light ? Avalonia.Styling.ThemeVariant.Light : Avalonia.Styling.ThemeVariant.Dark }; owner.Show(); Dispatcher.UIThread.RunJobs();
         foreach (var tab in new[] { 0, 2 })
         {
             vm.SelectedCalendarTab = tab; Dispatcher.UIThread.RunJobs(); vm.ShowCalendarEditor = true; Dispatcher.UIThread.RunJobs();
             var editor = Assert.Single(view.EditorWindows); Assert.Equal(WorkspaceFormKind.Calendar, editor.Kind); Assert.Same(owner, editor.Owner);
+            Assert.DoesNotContain(editor.GetVisualDescendants().OfType<Button>(),button=>button.IsEffectivelyVisible&&Avalonia.Automation.AutomationProperties.GetName(button) is "Close schedule editor" or "Close announcement editor");
             Save(editor, $"calendar-form-{tab}-{light}.png"); await editor.CloseAnimatedAsync();
         }
         vm.EventTitle = "New appointment"; vm.IsMeeting = false; vm.ShowCalendarEditor = true;
@@ -74,8 +75,9 @@ public sealed class WorkspaceInteractionTests
         await vm.ReviewEventCommand.ExecuteAsync(null); await vm.SaveEventCommand.ExecuteAsync(null); Dispatcher.UIThread.RunJobs(); Assert.Empty(view.EditorWindows); Assert.Single(messages);
         vm.SelectedCalendarTab = 1; Dispatcher.UIThread.RunJobs(); vm.ShowVacationEditor = true; Dispatcher.UIThread.RunJobs();
         var vacationWindow = Assert.Single(view.EditorWindows); Assert.Equal(WorkspaceFormKind.Vacation, vacationWindow.Kind); Save(vacationWindow, $"vacation-form-{light}.png");
-        api.PreviewVacationAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), 1, Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new VacationPreview(new(), "vacation-review", new()));
-        await vm.PreviewVacationCommand.ExecuteAsync(null); await vm.SubmitVacationCommand.ExecuteAsync(null); Dispatcher.UIThread.RunJobs(); Assert.Empty(view.EditorWindows); Assert.Equal(2, messages.Count); Assert.Contains("Pending manager approval", messages[1]);
+        api.VacationReadinessAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>()).Returns(new VacationReadiness(true, null));
+        api.PreviewVacationRangeAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new VacationPreview(new(), "vacation-review", new()));
+        await vm.PreviewVacationCommand.ExecuteAsync(null); await vm.SubmitVacationCommand.ExecuteAsync(null); Dispatcher.UIThread.RunJobs(); Assert.Empty(view.EditorWindows); Assert.Equal(2, messages.Count); Assert.Contains("reporting policy", messages[1]);
         vm.SelectedWorkspaceTab = 3; Dispatcher.UIThread.RunJobs(); vm.ShowAnnouncementEditor = true; Dispatcher.UIThread.RunJobs();
         Save(Assert.Single(view.EditorWindows), $"announcement-form-{light}.png"); vm.AnnouncementTitle = "Notice"; vm.AnnouncementBody = "Updated schedule"; vm.ExpiryDate = DateTimeOffset.Now.AddDays(3); vm.Audience.Add(new(new(Guid.NewGuid(), "Audience")) { Selected = true });
         await vm.PublishCommand.ExecuteAsync(null); Dispatcher.UIThread.RunJobs(); Assert.Empty(view.EditorWindows); Assert.Equal(3, messages.Count);

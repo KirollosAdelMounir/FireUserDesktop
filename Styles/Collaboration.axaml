@@ -1,5 +1,30 @@
 <Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <Styles.Resources>
+    <StreamGeometry x:Key="Glyph.Emoji">F0 M12,2 A10,10 0 1 1 12,22 A10,10 0 1 1 12,2 Z M12,4 A8,8 0 1 0 12,20 A8,8 0 1 0 12,4 Z M8,7 A1.5,1.5 0 1 1 8,10 A1.5,1.5 0 1 1 8,7 Z M16,7 A1.5,1.5 0 1 1 16,10 A1.5,1.5 0 1 1 16,7 Z M7,13 C8,19 16,19 17,13 L15,13 C14,16 10,16 9,13 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Pause">M6,4 L10,4 10,20 6,20 Z M14,4 L18,4 18,20 14,20 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Stop">M5,5 L19,5 19,19 5,19 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Check">M3,12 L6,9 10,13 18,5 21,8 10,19 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.ZoomIn">F0 M10,2 A8,8 0 1 1 10,18 A8,8 0 1 1 10,2 Z M10,4 A6,6 0 1 0 10,16 A6,6 0 1 0 10,4 Z M15,17 L17,15 23,21 21,23 Z M9,6 L11,6 11,9 14,9 14,11 11,11 11,14 9,14 9,11 6,11 6,9 9,9 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.ZoomOut">F0 M10,2 A8,8 0 1 1 10,18 A8,8 0 1 1 10,2 Z M10,4 A6,6 0 1 0 10,16 A6,6 0 1 0 10,4 Z M15,17 L17,15 23,21 21,23 Z M6,9 L14,9 14,11 6,11 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Fit">M3,9 L3,3 9,3 9,5 5,5 5,9 Z M15,3 L21,3 21,9 19,9 19,5 15,5 Z M3,15 L5,15 5,19 9,19 9,21 3,21 Z M19,15 L21,15 21,21 15,21 15,19 19,19 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Fullscreen">M2,9 L2,2 9,2 9,4 4,4 4,9 Z M15,2 L22,2 22,9 20,9 20,4 15,4 Z M2,15 L4,15 4,20 9,20 9,22 2,22 Z M20,15 L22,15 22,22 15,22 15,20 20,20 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.RotateRight">M17,3 L22,8 17,13 17,9 12,9 A5,5 0 1 0 17,14 L19,14 A7,7 0 1 1 12,7 L17,7 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.RotateLeft">M7,3 L2,8 7,13 7,9 12,9 A5,5 0 1 1 7,14 L5,14 A7,7 0 1 0 12,7 L7,7 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Clock">F0 M12,2 A10,10 0 1 1 12,22 A10,10 0 1 1 12,2 Z M12,4 A8,8 0 1 0 12,20 A8,8 0 1 0 12,4 Z M11,6 L13,6 13,11 17,14 16,16 11,12 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.User">M12,2 A5,5 0 1 1 12,12 A5,5 0 1 1 12,2 M3,22 C3,12 21,12 21,22 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Users">M9,3 A4,4 0 1 1 9,11 A4,4 0 1 1 9,3 M2,21 C2,12 16,12 16,21 Z M17,4 A4,4 0 0 1 17,12 M18,14 C22,14 23,17 23,21 L19,21 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Calendar">M3,4 L21,4 21,22 3,22 Z M5,9 L19,9 19,20 5,20 Z M7,1 L9,1 9,7 7,7 Z M15,1 L17,1 17,7 15,7 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Settings">M10,2 L14,2 15,6 19,5 22,9 19,12 22,15 19,19 15,18 14,22 10,22 9,18 5,19 2,15 5,12 2,9 5,5 9,6 Z M12,8 A4,4 0 1 0 12,16 A4,4 0 1 0 12,8</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Lock">M6,10 L6,7 A6,6 0 0 1 18,7 L18,10 21,10 21,22 3,22 3,10 Z M8,10 L16,10 16,7 A4,4 0 0 0 8,7 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Refresh">M20,3 L20,10 13,10 16,7 A7,7 0 1 0 19,14 L21,14 A9,9 0 1 1 17,5 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Save">M3,2 L18,2 22,6 22,22 2,22 2,2 Z M6,4 L6,10 16,10 16,4 Z M6,14 L6,20 18,20 18,14 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Edit">M3,17 L16,4 20,8 7,21 2,22 Z M18,2 L22,6 21,7 17,3 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Delete">M4,6 L20,6 19,22 5,22 Z M2,3 L9,3 9,1 15,1 15,3 22,3 22,5 2,5 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Copy">M7,7 L22,7 22,22 7,22 Z M2,2 L17,2 17,5 5,5 5,17 2,17 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Reply">M10,3 L2,11 10,19 10,14 C18,14 20,18 22,21 C22,10 18,8 10,8 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Bell">M12,2 C6,2 5,7 5,14 L2,18 22,18 19,14 L19,9 C19,5 16,2 12,2 Z M9,20 L15,20 A3,3 0 0 1 9,20</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.SignOut">M2,2 L12,2 12,4 4,4 4,20 12,20 12,22 2,22 Z M16,5 L23,12 16,19 14,17 18,13 8,13 8,11 18,11 14,7 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Action">M12,2 L15,9 22,12 15,15 12,22 9,15 2,12 9,9 Z</StreamGeometry>
     <StreamGeometry x:Key="Glyph.Organization">M2,22 L2,7 10,7 10,2 22,2 22,22 15,22 15,16 11,16 11,22 Z M5,10 L7,10 7,12 5,12 Z M5,15 L7,15 7,17 5,17 Z M13,5 L15,5 15,7 13,7 Z M18,5 L20,5 20,7 18,7 Z M13,10 L15,10 15,12 13,12 Z M18,10 L20,10 20,12 18,12 Z</StreamGeometry>
     <StreamGeometry x:Key="Glyph.More">M4,10 A2,2 0 1 1 4,14 A2,2 0 1 1 4,10 M12,10 A2,2 0 1 1 12,14 A2,2 0 1 1 12,10 M20,10 A2,2 0 1 1 20,14 A2,2 0 1 1 20,10</StreamGeometry>
     <StreamGeometry x:Key="Glyph.Chat">M3,3 L21,3 21,17 9,17 3,22 Z M6,7 L18,7 M6,11 L15,11</StreamGeometry>
@@ -10,7 +35,14 @@
     <StreamGeometry x:Key="Glyph.Close">M5,3 L12,10 19,3 21,5 14,12 21,19 19,21 12,14 5,21 3,19 10,12 3,5 Z</StreamGeometry>
     <StreamGeometry x:Key="Glyph.Plus">M11,3 L13,3 13,11 21,11 21,13 13,13 13,21 11,21 11,13 3,13 3,11 11,11 Z</StreamGeometry>
     <StreamGeometry x:Key="Glyph.File">M5,2 L15,2 21,8 21,23 5,23 Z M14,4 L14,9 19,9 M8,13 L17,13 M8,17 L15,17</StreamGeometry>
-    <StreamGeometry x:Key="Glyph.Search">M10,2 A8,8 0 1 1 10,18 A8,8 0 1 1 10,2 M16,16 L23,23 21,25 14,18 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Search">F0 M10,2 A8,8 0 1 1 10,18 A8,8 0 1 1 10,2 Z M10,4 A6,6 0 1 0 10,16 A6,6 0 1 0 10,4 Z M15,17 L17,15 23,21 21,23 Z </StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Image">M3,3 L21,3 21,21 3,21 Z M5,5 L5,19 19,19 19,5 Z M5,17 L10,11 14,15 16,12 19,17 19,19 5,19 Z M15,7 A2,2 0 1 1 15,11 A2,2 0 1 1 15,7</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Play">M8,5 L20,12 8,19 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Audio">M3,9 L5,9 5,15 3,15 Z M7,5 L9,5 9,19 7,19 Z M11,2 L13,2 13,22 11,22 Z M15,5 L17,5 17,19 15,19 Z M19,9 L21,9 21,15 19,15 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.ChevronLeft">M15,4 L7,12 15,20 17,18 11,12 17,6 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.ChevronRight">M9,4 L17,12 9,20 7,18 13,12 7,6 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Download">M11,3 L13,3 13,13 17,9 19,11 12,18 5,11 7,9 11,13 Z M3,19 L5,19 5,21 19,21 19,19 21,19 21,23 3,23 Z</StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Archive">M3,3 L21,3 21,8 19,8 19,21 5,21 5,8 3,8 Z M5,5 L5,6 19,6 19,5 Z M7,8 L7,19 17,19 17,8 Z M10,10 L14,10 14,12 10,12 Z</StreamGeometry>
   </Styles.Resources>
   <Style Selector="Button">
     <Setter Property="Background" Value="{DynamicResource ForgeSurfaceCard}" /><Setter Property="Foreground" Value="{DynamicResource ForgeTextPrimary}" />

@@ -28,20 +28,24 @@ public sealed class NativeBridgeTests
         var audioArrived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var dataArrived = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         var lastVideo = "none";
+        var duration = int.TryParse(Environment.GetEnvironmentVariable("FIREUSER_LIVEKIT_TEST_DURATION_SECONDS"), out var seconds) ? Math.Clamp(seconds, 0, 180) : 0;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        long lastCamera = 0, lastScreen = 0, lastAudio = 0, lastData = 0;
+        var disconnected = 0;
         LiveKitNative.VideoCallback video = (identity, pixels, w, h, length) =>
         {
             lastVideo = $"{w}x{h}, {length} bytes, {Marshal.PtrToStringUTF8(identity)}";
             // WebRTC may scale under load and codecs round dimensions. Verify decoded content
             // at a usable resolution; this is transport coverage, not a fixed-quality benchmark.
-            if (w >= width / 2 - 4 && h >= height / 2 - 4 && length == w * h * 4 && Marshal.ReadByte(pixels) > 180 && Marshal.ReadByte(pixels, 2) < 80)
+            if (w >= Math.Min(width / 2 - 4, 320) && h >= Math.Min(height / 2 - 4, 180) && length == w * h * 4 && Marshal.ReadByte(pixels) > 180 && Marshal.ReadByte(pixels, 2) < 80)
             {
-                if (Marshal.PtrToStringUTF8(identity)!.Contains(" · screen · ")) screenArrived.TrySetResult();
-                else videoArrived.TrySetResult();
+                if (Marshal.PtrToStringUTF8(identity)!.Contains(" · screen · ")) { Interlocked.Exchange(ref lastScreen, clock.ElapsedMilliseconds); screenArrived.TrySetResult(); }
+                else { Interlocked.Exchange(ref lastCamera, clock.ElapsedMilliseconds); videoArrived.TrySetResult(); }
             }
         };
-        LiveKitNative.AudioCallback audio = (_, _, length, _, _) => { if (length > 0) audioArrived.TrySetResult(); };
-        LiveKitNative.EventCallback events = (_, _) => { };
-        LiveKitNative.DataCallback data = (sender, _, _) => dataArrived.TrySetResult(Marshal.PtrToStringUTF8(sender)!);
+        LiveKitNative.AudioCallback audio = (_, _, length, _, _) => { if (length > 0) { Interlocked.Exchange(ref lastAudio, clock.ElapsedMilliseconds); audioArrived.TrySetResult(); } };
+        LiveKitNative.EventCallback events = (kind, _) => { if (kind == 2) Interlocked.Increment(ref disconnected); };
+        LiveKitNative.DataCallback data = (sender, _, _) => { Interlocked.Exchange(ref lastData, clock.ElapsedMilliseconds); dataArrived.TrySetResult(Marshal.PtrToStringUTF8(sender)!); };
         string Token(string identity)
         {
             var supplied = Environment.GetEnvironmentVariable(identity == "native-sender"
@@ -73,9 +77,10 @@ public sealed class NativeBridgeTests
             var samples = new byte[960];
             var packet = Encoding.UTF8.GetBytes("{\"type\":\"hello\",\"version\":1}");
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
-            timeout.CancelAfter(TimeSpan.FromSeconds(20));
+            timeout.CancelAfter(TimeSpan.FromSeconds(duration + 20));
             var until = Task.WhenAll(videoArrived.Task, screenArrived.Task, audioArrived.Task, dataArrived.Task);
-            while (!until.IsCompleted)
+            var started = clock.Elapsed;
+            while (!until.IsCompleted || clock.Elapsed - started < TimeSpan.FromSeconds(duration))
             {
                 Assert.False(timeout.IsCancellationRequested,
                     $"Receive timeout: video={videoArrived.Task.IsCompleted} ({lastVideo}), screen={screenArrived.Task.IsCompleted}, audio={audioArrived.Task.IsCompleted}, data={dataArrived.Task.IsCompleted}.");
@@ -88,6 +93,10 @@ public sealed class NativeBridgeTests
                 await Task.Delay(30, TestContext.Current.CancellationToken);
             }
             await until; Assert.Equal(senderIdentity, await dataArrived.Task);
+            Assert.Equal(0, Volatile.Read(ref disconnected));
+            if (duration > 0)
+                foreach (var received in new[] { lastCamera, lastScreen, lastAudio, lastData })
+                    Assert.InRange(clock.ElapsedMilliseconds - received, 0, 5000);
         }
         finally
         {

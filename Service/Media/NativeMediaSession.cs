@@ -33,6 +33,8 @@ public sealed partial class NativeMediaSession : INativeMediaSession
     public event Action<string>? Error;
     public event Action<string>? CaptureStopped;
 
+    public event Action<MediaConnectionState>? ConnectionChanged;
+
     public NativeMediaSession() { videoCallback = OnVideo; audioCallback = OnAudio; eventCallback = OnEvent; dataCallback = OnData; }
     public async Task ConnectAsync(MediaToken token, CancellationToken ct = default)
     {
@@ -53,7 +55,13 @@ public sealed partial class NativeMediaSession : INativeMediaSession
         {
             if (room != IntPtr.Zero) { await Task.Run(() => LiveKitNative.fu_destroy(room)); room = IntPtr.Zero; }
             lifetime?.Cancel(); lifetime?.Dispose(); lifetime = null;
-            if (ex is DllNotFoundException or BadImageFormatException) throw new InvalidOperationException("The LiveKit C++ runtime is unavailable. Build and package the native bridge for this operating system and architecture.");
+            if (ex is DllNotFoundException or BadImageFormatException)
+            {
+                // Loader diagnostics contain library names/ABI versions, not the
+                // meeting credential. Keep them available to terminal support.
+                Console.Error.WriteLine($"Native LiveKit loader failure: {ex}");
+                throw new InvalidOperationException("The LiveKit C++ runtime is unavailable. Build and package the native bridge for this operating system and architecture. See terminal output for the missing library or incompatible version.", ex);
+            }
             throw;
         }
         finally { gate.Release(); }
@@ -79,8 +87,21 @@ public sealed partial class NativeMediaSession : INativeMediaSession
             else if (kind == 2)
             {
                 Connected = false; lifetime?.Cancel();
-                CaptureStopped?.Invoke("microphone"); CaptureStopped?.Invoke("camera"); CaptureStopped?.Invoke("screen");
-                Error?.Invoke("Media disconnected. Leave and rejoin the call.");
+                // Keep the SDK reason, never credentials, for diagnosis and retry policy.
+                var reason = int.TryParse(id, out var value) ? value : 0;
+                var retryable = reason is 0 or 3 or 6 or 7 or 8 or 9 or 14 or 15;
+                Console.Error.WriteLine($"LiveKit disconnected: reason={reason}; retryable={retryable}");
+                ConnectionChanged?.Invoke(new("disconnected", reason.ToString(), retryable));
+            }
+            else if (kind == 8)
+            {
+                lock (remoteLock) { var sharing = control.LocalScope != null; RevokeLocal(); control.Clear(); control.Sharing(sharing); RemoteControlChanged?.Invoke(CurrentControlStatus); }
+                ConnectionChanged?.Invoke(new("reconnecting"));
+            }
+            else if (kind == 9)
+            {
+                lock (remoteLock) SendHello();
+                ConnectionChanged?.Invoke(new("connected"));
             }
             else if (kind == 7) { var parts = id.Split('\n', 3); if (parts.Length == 3) ParticipantUpdated?.Invoke(new MediaParticipantUpdate(parts[0], parts[1], parts[2])); }
             else if (kind == 6) { var parts = id.Split('\n', 2); ParticipantJoined?.Invoke(new MediaParticipant(parts[0], parts.Length == 2 && !string.IsNullOrWhiteSpace(parts[1]) ? parts[1] : parts[0])); }
@@ -171,7 +192,7 @@ public sealed partial class NativeMediaSession : INativeMediaSession
             {
                 var selected = devices.ShareSource ?? throw new InvalidOperationException("Choose a screen or window before sharing.");
                 if (OperatingSystem.IsLinux() && ScreenSources.IsWayland && selected.Backend != ScreenCaptureBackend.Portal) throw new InvalidOperationException("Wayland requires the system sharing portal.");
-                if (selected.Backend is ScreenCaptureBackend.Portal or ScreenCaptureBackend.MacOS) { await StartNativeScreenAsync(selected, ct); return; }
+                if (selected.Backend is ScreenCaptureBackend.Portal or ScreenCaptureBackend.MacOS) { await StartNativeScreenAsync(selected, devices, ct); return; }
             }
             var platform = OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsMacOS() ? "macos" : "linux";
             var args = new List<string> { "-hide_banner", "-loglevel", "error", "-nostdin" };
@@ -226,7 +247,7 @@ public sealed partial class NativeMediaSession : INativeMediaSession
         try
         {
             Connected = false; lifetime?.Cancel();
-            lock (remoteLock) { RevokeLocal(); control.Clear(); canHost = false; RemoteControlChanged?.Invoke(control.Status); }
+            lock (remoteLock) { RevokeLocal(); control.Clear(); canHost = false; RemoteControlChanged?.Invoke(CurrentControlStatus); }
             foreach (var capture in captures.Values) { await capture.StopAsync(); capture.Dispose(); }
             captures.Clear();
             await Task.WhenAll(remoteReader, remoteWriter);

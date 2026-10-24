@@ -62,7 +62,7 @@ extern "C" __attribute__((visibility("default"))) char* fu_screen_sources() {
         if (@available(macOS 12.3, *)) {
             SCShareableContent* items = content(); if (!items) return nullptr;
             NSMutableArray* sources = [NSMutableArray array];
-            for (SCDisplay* screen in items.displays) [sources addObject:@{@"id":[NSString stringWithFormat:@"%u", screen.displayID], @"name":[NSString stringWithFormat:@"Screen %lu · %ld × %ld", (unsigned long)sources.count+1, (long)screen.width, (long)screen.height], @"kind":@0, @"backend":@3}];
+            for (SCDisplay* screen in items.displays) { CGRect bounds=CGDisplayBounds(screen.displayID); [sources addObject:@{@"id":[NSString stringWithFormat:@"%u", screen.displayID], @"name":[NSString stringWithFormat:@"Screen %lu · %ld × %ld", (unsigned long)sources.count+1, (long)screen.width, (long)screen.height], @"kind":@0, @"backend":@3, @"x":@(bounds.origin.x), @"y":@(bounds.origin.y), @"width":@(bounds.size.width), @"height":@(bounds.size.height)}]; }
             for (SCWindow* window in items.windows) {
                 if (!window.title.length || window.windowLayer != 0 || window.frame.size.width < 1 || window.frame.size.height < 1) continue;
                 NSString* name = window.owningApplication.applicationName.length ? [NSString stringWithFormat:@"%@ — %@", window.owningApplication.applicationName, window.title] : window.title;

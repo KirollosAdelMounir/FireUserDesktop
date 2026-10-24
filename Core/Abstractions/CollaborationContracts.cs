@@ -8,6 +8,19 @@ namespace UserIdentityDesktop.Core;
 
 public interface ICollaborationApi
 {
+    Task<AppearancePreferences> AppearanceAsync(CancellationToken ct = default);
+    Task<AppearancePreferences> SaveAppearanceAsync(AppearancePreferences value, CancellationToken ct = default);
+    Task<PolicyCatalog> PoliciesAsync(int country, CancellationToken ct = default);
+    Task SavePolicyAsync(VacationPolicyEditor policy, IReadOnlyList<System.Text.Json.JsonElement> rules, CancellationToken ct = default, DateOnly? publishDate = null);
+    Task<List<WorkTimeZoneOption>> TimeZonesAsync(DateOnly date, CancellationToken ct = default);
+    Task<ScheduleClockPreview> PreviewScheduleClockAsync(string zone, DateOnly date, TimeOnly start, TimeOnly end, int endDayOffset, CancellationToken ct = default);
+    Task<ScheduleCatalog> SchedulesAsync(int country, CancellationToken ct = default);
+    Task SaveScheduleAsync(WorkScheduleEditor schedule, CancellationToken ct = default);
+    Task<DirectoryPage<UnitOption>> UnitsAsync(Guid organization, int page, CancellationToken ct = default);
+    Task SaveUnitAsync(UnitOption unit, Guid? schedule, long revision, bool create, CancellationToken ct = default);
+    Task<OrganizationRevision> OrganizationRevisionAsync(CancellationToken ct = default);
+    Task<List<AssignmentOption>> AssignmentsAsync(Guid user, CancellationToken ct = default);
+    Task EndAssignmentAsync(Guid id, long revision, CancellationToken ct = default);
     event Action<string>? MeetingChanged;
     Task WatchMeetingAsync(string locator, CancellationToken ct = default);
     Task StopWatchingMeetingAsync();
@@ -15,8 +28,16 @@ public interface ICollaborationApi
     Task<WorkplaceNotification> NotificationAsync(Guid id, CancellationToken ct = default);
     Task ReadNotificationAsync(Guid id, CancellationToken ct = default);
     Task<List<CalendarItem>> SharedCalendarAsync(string kind, Guid id, DateTime from, DateTime to, CancellationToken ct = default);
+    Task<VacationReadiness> VacationReadinessAsync(Guid user, DateOnly start, CancellationToken ct = default);
+    Task<VacationPreview> PreviewVacationRangeAsync(Guid user, DateOnly start, DateOnly end, string reason, CancellationToken ct = default);
+    Task SubmitVacationRangeAsync(Guid user, DateOnly start, DateOnly end, string reason, string token, CancellationToken ct = default);
+    Task<List<MeetingUnitOption>> MeetingUnitsAsync(CancellationToken ct = default);
+    Task<List<MeetingAudiencePerson>> ResolveMeetingUnitsAsync(IReadOnlyList<Guid> ids, CancellationToken ct = default);
+    Task InviteMeetingAudienceAsync(string locator, IReadOnlyList<Guid> users, IReadOnlyList<Guid> units, CancellationToken ct = default);
+    Task InviteMeetingEmailsAsync(string locator, IReadOnlyList<string> emails, CancellationToken ct = default);
     Task<VacationPreview> PreviewVacationAsync(Guid user, DateOnly start, int days, string reason, CancellationToken ct = default);
     Task SubmitVacationAsync(Guid user, DateOnly start, int days, string reason, string token, CancellationToken ct = default);
+    Task<VacationPage> VacationItemAsync(Guid id, CancellationToken ct = default);
     Task<VacationPage> VacationsAsync(int page, CancellationToken ct = default);
     Task DecideVacationAsync(VacationRequest request, string action, CancellationToken ct = default);
     Task<bool> CallingEnabledAsync(CancellationToken ct = default);
@@ -55,6 +76,7 @@ public interface INativeMediaSession : IAsyncDisposable
     event Action<string>? ParticipantLeft;
     event Action<MediaParticipant>? ParticipantJoined;
     event Action<MediaParticipantUpdate>? ParticipantUpdated;
+    event Action<MediaConnectionState>? ConnectionChanged;
     event Action<string>? Error;
     event Action<string>? CaptureStopped;
     event Action<RemoteControlStatus>? RemoteControlChanged;

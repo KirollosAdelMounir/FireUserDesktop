@@ -39,9 +39,10 @@ public class NullToBoolConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => null;
 }
 
-public class DateTimeFormatConverter : IValueConverter
+public class DateTimeFormatConverter : IValueConverter, IMultiValueConverter
 {
     public static readonly DateTimeFormatConverter Instance = new();
+    public object? Convert(System.Collections.Generic.IList<object?> values,Type targetType,object? parameter,CultureInfo culture) => Convert(values.Count>0?values[0]:null,targetType,parameter,culture);
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
@@ -49,13 +50,14 @@ public class DateTimeFormatConverter : IValueConverter
         {
             var local = dt.ToLocalTime();
             var now = DateTime.Now;
+            if(parameter as string=="full")return UserIdentityDesktop.Core.Models.WorkClock.DateTime(local);
 
             if (local.Date == now.Date)
-                return local.ToString("h:mm tt");
+                return UserIdentityDesktop.Core.Models.WorkClock.Time(local);
             if (local.Date == now.Date.AddDays(-1))
-                return $"Yesterday {local:h:mm tt}";
+                return "Yesterday "+UserIdentityDesktop.Core.Models.WorkClock.Time(local);
             if (local.Year == now.Year)
-                return local.ToString("MMM d, h:mm tt");
+                return local.ToString("MMM d")+", "+UserIdentityDesktop.Core.Models.WorkClock.Time(local);
             return local.ToString("MMM d, yyyy");
         }
         return string.Empty;

@@ -9,6 +9,11 @@ if (-not $RuntimeIdentifier) {
     $platform = if ($IsWindows) { 'win' } elseif ($IsMacOS) { 'osx' } else { 'linux' }
     $RuntimeIdentifier = "$platform-$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant())"
 }
+if (-not $IsWindows) {
+    & python3 (Join-Path $PSScriptRoot 'build-native.py') --rid $RuntimeIdentifier --media-only
+    if ($LASTEXITCODE) { throw 'Unix media build failed.' }
+    return
+}
 $manifest = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'media-runtimes.json') -Raw | ConvertFrom-Json
 $definition = if ($manifest -is [System.Collections.IDictionary]) { $manifest[$RuntimeIdentifier] } else { $manifest.$RuntimeIdentifier }
 if (-not $definition) { throw "No verified media runtime for $RuntimeIdentifier." }

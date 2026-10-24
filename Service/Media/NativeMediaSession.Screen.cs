@@ -7,15 +7,17 @@ namespace UserIdentityDesktop.Service.Media;
 
 public sealed partial class NativeMediaSession
 {
-    private async Task StartNativeScreenAsync(ScreenShareSource selected, CancellationToken ct)
+    private async Task StartNativeScreenAsync(ScreenShareSource selected, MediaDevices devices, CancellationToken ct)
     {
         IScreenFrameSource? source = null;
+        ScreenCastPortal? inputPortal=null;
         try
         {
             if (selected.Backend == ScreenCaptureBackend.Portal)
             {
                 if (!OperatingSystem.IsLinux() || !ScreenSources.IsWayland) throw new InvalidOperationException("This portal source does not belong to the active desktop.");
-                var portal = await ScreenCastPortal.OpenAsync(selected.Kind, ct);
+                var portal = await ScreenCastPortal.OpenAsync(selected.Kind, ct, remoteControl:devices.AllowRemoteControl);
+                inputPortal=portal;
                 try { source = await Task.Run(() => new PipeWireCapture(portal), ct); }
                 catch { await portal.DisposeAsync(); throw; }
             }
@@ -37,7 +39,8 @@ public sealed partial class NativeMediaSession
             await Task.Run(() => input.Read(buffer, startup.Token));
             LiveKitNative.Check(await Task.Run(() => LiveKitNative.fu_publish(room, 2, 1920, 1080)), "publish screen");
             captures.Add("screen", capture);
-            // Scoped windows/monitors cannot authorize default-desktop remote input.
+            SetRemoteSharing(true, devices,inputPortal);
+            // Portal input stays scoped to its approved monitor; native providers retain their desktop-bound checks.
             var capturedRoom = room;
             capture.Work = Task.Run(() =>
             {
@@ -57,7 +60,7 @@ public sealed partial class NativeMediaSession
                 }
                 catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
                 catch { if (!stop.IsCancellationRequested) { CaptureStopped?.Invoke("screen"); Error?.Invoke("The selected screen or window stopped sharing. Choose a source to share again."); } }
-                finally { input.Stop(); LiveKitNative.fu_unpublish(capturedRoom, 2); }
+                finally { input.Stop(); SetRemoteSharing(false, devices); LiveKitNative.fu_unpublish(capturedRoom, 2); }
             });
         }
         catch { await capture.StopAsync(); capture.Dispose(); throw; }

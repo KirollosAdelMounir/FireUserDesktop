@@ -20,6 +20,7 @@ public partial class WorkspaceView : UserControl
     private CallWindow? callWindow;
     internal CallWindow? ActiveCallWindow => callWindow;
     private IncomingCallWindow? incomingWindow;
+    internal IncomingCallWindow? ActiveIncomingWindow => incomingWindow;
     private readonly SurfaceMotion calendarMotion = new();
     private int calendarGeneration;
     private readonly Dictionary<WorkspaceFormKind, WorkspaceFormWindow> editorWindows = new();
@@ -54,9 +55,15 @@ public partial class WorkspaceView : UserControl
             if (model != null) { model.PropertyChanged -= OnModelChanged; model.SubmissionCompleted -= OnSubmissionCompleted; }
             CloseEditorWindows();
             model = DataContext as WorkspaceViewModel;
-            if (model != null) { model.PropertyChanged += OnModelChanged; model.SubmissionCompleted += OnSubmissionCompleted; }
+            if (model != null) { model.PropertyChanged += OnModelChanged; model.SubmissionCompleted += OnSubmissionCompleted; model.ConfirmActionAsync = ConfirmReview; }
             UpdateMotion(); UpdateLayoutMode();
         };
+    }
+    internal Func<Window, string, string, Task<bool>> ShowReviewAsync { get; set; } = ReviewWindow.ShowAsync;
+    private async Task<bool> ConfirmReview(string title, string details)
+    {
+        var owner = editorWindows.Values.LastOrDefault() as Window ?? TopLevel.GetTopLevel(this) as Window;
+        return owner != null && await ShowReviewAsync(owner, title, details);
     }
     private void UpdateCalendarFocus()
     {
@@ -121,6 +128,12 @@ public partial class WorkspaceView : UserControl
             if (this.IsAttachedToVisualTree()) await ShowSubmissionMessageAsync(TopLevel.GetTopLevel(this) as Window, message);
         }
         catch (Exception ex) { if (model != null) model.Feedback = ex.Message; }
+    }
+    private async void ChooseAttendees_Click(object? sender, RoutedEventArgs e)
+    {
+        if (model == null || TopLevel.GetTopLevel((Control?)sender ?? this) is not Window owner) return;
+        model.Attendees.AllowsMeetingGuests = model.IsMeeting;
+        await new AttendeePickerWindow(model.Attendees, model.ReduceMotion).ShowDialog(owner);
     }
     private void NewVacation_Click(object? sender, RoutedEventArgs e) { if (model != null) model.ShowVacationEditor = true; }
     private void NewSchedule_Click(object? sender, RoutedEventArgs e) { if (model != null) { model.SelectedWorkspaceTab = 2; model.ShowCalendarEditor = true; EventTitleInput.Focus(); } }

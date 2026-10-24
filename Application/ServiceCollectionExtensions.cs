@@ -10,8 +10,10 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddUserIdentityApplication(this IServiceCollection services)
     {
         services.AddSingleton<IConfigurationService, ConfigurationService>();
+        services.AddSingleton<IBackendActionQueue, BackendActionQueue>();
         services.AddSingleton<IAuthService, AuthService>();
         services.AddSingleton<IImageService, ImageService>();
+        services.AddSingleton<ITransferTracker, TransferTracker>();
         services.AddSingleton<IChatService, ChatService>();
         services.AddSingleton<ChatEncryption>();
         services.AddSingleton<ICollaborationApi, CollaborationApi>();

@@ -39,3 +39,5 @@ Behavioral regression tests are in `CollaborationParityTests`, `WorkspaceTests`,
 | Group authenticated envelope | `EncryptionTests.GroupEnvelopeRetainsAuthenticatedConversationAndZeroDirectRecipient` |
 | Refuse XWayland fallback and use explicit source selection | `ApiContractTests.Capture_RefusesXWaylandFallbackEvenWhenDisplayExists`; `ScreenSharingTests.SelectedScreen_UsesOnlyItsBounds_AndSelectedWindowUsesItsStableId` |
 | Independent minimize and teardown | `WorkspaceTests.CallUsesIndependentWindow_AndClosingItLeavesAndHidesRemoteControlWithoutNativeShare` |
+
+The 22 October workplace update port, native management forms and current verification are documented in [workplace-update-port.md](workplace-update-port.md).

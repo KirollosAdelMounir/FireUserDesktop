@@ -20,6 +20,25 @@ public partial class ChatService : IChatService
     private readonly IConfigurationService _configService;
     private readonly ChatEncryption _encryption;
     private HubConnection? _hubConnection;
+    private CancellationTokenSource? connectionLifetime;
+    private sealed class ContinuousReconnect : IRetryPolicy { public TimeSpan? NextRetryDelay(RetryContext context)=>TimeSpan.FromSeconds(Math.Min(30,Math.Pow(2,Math.Min(context.PreviousRetryCount,5)))); }
+    private void ConnectionChanged(HubConnectionState state){_authService.Actions?.SetConnected(state==HubConnectionState.Connected);ConnectionStateChanged?.Invoke(state);}
+    private async Task RecoverConnection(HubConnection connection,CancellationToken ct)
+    {
+        var attempt=0;
+        while(!ct.IsCancellationRequested&&ReferenceEquals(connection,_hubConnection)&&_authService.IsAuthenticated){
+            try{await Task.Delay(TimeSpan.FromSeconds(Math.Min(30,Math.Pow(2,Math.Min(attempt++,5)))),ct);await connection.StartAsync(ct);StartHeartbeat();ConnectionChanged(HubConnectionState.Connected);return;}
+            catch(OperationCanceledException)when(ct.IsCancellationRequested){return;}
+            catch{ConnectionChanged(HubConnectionState.Reconnecting);}
+        }
+    }
+    private Task QueueHubAction(string method,params object?[] args)
+    {
+        if(_hubConnection?.State!=HubConnectionState.Connected)_authService.Actions?.SetConnected(false);
+        async Task<bool> Send(CancellationToken ct){if(_hubConnection?.State!=HubConnectionState.Connected)throw new InvalidOperationException("Reconnect before sending this action.");await _hubConnection.InvokeCoreAsync(method,args,ct);return true;}
+        return _authService.Actions is {} queue?queue.RunAsync(Send):Send(CancellationToken.None);
+    }
+
     private Timer? _heartbeatTimer;
     private DateTime _lastActivitySentUtc = DateTime.MinValue;
 
@@ -27,8 +46,14 @@ public partial class ChatService : IChatService
 
     public HubConnectionState State => _hubConnection?.State ?? HubConnectionState.Disconnected;
 
+    public async Task RespondToMeetingInvitationAsync(string locator, Guid invitationId, bool accept)
+    {
+        await QueueHubAction("RespondToMeetingInvitation", locator, invitationId, accept);
+    }
     public event Action<ChatMessage>? MessageReceived;
     public event Action<ChatMessage>? MessageUpdated;
+    public event Action<PlaybackReceipt>? AttachmentPlayed;
+    public Task MarkAttachmentPlayedAsync(string messageId, Guid attachmentId) => QueueHubAction("MarkAttachmentPlayed", messageId, attachmentId);
     public event Action<string>? MessageDeleted;
     public event Action<List<RecipientDto>>? RecipientsUpdated;
     public event Action<Guid, Guid, DateTime>? ReadReceiptReceived;
@@ -62,17 +87,21 @@ public partial class ChatService : IChatService
     public event Action<Guid, UserStatus>? UserStatusChanged;
     public event Action<HubConnectionState>? ConnectionStateChanged;
     public event Action? WorkplaceChanged;
+    public event Action? AppearancePreferencesChanged;
     public event Action<Guid>? WorkplaceNotificationChanged;
     public event Action? WorkplaceNotificationsRead;
     public event Action<IncomingCall>? IncomingCallReceived;
     public event Action<CallParticipantLeft>? CallParticipantLeft;
 
-    public ChatService(IAuthService authService, IConfigurationService configService, ChatEncryption? encryption = null)
+    public ChatService(IAuthService authService, IConfigurationService configService, ChatEncryption? encryption = null, ITransferTracker? transfers = null)
     {
+        Transfers = transfers ?? new TransferTracker();
         _authService = authService;
         _configService = configService;
         _encryption = encryption ?? new ChatEncryption(authService, configService);
     }
+
+    public ITransferTracker Transfers { get; }
 
     public async Task ConnectAsync()
     {
@@ -83,19 +112,22 @@ public partial class ChatService : IChatService
             return;
 
         await DisconnectAsync();
+        connectionLifetime=new();
+        var connectToken=connectionLifetime.Token;
 
         var hubUrl = $"{_configService.ServerUrl}/chathub";
 
         _hubConnection = new HubConnectionBuilder()
             .WithUrl(hubUrl, options =>
             {
-                options.AccessTokenProvider = () => Task.FromResult<string?>(_authService.AccessToken);
+                options.AccessTokenProvider = () => _authService.GetCurrentCredentialAsync();
             })
-            .WithAutomaticReconnect()
+            .WithAutomaticReconnect(new ContinuousReconnect())
             .Build();
         _hubConnection.On<Guid>("WorkplaceNotificationChanged", id => WorkplaceNotificationChanged?.Invoke(id));
         _hubConnection.On("WorkplaceNotificationsRead", () => WorkplaceNotificationsRead?.Invoke());
 
+        _hubConnection.On("AppearancePreferencesChanged", () => AppearancePreferencesChanged?.Invoke());
         _hubConnection.On("WorkplaceChanged", () => WorkplaceChanged?.Invoke());
         _hubConnection.On<ChatActivity>("ChatActivity", activity => ChatActivityReceived?.Invoke(activity));
         _hubConnection.On<ConversationTyping>("ConversationTyping", typing => ConversationTypingReceived?.Invoke(typing));
@@ -109,12 +141,12 @@ public partial class ChatService : IChatService
             MessageReceived?.Invoke(await _encryption.DecryptAsync(msg));
         });
 
+        _hubConnection.On<PlaybackReceipt>("AttachmentPlayed", receipt => AttachmentPlayed?.Invoke(receipt));
         _hubConnection.On<ChatMessage>("MessageUpdated", async msg => MessageUpdated?.Invoke(await _encryption.DecryptAsync(msg)));
         _hubConnection.On<ChatMessage>("MessageDeleted", msg => MessageDeleted?.Invoke(msg.Id));
-        _hubConnection.On<List<RecipientDto>>("RecipientUpdated", recipients =>
+        _hubConnection.On<List<RecipientDto>>("RecipientUpdated", async recipients =>
         {
-            foreach (var recipient in recipients)
-                if (recipient.LastMessage?.StartsWith("FU1.", StringComparison.Ordinal) == true) recipient.LastMessage = "Encrypted message";
+            foreach (var recipient in recipients) await _encryption.DecryptPreviewAsync(recipient);
             RecipientsUpdated?.Invoke(recipients);
         });
 
@@ -152,38 +184,40 @@ public partial class ChatService : IChatService
 
         _hubConnection.Reconnecting += _ =>
         {
-            ConnectionStateChanged?.Invoke(HubConnectionState.Reconnecting);
+            ConnectionChanged(HubConnectionState.Reconnecting);
             return Task.CompletedTask;
         };
 
         _hubConnection.Reconnected += connectionId =>
         {
-            ConnectionStateChanged?.Invoke(HubConnectionState.Connected);
+            ConnectionChanged(HubConnectionState.Connected);
             _ = RefreshCurrentPresenceAsync();
             return Task.CompletedTask;
         };
 
         _hubConnection.Closed += _ =>
         {
-            ConnectionStateChanged?.Invoke(HubConnectionState.Disconnected);
+            ConnectionChanged(HubConnectionState.Disconnected);
             return Task.CompletedTask;
         };
 
         try
         {
-            await _hubConnection.StartAsync();
+            await _hubConnection.StartAsync(connectToken);
             StartHeartbeat();
-            ConnectionStateChanged?.Invoke(HubConnectionState.Connected);
+            ConnectionChanged(HubConnectionState.Connected);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"ChatHub connection error: {ex.Message}");
-            ConnectionStateChanged?.Invoke(HubConnectionState.Disconnected);
+            ConnectionChanged(HubConnectionState.Reconnecting);
+            _ = RecoverConnection(_hubConnection,connectToken);
         }
     }
 
     public async Task DisconnectAsync()
     {
+        connectionLifetime?.Cancel();connectionLifetime?.Dispose();connectionLifetime=null;
         _encryption.Lock();
         if (_hubConnection != null)
         {
@@ -200,21 +234,13 @@ public partial class ChatService : IChatService
             {
                 StopHeartbeat();
                 _hubConnection = null;
-                ConnectionStateChanged?.Invoke(HubConnectionState.Disconnected);
+                ConnectionChanged(HubConnectionState.Disconnected);
             }
         }
     }
 
     public async Task<bool> SendMessageAsync(Guid receiverId, string text)
     {
-        if (_hubConnection == null || _hubConnection.State != HubConnectionState.Connected)
-        {
-            await ConnectAsync();
-        }
-
-        if (_hubConnection == null || _hubConnection.State != HubConnectionState.Connected)
-            return false;
-
         var currentUser = _authService.CurrentUser;
         if (currentUser == null)
             return false;
@@ -229,7 +255,7 @@ public partial class ChatService : IChatService
                 Attachments = null
             };
 
-            await _hubConnection.InvokeAsync("SendMessageToUser", chatDto);
+            await QueueHubAction("SendMessageToUser", chatDto);
             return true;
         }
         catch (Exception ex)
@@ -245,44 +271,22 @@ public partial class ChatService : IChatService
         if (currentUser == null)
             return false;
 
+        var paths = new List<string>(filePaths);
+        if (paths.Count == 0) return false;
+        using var transfer = Transfers.Start(TransferDirection.Upload, paths.Count);
         var prepared = new List<ChatEncryption.PreparedFile>();
         try
         {
             using var client = _authService.CreateAuthenticatedClient();
-            using var form = new MultipartFormDataContent();
-
-            form.Add(new StringContent(currentUser.Id.ToString()), "Sender");
-            form.Add(new StringContent(receiverId.ToString()), "Receiver");
-            if (conversationId != null) form.Add(new StringContent(conversationId), "ConversationId");
-            if (replyTo != null) form.Add(new StringContent(replyTo), "ReplyToMessageId");
-            foreach (var path in filePaths) prepared.Add(await ChatEncryption.PrepareFileAsync(path));
-            form.Add(new StringContent(await Protect(receiverId, conversationId, text, prepared.ConvertAll(x => x.Metadata).ToArray())), "Text");
-
-            var openStreams = new List<FileStream>();
-            try
-            {
-                foreach (var item in prepared)
-                {
-                    var path = item.Path;
-                    if (File.Exists(path))
-                    {
-                        var stream = File.OpenRead(path);
-                        openStreams.Add(stream);
-                        var fileContent = new StreamContent(stream);
-                        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-                        form.Add(fileContent, "Attachments", item.Metadata.Id + ".fua");
-                    }
-                }
-
-                var url = $"{_configService.ServerUrl}/api/Chat/SendMessageWithAttachment";
-                using var response = await client.PostAsync(url, form);
-                return response.IsSuccessStatusCode;
-            }
-            finally
-            {
-                foreach (var s in openStreams)
-                    s.Dispose();
-            }
+            foreach (var path in paths) prepared.Add(await ChatEncryption.PrepareFileAsync(path));
+            var encrypted = await Protect(receiverId, conversationId, text, prepared.ConvertAll(x => x.Metadata).ToArray());
+            if (_authService.CurrentUser?.Id != currentUser.Id) throw new OperationCanceledException("The signed-in account changed.");
+            await ResumableAttachmentUpload.SendAsync(client, _configService.ServerUrl,
+                new AttachmentUploadRequest(currentUser.Id, receiverId, conversationId, encrypted, replyTo,
+                    prepared.ConvertAll(x => new AttachmentUploadFile(x.Metadata.Id + ".fua", "application/octet-stream", new FileInfo(x.Path).Length))),
+                prepared.ConvertAll(x => x.Path), transfer);
+            transfer.Complete(true);
+            return true;
         }
         catch (Exception ex)
         {
@@ -297,12 +301,9 @@ public partial class ChatService : IChatService
 
     public async Task MarkSeenAsync(Guid receiverId)
     {
-        if (_hubConnection == null || _hubConnection.State != HubConnectionState.Connected)
-            return;
-
         try
         {
-            await _hubConnection.InvokeAsync("MarkSeen", receiverId);
+            await QueueHubAction("MarkSeen", receiverId);
         }
         catch (Exception ex)
         {
@@ -333,6 +334,7 @@ public partial class ChatService : IChatService
         try
         {
             await _hubConnection.InvokeAsync("Heartbeat");
+            if(_authService.Actions?.IsConnected==false)_authService.Actions.SetConnected(true);
         }
         catch (Exception ex)
         {
@@ -359,12 +361,9 @@ public partial class ChatService : IChatService
 
     public async Task<bool> SetStatusAsync(UserStatus status)
     {
-        if (_hubConnection?.State != HubConnectionState.Connected)
-            return false;
-
         try
         {
-            await _hubConnection.InvokeAsync("SetStatus", status);
+            await QueueHubAction("SetStatus", status);
             return true;
         }
         catch (Exception ex)
@@ -497,8 +496,7 @@ public partial class ChatService : IChatService
             if (response.IsSuccessStatusCode)
             {
                 var result = await ApiPayload.ReadAsync<List<RecipientDto>>(response);
-                foreach (var recipient in result)
-                    if (recipient.LastMessage?.StartsWith("FU1.", StringComparison.Ordinal) == true) recipient.LastMessage = "Encrypted message";
+                foreach (var recipient in result) await _encryption.DecryptPreviewAsync(recipient);
                 return result;
             }
             else
@@ -544,24 +542,32 @@ public partial class ChatService : IChatService
     public Task ChangeChatPinAsync(string action, string pin, string confirmation, string password, string otp) => _encryption.ChangePinAsync(action, pin, confirmation, password, otp);
     public Task UnlockChatAsync(string pin) => _encryption.UnlockAsync(pin);
 
-    public async Task<bool> SaveAttachmentToFileAsync(Guid attachmentId, string destinationFilePath, EncryptedFile? encryption = null)
+    public async Task<bool> SaveAttachmentToFileAsync(Guid attachmentId, string destinationFilePath, EncryptedFile? encryption = null, CancellationToken cancellationToken = default, IProgress<long>? progress = null)
     {
         try
         {
             using var client = _authService.CreateAuthenticatedClient();
             var url = $"{_configService.ServerUrl}/api/User/ChatAttachment?attachmentId={attachmentId}";
 
-            using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Options.Set(AttachmentTransferRequests.UnlimitedDuration, true);
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             if (response.IsSuccessStatusCode)
             {
                 var temporary = destinationFilePath + "." + Guid.NewGuid().ToString("N") + ".partial";
                 try
                 {
-                    await using (var fs = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, true))
+                    var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None, BufferSize = 65536, Options = FileOptions.Asynchronous };
+                    if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+                    await using (var fs = new FileStream(temporary, options))
                     {
-                        if (encryption == null) await response.Content.CopyToAsync(fs);
-                        else await ChatEncryption.TransformFileAsync(await response.Content.ReadAsStreamAsync(), fs, encryption, encrypt: false);
+                        if (progress is ITransferOperation operation) { if (response.Content.Headers.ContentLength is {} length) operation.SetTotal(length); operation.SetPhase("Downloading…"); }
+                        await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
+                        using var counted = new TransferReadStream(source, progress);
+                        if (encryption == null) await counted.CopyToAsync(fs, cancellationToken);
+                        else await ChatEncryption.TransformFileAsync(counted, fs, encryption, encrypt: false, cancellationToken);
                     }
+                    cancellationToken.ThrowIfCancellationRequested();
                     File.Move(temporary, destinationFilePath, overwrite: true);
                 }
                 finally { if (File.Exists(temporary)) File.Delete(temporary); }
@@ -569,6 +575,7 @@ public partial class ChatService : IChatService
             }
             return false;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             Console.WriteLine($"Failed to save attachment: {ex.Message}");

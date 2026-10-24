@@ -21,7 +21,17 @@ public sealed partial class NativeMediaSession
     private Timer? inputLease;
     private long lastInputTick;
     private bool canHost;
+    private ScreenCastPortal? waylandInput;
+    private long waylandGrantEpoch;
     private int desktopWidth, desktopHeight;
+    private RemoteControlStatus CurrentControlStatus => control.Status with
+    {
+        HostUnavailableReason = control.LocalScope != null && !canHost
+            ? OperatingSystem.IsLinux() && ScreenSources.IsWayland
+                ? waylandInput?.RemoteControlRequested==true ? "The desktop did not approve keyboard and pointer control for this screen. Stop sharing and request system permission again." : "Enable remote control for the next screen share before starting a new share. Your desktop will ask for keyboard and pointer permission."
+                : "This share cannot host remote control. Share the supported primary desktop and allow operating-system input permissions."
+            : null
+    };
     public event Action<RemoteControlStatus>? RemoteControlChanged;
 
     private void StartData(CancellationToken ct)
@@ -34,6 +44,7 @@ public sealed partial class NativeMediaSession
             {
                 await foreach (var item in incomingData.Reader.ReadAllAsync(ct))
                 {
+                    if(OperatingSystem.IsLinux() && ScreenSources.IsWayland && item.Packet.Type is "input" or "release") { await HandleWaylandInputAsync(item.Sender,item.Packet);continue; }
                     lock (remoteLock)
                     {
                         var (sender, packet) = item;
@@ -49,6 +60,7 @@ public sealed partial class NativeMediaSession
                         {
                             if (control.Controlling == sender) control.StopControlling();
                             if (control.Controller == sender) RevokeLocal();
+                            control.Deny(sender);
                         }
                         else if (packet.Type is "input" or "release" && canHost && control.Authorize(sender, packet))
                         {
@@ -62,7 +74,7 @@ public sealed partial class NativeMediaSession
                             }
                             continue;
                         }
-                        RemoteControlChanged?.Invoke(control.Status);
+                        RemoteControlChanged?.Invoke(CurrentControlStatus);
                     }
                 }
             }
@@ -76,13 +88,49 @@ public sealed partial class NativeMediaSession
                 await foreach (var item in outgoingData.Reader.ReadAllAsync(ct))
                 {
                     if (!Connected) continue;
-                    var data = JsonSerializer.SerializeToUtf8Bytes(item.Packet, ApiPayload.Json);
-                    LiveKitNative.Check(LiveKitNative.fu_send_data(room, item.Destination, data, data.Length), "data channel");
+                    try
+                    {
+                        var data = JsonSerializer.SerializeToUtf8Bytes(item.Packet, ApiPayload.Json);
+                        LiveKitNative.Check(LiveKitNative.fu_send_data(room, item.Destination, data, data.Length), "data channel");
+                    }
+                    catch when (!ct.IsCancellationRequested)
+                    {
+                        // A transient send failure must not permanently kill capability negotiation.
+                        // Discard failed input and revoke consent; never replay control packets.
+                        lock (remoteLock) { RevokeLocal(); control.StopControlling(); RemoteControlChanged?.Invoke(CurrentControlStatus); }
+                        Error?.Invoke("Remote control interrupted. Request permission again after the call reconnects.");
+                    }
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
-            catch { Error?.Invoke("The remote-control data channel stopped. Leave and rejoin the call."); lock (remoteLock) { RevokeLocal(); control.StopControlling(); RemoteControlChanged?.Invoke(control.Status); } }
+            catch { Error?.Invoke("The remote-control data channel stopped. Leave and rejoin the call."); lock (remoteLock) { RevokeLocal(); control.StopControlling(); RemoteControlChanged?.Invoke(CurrentControlStatus); } }
         });
+    }
+    private async Task HandleWaylandInputAsync(string sender,RemotePacket packet)
+    {
+        ScreenCastPortal? portal;long epoch;RemoteInput input;
+        lock(remoteLock)
+        {
+            if(!Connected||packet.Version!=1||!canHost||!control.Authorize(sender,packet)||packet.Input is not {} incoming)return;
+            lastInputTick=Environment.TickCount64;input=incoming;
+            if(packet.Type=="release")input=input with{Kind=3};
+            if(input.Kind==0){if(!RemoteControlPolicy.TryMapScreenPoint(input.X,input.Y,desktopWidth,desktopHeight,out var x,out var y))return;input=input with{X=x,Y=y};}
+            portal=waylandInput;epoch=waylandGrantEpoch;
+            if(portal==null)return; // A Wayland session never injects through X11/XTest.
+        }
+        try
+        {
+            if(await portal.ApplyInputAsync(input,epoch))return;
+        }
+        catch { Error?.Invoke("The desktop stopped remote input. Request permission again."); }
+        lock(remoteLock)
+        {
+            if(ReferenceEquals(portal,waylandInput)&&epoch==waylandGrantEpoch){RevokeLocal();if(!portal.CanControl){canHost=false;SendHello();}RemoteControlChanged?.Invoke(CurrentControlStatus);}
+        }
+    }
+    private void ReleaseHostedInput()
+    {
+        if(waylandInput!=null)_=waylandInput.ReleaseInputAsync();else if(room!=IntPtr.Zero)LiveKitNative.fu_release_input();
     }
     private void OnData(IntPtr sender, IntPtr data, int length)
     {
@@ -92,7 +140,7 @@ public sealed partial class NativeMediaSession
             var bytes = new byte[length]; Marshal.Copy(data, bytes, 0, length);
             var packet = JsonSerializer.Deserialize<RemotePacket>(bytes, ApiPayload.Json);
             if (packet != null && incomingData?.Writer.TryWrite((Marshal.PtrToStringUTF8(sender) ?? "", packet)) == false)
-            { lock (remoteLock) { RevokeLocal(); RemoteControlChanged?.Invoke(control.Status); } }
+            { lock (remoteLock) { RevokeLocal(); RemoteControlChanged?.Invoke(CurrentControlStatus); } }
         }
         catch { }
     }
@@ -112,18 +160,21 @@ public sealed partial class NativeMediaSession
         var controller = control.Controller;
         control.Revoke(); grantExpiry?.Dispose(); grantExpiry = null;
         inputLease?.Dispose(); inputLease = null;
-        if (room != IntPtr.Zero) LiveKitNative.fu_release_input();
+        waylandGrantEpoch=0;
+        if(waylandInput!=null)waylandInput.DisableInput();else if (room != IntPtr.Zero) LiveKitNative.fu_release_input();
         if (controller != null && Connected) outgoingData?.Writer.TryWrite((controller, new RemotePacket("revoke")));
     }
-    private void SetRemoteSharing(bool sharing, MediaDevices devices)
+    private void SetRemoteSharing(bool sharing, MediaDevices devices,ScreenCastPortal? portal=null)
     {
         lock (remoteLock)
         {
             var oldController = control.Controller;
             RevokeLocal(); control.Sharing(sharing);
-            canHost = sharing && devices.ShareSource == null && string.IsNullOrWhiteSpace(devices.Screen) && LiveKitNative.fu_input_supported() == 1 && LiveKitNative.fu_desktop_bounds(out desktopWidth, out desktopHeight) == 0;
+            waylandInput=sharing?portal:null;
+            canHost = sharing && portal==null && !(OperatingSystem.IsLinux()&&ScreenSources.IsWayland) && LiveKitNative.fu_input_supported() == 1 && LiveKitNative.fu_desktop_bounds(out desktopWidth, out desktopHeight) == 0 && RemoteControlPolicy.SupportsDesktopSource(devices,desktopWidth,desktopHeight);
+            if(OperatingSystem.IsLinux()&&ScreenSources.IsWayland&&sharing&&portal!=null){desktopWidth=portal.LogicalWidth;desktopHeight=portal.LogicalHeight;canHost=devices.AllowRemoteControl&&devices.ShareSource?.Kind==ScreenShareKind.Screen&&portal.CanControl;}
             if (oldController != null) QueuePacket(oldController, new RemotePacket("revoke"));
-            SendHello(); RemoteControlChanged?.Invoke(control.Status);
+            SendHello(); RemoteControlChanged?.Invoke(CurrentControlStatus);
         }
     }
     public Task RequestControlAsync(string identity)
@@ -132,7 +183,7 @@ public sealed partial class NativeMediaSession
         {
             if (!Connected) throw new InvalidOperationException("Join a call first.");
             if (control.Controlling is { } previous) { QueuePacket(previous, new RemotePacket("revoke")); control.StopControlling(); }
-            QueuePacket(identity, control.BeginRequest(identity)); RemoteControlChanged?.Invoke(control.Status);
+            QueuePacket(identity, control.BeginRequest(identity)); RemoteControlChanged?.Invoke(CurrentControlStatus);
         }
         return Task.CompletedTask;
     }
@@ -143,25 +194,26 @@ public sealed partial class NativeMediaSession
             if (!Connected || !canHost) throw new InvalidOperationException("Share your default desktop and enable operating-system input permissions first.");
             if (allow)
             {
+                if(waylandInput!=null)waylandGrantEpoch=waylandInput.EnableInput();
                 QueuePacket(identity, control.Approve(identity));
                 lastInputTick = Environment.TickCount64;
                 inputLease?.Dispose();
                 inputLease = new Timer(_ =>
                 {
                     lock (remoteLock)
-                        if (control.Controller != null && Environment.TickCount64 - lastInputTick > 1500) LiveKitNative.fu_release_input();
+                        if (control.Controller != null && Environment.TickCount64 - lastInputTick > 1500) ReleaseHostedInput();
                 }, null, TimeSpan.FromMilliseconds(250), TimeSpan.FromMilliseconds(250));
                 grantExpiry?.Dispose();
                 grantExpiry = new Timer(_ =>
                 {
                     lock (remoteLock)
                     {
-                        RevokeLocal(); QueuePacket(identity, new RemotePacket("revoke")); RemoteControlChanged?.Invoke(control.Status);
+                        RevokeLocal(); QueuePacket(identity, new RemotePacket("revoke")); RemoteControlChanged?.Invoke(CurrentControlStatus);
                     }
                 }, null, TimeSpan.FromMinutes(5), Timeout.InfiniteTimeSpan);
             }
             else { control.Deny(identity); QueuePacket(identity, new RemotePacket("deny")); }
-            RemoteControlChanged?.Invoke(control.Status);
+            RemoteControlChanged?.Invoke(CurrentControlStatus);
         }
         return Task.CompletedTask;
     }
@@ -173,7 +225,7 @@ public sealed partial class NativeMediaSession
             RevokeLocal(); control.StopControlling();
             if (controller != null) QueuePacket(controller, new RemotePacket("revoke"));
             if (controlling != null) QueuePacket(controlling, new RemotePacket("revoke"));
-            RemoteControlChanged?.Invoke(control.Status);
+            RemoteControlChanged?.Invoke(CurrentControlStatus);
         }
         return Task.CompletedTask;
     }
@@ -193,7 +245,7 @@ public sealed partial class NativeMediaSession
             if (kind == 1) { if (control.Controller == identity) RevokeLocal(); control.Remove(identity); }
             if (kind == 2) { RevokeLocal(); control.Clear(); }
             if (kind == 4 && Connected) SendHello(identity);
-            RemoteControlChanged?.Invoke(control.Status);
+            RemoteControlChanged?.Invoke(CurrentControlStatus);
         }
     }
 }

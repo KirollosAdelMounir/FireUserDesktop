@@ -18,23 +18,31 @@ internal static class MessageMenus
         MenuItem Async(string label, Func<Task> action) => new() { Header = label, Command = new AsyncRelayCommand(async () => { try { await action(); } catch (Exception ex) { model.SendError = ex.Message; } }) };
         if (!item.IsCall && item.Message.IsDeleted != true)
         {
+            var reactions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4 };
+            foreach (var (emoji, label) in new[] { ("👍", "Like"), ("❤️", "Love"), ("😂", "Laugh"), ("😢", "Sad"), ("😡", "Angry") })
+            {
+                var reaction = new Button { Content = emoji, FontSize = 22, FontFamily = new Avalonia.Media.FontFamily("Noto Color Emoji, Segoe UI Emoji, Apple Color Emoji"), Padding = new Avalonia.Thickness(7), Classes = { "quiet" } };
+                Avalonia.Automation.AutomationProperties.SetName(reaction, label);
+                reaction.Click += async (_, _) => { menu.Close(); try { await model.React(item, emoji); } catch (Exception error) { model.SendError = error.Message; } };
+                reactions.Children.Add(reaction);
+            }
+            menu.Items.Add(new MenuItem { Header = reactions, StaysOpenOnClick = true });
+            menu.Items.Add(new Separator());
             menu.Items.Add(Action("Reply", () => model.BeginReply(item)));
             if (item.HasText) menu.Items.Add(Async("Copy text", async () => { if (TopLevel.GetTopLevel(target)?.Clipboard is {} clipboard) await clipboard.SetTextAsync(item.Text); }));
             if (item.CanEdit) menu.Items.Add(Action("Edit message", () => model.BeginEdit(item)));
-            var reactions = new MenuItem { Header = "React" };
-            foreach (var (emoji, label) in new[] { ("👍", "Like"), ("❤️", "Love"), ("😂", "Laugh"), ("😢", "Sad"), ("😡", "Angry") })
-                reactions.Items.Add(Async(emoji + "  " + label, () => model.React(item, emoji)));
-            menu.Items.Add(reactions);
+
         }
         else if (item.CanJoinCall) menu.Items.Add(Async("Join call", async () => { if (model.Workspace != null) await model.Workspace.JoinExistingCallAsync(item.Message.CallSummary!.CallId); }));
         if (item.HasAttachments)
         {
             var download = new MenuItem { Header = "Download attachment" };
             foreach (var attachment in item.Attachments) download.Items.Add(new MenuItem { Header = attachment.FileName, Command = attachment.DownloadCommand });
+            menu.Items.Add(new MenuItem { Header = "Download All", Command = item.DownloadAllCommand });
             menu.Items.Add(download);
         }
         menu.Items.Add(new Separator());
-        menu.Items.Add(Action("Message details", () => ShowDetails(item, target)));
+        menu.Items.Add(Action("Message details", () => ShowDetails(model, item, target)));
         if (item.CanModify)
         {
             menu.Items.Add(new Separator());
@@ -48,12 +56,9 @@ internal static class MessageMenus
         }
         return menu;
     }
-    internal static void ShowDetails(ChatMessageItemViewModel item, Control target)
+    internal static void ShowDetails(ChatViewModel model, ChatMessageItemViewModel item, Control target)
     {
-        var detail = item.Seen ? "Read" : "Sent";
-        if (item.Message.TimeSeen is {} seen) detail += " · " + seen.ToLocalTime().ToString("f");
-        if (item.Message.SeenDetails is { Count: > 0 } receipts) detail += $"\nRead by {receipts.Count} people";
-        var window = new MessageDialog(new("Message details", $"{(item.IsMine ? "You" : item.Message.SenderName ?? "Participant")} · {item.TimeSent.ToLocalTime():f}", item.Text ?? item.CallLabel, detail));
+        var window = new MessageDetailsWindow(model.CreateMessageDetails(item));
         if (TopLevel.GetTopLevel(target) is Window owner) window.ShowDialog(owner); else window.Show();
     }
     internal static void Open(Control target, ContextMenu menu, bool atPointer)

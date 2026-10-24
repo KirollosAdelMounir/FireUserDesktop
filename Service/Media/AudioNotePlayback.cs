@@ -41,11 +41,22 @@ public static class AudioNotePlayback
             return task;
         }
     }
-    public static Task PlayAsync(string path, double start, Action<double> position, CancellationToken ct, double speed = 1) => Track(path, async token =>
+    public static Task PlayAsync(string path, double start, Action<double> position, CancellationToken ct, double speed = 1, Func<double>? volume = null, Action? started = null) => Track(path, async token =>
     {
         using var output = new NativeAudio.Output("", 48000, 1);
-        await DecodeAsync(path, start, output.Write, position, token, speed); return true;
+        var notified=false;
+        await DecodeAsync(path, start, pcm => { ApplyVolume(pcm, volume?.Invoke() ?? 1); output.Write(pcm); if(!notified){notified=true;started?.Invoke();} }, position, token, speed); return true;
     }, ct);
+    internal static void ApplyVolume(Span<byte> pcm, double volume)
+    {
+        var gain = double.IsFinite(volume) ? Math.Clamp(volume, 0, 1) : 0;
+        if (gain == 1) return;
+        for (var i = 0; i + 1 < pcm.Length; i += 2)
+        {
+            var sample = System.Buffers.Binary.BinaryPrimitives.ReadInt16LittleEndian(pcm.Slice(i, 2));
+            System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(pcm.Slice(i, 2), (short)(sample * gain));
+        }
+    }
     public static async Task StopAsync(string path)
     {
         Task task;

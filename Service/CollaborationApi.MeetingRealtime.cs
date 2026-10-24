@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.SignalR.Client;
 namespace UserIdentityDesktop.Service;
 public sealed partial class CollaborationApi
 {
+    private string? watchedMeeting;
     private HubConnection? meetingConnection;
     private CancellationTokenSource? meetingLifetime;
     private Task? meetingHeartbeat;
@@ -14,7 +15,7 @@ public sealed partial class CollaborationApi
     {
         await StopWatchingMeetingAsync();
         var connection = new HubConnectionBuilder().WithUrl(config.ServerUrl.TrimEnd('/') + "/meetinghub", options => options.AccessTokenProvider = () => Task.FromResult<string?>(auth.AccessToken)).WithAutomaticReconnect().Build();
-        meetingConnection = connection;
+        meetingConnection = connection; watchedMeeting = locator;
         meetingLifetime = new CancellationTokenSource();
         connection.On<string>("MeetingChanged", changed => { if (changed == locator) MeetingChanged?.Invoke(locator); });
         connection.Reconnected += async _ => { await connection.InvokeAsync("Watch", locator, (string?)null); MeetingChanged?.Invoke(locator); };
@@ -47,7 +48,7 @@ public sealed partial class CollaborationApi
         if (meetingHeartbeat != null) await meetingHeartbeat;
         meetingHeartbeat = null;
         if (meetingConnection != null) await meetingConnection.DisposeAsync();
-        meetingConnection = null;
+        meetingConnection = null; watchedMeeting = null;
         meetingLifetime?.Dispose(); meetingLifetime = null;
     }
 }

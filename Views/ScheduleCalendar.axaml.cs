@@ -29,7 +29,7 @@ public partial class ScheduleCalendar : UserControl
     public ScheduleCalendar()
     {
         InitializeComponent();
-        HourChoice.ItemsSource = Enumerable.Range(0, 24).Select(x => x.ToString("00")).ToArray();
+        UpdateHours();
         MinuteChoice.ItemsSource = Enumerable.Range(0, 60).Select(x => x.ToString("00")).ToArray();
         HourChoice.SelectedIndex = 9; MinuteChoice.SelectedIndex = 0;
         var names = new[] { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
@@ -94,13 +94,14 @@ public partial class ScheduleCalendar : UserControl
                 {
                     BorderBrush = new Avalonia.Media.SolidColorBrush(color), BorderThickness = new Thickness(3, 0, 0, 0),
                     Background = new Avalonia.Media.SolidColorBrush(color, 0.14), CornerRadius = new CornerRadius(4), Padding = new Thickness(4, 2),
-                    Child = new TextBlock { Text = $"{item.StartUtc.ToLocalTime():HH:mm} {item.Title}", FontSize = 10, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis }
+                    Child = new TextBlock { Text = $"{WorkClock.Time(item.StartUtc.ToLocalTime())} {item.Title}", FontSize = 10, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis }
                 });
             }
             if (items.Length > 3) stack.Children.Add(new TextBlock { Text = $"+{items.Length - 3} more", FontSize = 10 });
             days[i].Tag = date; days[i].Content = stack;
             days[i].Classes.Set("outside", date.Month != selected.Month);
             days[i].Classes.Set("selected", date == selected);
+            days[i].Classes.Set("today", date == DateTime.Today);
             Avalonia.Automation.AutomationProperties.SetName(days[i], $"{date:D}, {items.Length} scheduled items");
         }
         SelectedDayTitle.Text = selected.ToString("dddd, d MMMM");
@@ -111,7 +112,7 @@ public partial class ScheduleCalendar : UserControl
             var from = selected.AddHours(hour);
             var items = entries.Where(x => x.StartUtc.ToLocalTime() < from.AddHours(1) && x.EndUtc.ToLocalTime() > from).ToArray();
             var row = new Grid { ColumnDefinitions = new ColumnDefinitions("72,*"), MinHeight = 48 };
-            var label = new Button { Content = from.ToString("HH:mm"), HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch };
+            var label = new Button { Content = WorkClock.Time(from), HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch };
             label.Click += (_, _) => HourChoice.SelectedIndex = at;
             row.Children.Add(label);
             Control content;
@@ -121,11 +122,13 @@ public partial class ScheduleCalendar : UserControl
                 create.Click += (_, _) => CreateScheduleRequested?.Invoke(selected, TimeSpan.FromHours(at));
                 content = create;
             }
-            else content = new TextBlock { Text = string.Join(" · ", items.Take(5).Select(x => $"{x.StartUtc.ToLocalTime():HH:mm}–{x.EndUtc.ToLocalTime():HH:mm} {x.Title}")) + (items.Length > 5 ? $" · +{items.Length - 5} more" : ""), TextWrapping = Avalonia.Media.TextWrapping.Wrap, Margin = new Thickness(12, 8), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+            else content = new TextBlock { Text = string.Join(" · ", items.Take(5).Select(x => $"{WorkClock.Time(x.StartUtc.ToLocalTime())}–{WorkClock.Time(x.EndUtc.ToLocalTime())} {x.Title}")) + (items.Length > 5 ? $" · +{items.Length - 5} more" : ""), TextWrapping = Avalonia.Media.TextWrapping.Wrap, Margin = new Thickness(12, 8), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
             Grid.SetColumn(content, 1); row.Children.Add(content); HourlyAgenda.Children.Add(row);
         }
     }
 
+    private void UpdateHours(){var hour=HourChoice.SelectedIndex;HourChoice.ItemsSource=Enumerable.Range(0,24).Select(x=>WorkClock.Time(DateTime.Today.AddHours(x))).ToArray();HourChoice.SelectedIndex=hour;}
+    private void ClockChanged(object? sender,System.ComponentModel.PropertyChangedEventArgs e){if(e.PropertyName==nameof(UserIdentityDesktop.ViewModels.ClockDisplaySettings.TwelveHour)){UpdateHours();RefreshDays();}}
     private void Create_Click(object? sender, RoutedEventArgs e) =>
         CreateScheduleRequested?.Invoke(FocusDate?.Date ?? DateTime.Today, new TimeSpan(Math.Max(0, HourChoice.SelectedIndex), Math.Max(0, MinuteChoice.SelectedIndex), 0));
 
@@ -145,12 +148,15 @@ public partial class ScheduleCalendar : UserControl
     {
         base.OnAttachedToVisualTree(e);
         attached = true;
+        UserIdentityDesktop.ViewModels.ClockDisplaySettings.Shared.PropertyChanged+=ClockChanged;
+        UpdateHours();
         if (observed != null) { observed.CollectionChanged -= ItemsChanged; observed.CollectionChanged += ItemsChanged; }
         RefreshDays();
     }
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         attached = false;
+        UserIdentityDesktop.ViewModels.ClockDisplaySettings.Shared.PropertyChanged-=ClockChanged;
         if (observed != null) observed.CollectionChanged -= ItemsChanged;
         base.OnDetachedFromVisualTree(e);
     }

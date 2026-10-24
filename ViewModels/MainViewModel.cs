@@ -28,8 +28,10 @@ public partial class MainViewModel : ViewModelBase
     private readonly ICollaborationApi _collaboration;
     private readonly INativeMediaSession _media;
 
-    [ObservableProperty]
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(Chat)), NotifyPropertyChangedFor(nameof(IsChatView))]
     private ViewModelBase _currentView;
+
+    public ChatViewModel? Chat => _chatViewModel ?? (CurrentView as WorkspaceViewModel)?.Chat;
 
     public bool IsChatView => CurrentView is WorkspaceViewModel;
 
@@ -140,6 +142,7 @@ public partial class MainViewModel : ViewModelBase
     private void SetCurrentView(ViewModelBase viewModel)
     {
         CurrentView = viewModel;
+        OnPropertyChanged(nameof(Chat));
         OnPropertyChanged(nameof(IsChatView));
         OnPropertyChanged(nameof(IdentitySearchText));
         OnPropertyChanged(nameof(ShowSearchDropdown));
@@ -207,6 +210,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     public void ToggleTheme()
     {
+        if(_workspace is {} workspace){workspace.Appearance.Brightness=workspace.Appearance.Brightness<50?100:0;return;}
         IsDarkMode = !IsDarkMode;
         _configService.IsDarkMode = IsDarkMode;
         ApplyTheme(IsDarkMode);
@@ -216,7 +220,7 @@ public partial class MainViewModel : ViewModelBase
     {
         if (Avalonia.Application.Current != null)
         {
-            Avalonia.Application.Current.RequestedThemeVariant = isDark ? ThemeVariant.Dark : ThemeVariant.Light;
+            NativeAppearance.Apply(isDark?0:100);
         }
     }
 }

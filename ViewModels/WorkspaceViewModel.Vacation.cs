@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using UserIdentityDesktop.Core.Models;
@@ -71,7 +72,45 @@ public partial class WorkspaceViewModel
         if (selectedId != (SelectedCalendarPerson?.Id ?? auth.CurrentUser!.Id)) OnInvalidated();
     }
     [ObservableProperty] private DateTimeOffset? _vacationStart = DateTimeOffset.Now.Date.AddDays(1);
-    [ObservableProperty] private string _vacationDays = "1";
+    [ObservableProperty] private string _vacationDays = "0";
+    [ObservableProperty] private DateTimeOffset? _vacationEnd = DateTimeOffset.Now.Date.AddDays(1);
+    [ObservableProperty] private bool _vacationReady;
+    [ObservableProperty] private string _vacationInstructions = "Choose dates to check your work schedule and leave policy.";
+    public int VacationBalanceYear => VacationStart?.Year ?? DateTime.Now.Year;
+    private long vacationDraftVersion;
+    private string? reviewedVacationDraft;
+    partial void OnVacationEndChanged(DateTimeOffset? value) => InvalidateVacation();
+    private void InvalidateVacation()
+    {
+        VacationReview = null; VacationDays = "0"; reviewedVacationDraft = null;
+        OnPropertyChanged(nameof(VacationBalanceYear));
+        _ = CalculateVacation(++vacationDraftVersion);
+    }
+    private async Task CalculateVacation(long version)
+    {
+        try
+        {
+            if (VacationStart == null || VacationEnd == null || VacationEnd.Value.Date < VacationStart.Value.Date) { VacationReady = false; VacationInstructions = "Choose an end date on or after the start date."; return; }
+            var draft = RangeDraft(); var key = RangeDraftKey();
+            var readiness = await api.VacationReadinessAsync(auth.CurrentUser!.Id, draft.Start, lifetime.Token);
+            if (version != vacationDraftVersion || disposed) return;
+            VacationReady = readiness?.Ready == true; VacationInstructions = readiness?.Instructions ?? "";
+            if (!VacationReady) return;
+            var review = await api.PreviewVacationRangeAsync(auth.CurrentUser!.Id, draft.Start, draft.End, VacationReason, lifetime.Token);
+            if (version != vacationDraftVersion || key != RangeDraftKey() || disposed) return;
+            VacationReview = review; reviewedVacationDraft = key;
+            VacationDays = (review?.Shifts.Sum(x => x.Days) ?? 0).ToString("0.##", System.Globalization.CultureInfo.CurrentCulture);
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
+        catch (Exception ex) { if (version == vacationDraftVersion) { VacationReview = null; VacationReady = false; VacationInstructions = ex.Message; } }
+    }
+    private (DateOnly Start, DateOnly End) RangeDraft()
+    {
+        if (VacationStart == null || VacationEnd == null || VacationEnd.Value.Date < VacationStart.Value.Date) throw new InvalidOperationException("Choose valid start and end dates.");
+        return (DateOnly.FromDateTime(VacationStart.Value.Date), DateOnly.FromDateTime(VacationEnd.Value.Date));
+    }
+    private string RangeDraftKey() => $"{VacationStart:yyyy-MM-dd}|{VacationEnd:yyyy-MM-dd}|{VacationReason}";
+
     [ObservableProperty] private string _vacationReason = "";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(VacationShifts)), NotifyPropertyChangedFor(nameof(VacationBalances)), NotifyPropertyChangedFor(nameof(VacationFormCommand))] private VacationPreview? _vacationReview;
     public System.Windows.Input.ICommand VacationFormCommand => VacationReview == null ? PreviewVacationCommand : SubmitVacationCommand;
@@ -83,11 +122,11 @@ public partial class WorkspaceViewModel
     public bool CanApproveVacation => SelectedVacation?.State == 0 && ReviewsSelectedVacation;
     public bool CanWithdrawVacation => SelectedVacation is { State: 0 } request && request.UserId == auth.CurrentUser?.Id;
     public bool CanRequestVacationCancellation => SelectedVacation is { State: 1 } request && request.UserId == auth.CurrentUser?.Id;
-    public bool CanConfirmVacationCancellation => SelectedVacation?.State == 4 && ReviewsSelectedVacation;
+    public bool CanConfirmVacationCancellation => false;
     partial void OnSelectedVacationChanged(VacationRequest? value) => NotifyVacationActions();
     private void NotifyVacationActions()
     {
-        OnPropertyChanged(nameof(CanApproveVacation)); OnPropertyChanged(nameof(CanWithdrawVacation));
+        OnPropertyChanged(nameof(CanApproveVacation));OnPropertyChanged(nameof(CanApproveNotificationVacation)); OnPropertyChanged(nameof(CanWithdrawVacation));
         OnPropertyChanged(nameof(CanRequestVacationCancellation)); OnPropertyChanged(nameof(CanConfirmVacationCancellation));
         DecideVacationCommand.NotifyCanExecuteChanged();
     }
@@ -102,25 +141,23 @@ public partial class WorkspaceViewModel
     [ObservableProperty] private bool _vacationsHaveMore;
     private int vacationPage = 1;
     public ObservableCollection<VacationRequest> Vacations { get; } = new();
-    partial void OnVacationStartChanged(DateTimeOffset? value) => VacationReview = null;
-    partial void OnVacationDaysChanged(string value) => VacationReview = null;
-    partial void OnVacationReasonChanged(string value) => VacationReview = null;
-    private (DateOnly Start, int Days) VacationDraft()
-    {
-        if (VacationStart == null || !int.TryParse(VacationDays, out var days) || days < 1) throw new InvalidOperationException("Choose a start date and a positive number of working days.");
-        return (DateOnly.FromDateTime(VacationStart.Value.Date), days);
-    }
+    partial void OnVacationStartChanged(DateTimeOffset? value) => InvalidateVacation();
+
+    partial void OnVacationReasonChanged(string value) => InvalidateVacation();
     [RelayCommand] private Task PreviewVacationAsync() => Work(async () =>
     {
-        VacationReview = null; var draft = VacationDraft();
-        VacationReview = await api.PreviewVacationAsync(auth.CurrentUser!.Id, draft.Start, draft.Days, VacationReason, lifetime.Token);
+        await CalculateVacation(++vacationDraftVersion);
+        if (VacationReview is {} review) await Confirm("Review vacation", VacationDetails(review));
     });
+    private string VacationDetails(VacationPreview review) => $"{VacationStart:d} – {VacationEnd:d}\n{VacationDays} working days\n{VacationReason}\n" + string.Join("\n", review.Shifts.Select(x => x.Label)) + "\n" + string.Join("\n", review.Balances.Select(x => x.Label));
     [RelayCommand] private Task SubmitVacationAsync() => Work(async () =>
     {
-        var review = VacationReview ?? throw new InvalidOperationException("Preview your working shifts and balance first."); var draft = VacationDraft();
-        await api.SubmitVacationAsync(auth.CurrentUser!.Id, draft.Start, draft.Days, VacationReason, review.PreviewToken, lifetime.Token);
-        VacationReview = null; Feedback = "Vacation request submitted. Pending manager approval."; vacationPage = 1; if (!IsVacationTab) await LoadVacations(); await RefreshAsync();
-        SubmissionCompleted?.Invoke(WorkspaceFormKind.Vacation, "Vacation request submitted. Pending manager approval.");
+        var review = VacationReview ?? throw new InvalidOperationException("Preview your working shifts and balance first."); var draft = RangeDraft();
+        if (!VacationReady || reviewedVacationDraft != RangeDraftKey()) throw new InvalidOperationException("Review the current dates and reason before submitting.");
+        if (!await Confirm("Submit vacation request", VacationDetails(review))) return;
+        await api.SubmitVacationRangeAsync(auth.CurrentUser!.Id, draft.Start, draft.End, VacationReason, review.PreviewToken, lifetime.Token);
+        VacationReview = null; reviewedVacationDraft = null; Feedback = "Vacation request submitted. The reporting policy determines approval."; vacationPage = 1; if (!IsVacationTab) await LoadVacations(); await RefreshAsync();
+        SubmissionCompleted?.Invoke(WorkspaceFormKind.Vacation, Feedback);
     });
     [RelayCommand] private Task RefreshVacationsAsync() => Work(async () => { vacationPage = 1; await LoadVacations(); });
     [RelayCommand] private Task MoreVacationsAsync() => Work(async () => { if (VacationsHaveMore) { vacationPage++; await LoadVacations(); } });
@@ -129,12 +166,15 @@ public partial class WorkspaceViewModel
         var page = await api.VacationsAsync(vacationPage, lifetime.Token);
         if (page == null) return;
         var selectedId = SelectedVacation?.Id;
-        if (vacationPage == 1) Vacations.Clear(); foreach (var item in page.Requests) Vacations.Add(item); VacationsHaveMore = page.HasMore;
+        if (vacationPage == 1) Vacations.Clear(); foreach (var item in page.Requests) { item.RequesterName=await Chat.GetPersonNameAsync(item.UserId) ?? "Employee name unavailable";Vacations.Add(item); } VacationsHaveMore = page.HasMore;
         SelectedVacation = Vacations.FirstOrDefault(item => item.Id == selectedId);
     }
     [RelayCommand(CanExecute = nameof(CanDecideVacation))] private Task DecideVacationAsync(string? action) => Work(async () =>
     {
         if (SelectedVacation == null || action == null || !CanDecideVacation(action)) throw new InvalidOperationException("This action is not available for the selected request.");
-        await api.DecideVacationAsync(SelectedVacation, action, lifetime.Token); vacationPage = 1; if (!IsVacationTab) await LoadVacations(); await RefreshAsync();
+        var request = SelectedVacation;
+        var requester=await Chat.GetPersonNameAsync(request.UserId) ?? request.RequesterName;
+        if (!await Confirm(action == "RequestCancellation" ? "Cancel vacation" : action + " vacation", $"Employee: {requester}\n{request.RequestedDays} working days\n{request.Reason}\nStatus: {request.StateLabel}" + (action == "RequestCancellation" ? "\nCancellation takes effect immediately and notifies your reporting line." : ""))) return;
+        await api.DecideVacationAsync(request, action, lifetime.Token); vacationPage = 1; if (!IsVacationTab) await LoadVacations(); await RefreshAsync();
     });
 }

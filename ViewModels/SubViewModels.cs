@@ -37,6 +37,11 @@ public partial class RecipientItemViewModel : ObservableObject
 
     [ObservableProperty]
     private string? _lastMessage;
+    [ObservableProperty] private int _attachmentsCount;
+    public bool HasPreviewAttachments => AttachmentsCount > 0;
+    public string PreviewText => string.IsNullOrWhiteSpace(LastMessage) && HasPreviewAttachments ? "Attachments" : LastMessage ?? "";
+    partial void OnLastMessageChanged(string? value) => OnPropertyChanged(nameof(PreviewText));
+    partial void OnAttachmentsCountChanged(int value) { OnPropertyChanged(nameof(PreviewText)); OnPropertyChanged(nameof(HasPreviewAttachments)); }
 
     [ObservableProperty]
     private DateTime _lastSent;
@@ -56,7 +61,7 @@ public partial class RecipientItemViewModel : ObservableObject
     [ObservableProperty]
     private UserStatus _status = UserStatus.Offline;
 
-    public string StatusLabel => ChatViewModel.GetStatusLabel(Status);
+    public string StatusLabel => IsGroup ? "Group conversation" : ChatViewModel.GetStatusLabel(Status);
     public IBrush StatusColor => ChatViewModel.GetStatusColor(Status);
 
     public string Initials
@@ -80,6 +85,7 @@ public partial class RecipientItemViewModel : ObservableObject
             ConversationId = dto.ConversationId,
             ReceiverName = dto.ReceiverName,
             LastMessage = dto.LastMessage,
+            AttachmentsCount = dto.AttachmentsCount,
             LastSent = dto.LastSent,
             IsSeen = dto.IsSeen
         };
@@ -99,6 +105,10 @@ public partial class ChatAttachmentItemViewModel : ObservableObject
     private readonly IImageService _imageService;
 
     public ChatAttachment Attachment { get; }
+    internal string? ReceiptMessageId { get; init; }
+    internal bool CanReportPlayback { get; init; }
+    internal Task ReportPlaybackStartedAsync() => CanReportPlayback && IsAudio && ReceiptMessageId is {} id
+        ? _chatService.MarkAttachmentPlayedAsync(id, Attachment.Id) : Task.CompletedTask;
 
     [ObservableProperty]
     private Bitmap? _thumbnail;
@@ -124,10 +134,8 @@ public partial class ChatAttachmentItemViewModel : ObservableObject
         _fileService = fileService;
         _imageService = imageService;
 
-        if (IsImage)
-        {
-            _ = LoadThumbnailAsync();
-        }
+        // Authenticated previews are loaded only by an attached preview surface.
+
     }
 
     private async Task LoadThumbnailAsync()
@@ -135,16 +143,35 @@ public partial class ChatAttachmentItemViewModel : ObservableObject
         Thumbnail = await _imageService.GetAttachmentThumbnailAsync(Attachment.Id);
     }
 
-    public async Task<string> PrepareAudioPlaybackAsync()
+    public async Task<string> PrepareAudioPlaybackAsync(System.Threading.CancellationToken cancellationToken = default)
     {
         if (!IsAudio) throw new InvalidOperationException("This attachment is not audio.");
-        var path = Path.Combine(Path.GetTempPath(), "fireuser-audio-" + Guid.NewGuid().ToString("N") + Path.GetExtension(FileName));
+        return await PreparePreviewAsync(cancellationToken);
+    }
+
+    internal ITransferTracker? Transfers => _chatService.Transfers;
+    internal long? TransferSize
+    {
+        get
+        {
+            var size = Attachment.Encryption?.Size ?? Attachment.FileSize;
+            if (size < 0) return null;
+            if (Attachment.Encryption is not {} file) return size;
+            if (file.ChunkSize <= 0) return null;
+            try { return checked(size + 16 * Math.Max(1, size / file.ChunkSize + (size % file.ChunkSize == 0 ? 0 : 1))); }
+            catch (OverflowException) { return null; }
+        }
+    }
+
+    public async Task<string> PreparePreviewAsync(System.Threading.CancellationToken cancellationToken = default, IProgress<long>? progress = null)
+    {
+        var path = Path.Combine(Path.GetTempPath(), "fireuser-preview-" + Guid.NewGuid().ToString("N") + Path.GetExtension(FileName));
         var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
         if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
         using (new FileStream(path, options)) { }
         try
         {
-            if (!await _chatService.SaveAttachmentToFileAsync(Attachment.Id, path, Attachment.Encryption)) throw new IOException("Unable to load this audio attachment.");
+            if (!await _chatService.SaveAttachmentToFileAsync(Attachment.Id, path, Attachment.Encryption, cancellationToken, progress)) throw new IOException("Unable to load this attachment.");
             return path;
         }
         catch { File.Delete(path); throw; }
@@ -162,11 +189,11 @@ public partial class ChatAttachmentItemViewModel : ObservableObject
             var savePath = await _fileService.PickSaveFileAsync(Attachment.FileName, "Save Attachment");
             if (!string.IsNullOrEmpty(savePath))
             {
-                var success = await _chatService.SaveAttachmentToFileAsync(Attachment.Id, savePath, Attachment.Encryption);
-                if (success)
-                {
-                    _fileService.OpenFileWithDefaultApp(savePath);
-                }
+                using var transfer = Transfers?.Start(TransferDirection.Download, 1, TransferSize);
+                var success = await _chatService.SaveAttachmentToFileAsync(Attachment.Id, savePath, Attachment.Encryption, default, transfer);
+                if (success) transfer?.FileCompleted();
+                transfer?.Complete(success);
+                if (!success) throw new IOException("Unable to download this attachment.");
             }
         }
         catch (Exception ex)
@@ -182,6 +209,8 @@ public partial class ChatAttachmentItemViewModel : ObservableObject
 
 public partial class ChatMessageItemViewModel : ObservableObject
 {
+    private readonly IFileService fileService;
+    [ObservableProperty] private string? _attachmentError;
     public ChatMessage Message { get; }
     public bool IsMine { get; }
     public bool IsIncoming => !IsMine && IsNew;
@@ -210,7 +239,9 @@ public partial class ChatMessageItemViewModel : ObservableObject
     public bool Edited => Message.IsEdited == true;
     public DateTime TimeSent => Message.TimeSent;
     public bool HasText => !string.IsNullOrWhiteSpace(Text);
+    public bool HasBubble => HasText || HasReply;
     public bool HasAttachments => Attachments.Count > 0;
+    public string AttachmentSummary => $"{Attachments.Count} " + (Attachments.All(x => x.IsImage) ? "photos" : Attachments.All(x => x.IsVideo) ? "videos" : Attachments.All(x => x.IsAudio) ? "audio files" : "attachments");
 
     public ObservableCollection<ChatAttachmentItemViewModel> Attachments { get; } = new();
 
@@ -222,6 +253,7 @@ public partial class ChatMessageItemViewModel : ObservableObject
         IImageService imageService,
         bool isNew = false)
     {
+        this.fileService = fileService;
         Message = message;
         IsMine = isMine;
         _isNew = isNew;
@@ -231,9 +263,21 @@ public partial class ChatMessageItemViewModel : ObservableObject
         {
             foreach (var att in message.Attachments)
             {
-                Attachments.Add(new ChatAttachmentItemViewModel(att, chatService, fileService, imageService));
+                Attachments.Add(new ChatAttachmentItemViewModel(att, chatService, fileService, imageService) { ReceiptMessageId=message.MessageId, CanReportPlayback=!isMine && !message.SuppressReadReceipts });
             }
         }
+    }
+
+    [RelayCommand]
+    public async Task DownloadAllAsync()
+    {
+        AttachmentError = null;
+        try
+        {
+            var destination = await fileService.PickSaveFileAsync("Attachments.zip", "Download All");
+            if (destination != null) await AttachmentArchive.SaveAsync(Attachments, destination);
+        }
+        catch (Exception error) { AttachmentError = error.Message; }
     }
 
     partial void OnIsNewChanged(bool value)
