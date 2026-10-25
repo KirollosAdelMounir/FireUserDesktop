@@ -6,6 +6,7 @@ using System.Threading.Channels;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using UserIdentityDesktop.Core.Models;
 using UserIdentityDesktop.ViewModels;
 
@@ -14,16 +15,21 @@ namespace UserIdentityDesktop.Views;
 /// <summary>A dedicated message loop routes system keys without waiting for video rendering.</summary>
 internal sealed class RemoteKeyboardCapture : IDisposable
 {
-    private sealed record Route(IntPtr Window,string Target,WorkspaceViewModel Model);
+    private sealed record Route(IntPtr Window,string Target,WorkspaceViewModel Model,long Epoch,long Generation);
     private readonly CallWindow window;
     private readonly Hook callback;
     private readonly HashSet<int> held=new();
     private readonly object routeLock=new();
     private Route? route;
     private readonly Thread? worker;
+    private PlatformKeyboardCapture? platform;
+    private readonly DispatcherTimer lease=new(){Interval=TimeSpan.FromMilliseconds(200)};
+    private long generation,expires;
     private readonly Channel<(Route Route,RemoteInput Input,bool Release)> keys=Channel.CreateBounded<(Route,RemoteInput,bool)>(64);
     private Task keySender=Task.CompletedTask;
-    internal Task Completion=>keySender;
+    internal Task Completion=>Task.WhenAll(keySender,platform?.Completion??Task.CompletedTask);
+    internal bool Capturing {get{lock(routeLock)return route!=null && (OperatingSystem.IsWindows()?hook!=IntPtr.Zero:platformStatus is 1 or 2);}}
+    private int platformStatus,lastNotice;
     private IntPtr hook;
     private uint threadId;
     private int disposed;
@@ -46,11 +52,12 @@ internal sealed class RemoteKeyboardCapture : IDisposable
     {
         this.window=window;callback=Handle;
         window.Activated+=Activated;window.Deactivated+=Deactivated;window.GotFocus+=FocusChanged;window.LostFocus+=FocusChanged;
-        if(!OperatingSystem.IsWindows())return;
+        keySender=Task.Run(DeliverKeys);
+        lease.Tick+=(_,_)=>Refresh();lease.Start();
+        if(!OperatingSystem.IsWindows()){Refresh();return;}
         var handle=window.TryGetPlatformHandle()?.Handle??IntPtr.Zero;
         // Headless windows never install a hook or observe real keyboard activity.
         if(handle==IntPtr.Zero||IsWindow(handle)==0)return;
-        keySender=Task.Run(DeliverKeys);
         worker=new Thread(Run){IsBackground=true,Name="Fire User remote keyboard"};worker.Start();Refresh();
     }
     private void Run()
@@ -70,12 +77,56 @@ internal sealed class RemoteKeyboardCapture : IDisposable
     private void FocusChanged(object? sender,RoutedEventArgs e)=>Refresh();
     internal void Refresh()
     {
-        if(worker==null)return;
-        var view=window.FocusManager?.GetFocusedElement() as NativeVideoView;
-        var next=CanRoute(window.IsActive,true,view?.IsFocused==true,view?.RemoteControlEnabled==true)&&view?.Frame is {} frame&&window.DataContext is WorkspaceViewModel vm
-            ?new Route(window.TryGetPlatformHandle()?.Handle??IntPtr.Zero,frame.Identity,vm):null;
+        if(Volatile.Read(ref disposed)!=0)return;
+        var vm=window.DataContext as WorkspaceViewModel;
+        var handle=window.TryGetPlatformHandle();
+        var enabled=window.IsActive && vm?.ControlledScreen is not null && handle?.Handle!=IntPtr.Zero;
+        Route? next=null;
+        lock(routeLock)
+        {
+            if(enabled && vm!.ControlledScreen is {} screen)
+                next=route is {} old && old.Target==screen.Identity && old.Model==vm && old.Epoch==vm.RemoteInputEpoch
+                    ?old:new(handle!.Handle,screen.Identity,vm,vm.RemoteInputEpoch,++generation);
+        }
         SetRoute(next);
+        Volatile.Write(ref expires,Environment.TickCount64+750);
+        if(!OperatingSystem.IsWindows() && next!=null && platform==null && handle?.HandleDescriptor is "XID" or "NSWindow")
+        {
+            try{platform=new PlatformKeyboardCapture(handle.Handle,NativeKey);}
+            catch(DllNotFoundException){platformStatus=-1;}
+            catch(EntryPointNotFoundException){platformStatus=-1;}
+        }
+        if(platform!=null)
+        {
+            platformStatus=platform.Update(next!=null,next?.Generation??0);
+            if(next!=null && platformStatus!=lastNotice && platformStatus<0)
+            {
+                next.Model.Feedback=platformStatus==-2?"Allow Fire User in macOS Accessibility settings to forward system shortcuts.":platformStatus==-3?"Keyboard capture was released. Request remote control again.":"System shortcut capture is unavailable on this desktop; in-window keys still work.";
+                lastNotice=platformStatus;
+            }
+            if(platformStatus==-3 && next!=null){SetRoute(null);next.Model.EmergencyRemoteStop();}
+        }
     }
+    private void NativeKey(long epoch,int code,bool down)
+    {
+        lock(routeLock)
+        {
+            if(route is not {} current || current.Generation!=epoch)return;
+            if(code<0){Enqueue(current,new(current.Target,3),true);held.Clear();return;}
+            RouteKey(current,code,down);
+        }
+    }
+    private void RouteKey(Route current,int key,bool down)
+    {
+        var ctrl=held.Contains(224)||held.Contains(228);
+        var alt=held.Contains(226)||held.Contains(230);
+        var clipboard=ctrl || OperatingSystem.IsMacOS()&&(held.Contains(227)||held.Contains(231));
+        if(down)held.Add(key);else held.Remove(key);
+        if(ctrl&&alt&&key==41){Enqueue(current,new(current.Target,3),true);held.Clear();route=null;current.Model.EmergencyRemoteStop();}
+        else if(clipboard&&key is 6 or 25){if(down)Enqueue(current,new(current.Target,key==6?4:5));}
+        else if(key!=0)Enqueue(current,new(current.Target,2,Code:key,Down:down));
+    }
+
     private void SetRoute(Route? next)
     {
         lock(routeLock)
@@ -87,7 +138,7 @@ internal sealed class RemoteKeyboardCapture : IDisposable
     }
     private bool Enqueue(Route target,RemoteInput input,bool release=false)
     {
-        if(keys.Writer.TryWrite((target,input,release)))return true;
+        if(keys.Writer.TryWrite((target,input with {ControlEpoch=target.Epoch},release)))return true;
         target.Model.EmergencyRemoteStop();held.Clear();route=null;
         return false;
     }
@@ -98,15 +149,15 @@ internal sealed class RemoteKeyboardCapture : IDisposable
             await foreach(var key in keys.Reader.ReadAllAsync())
             {
                 bool current;
-                lock(routeLock)current=route==key.Route&&GetForegroundWindow()==key.Route.Window;
+                lock(routeLock)current=route==key.Route&&Environment.TickCount64<Volatile.Read(ref expires)&&(!OperatingSystem.IsWindows()||GetForegroundWindow()==key.Route.Window);
                 if(current||key.Release)key.Route.Model.ForwardRemoteKeyboard(key.Input);
             }
         }
         catch{lock(routeLock)route?.Model.EmergencyRemoteStop();}
     }
     internal static bool CanRoute(bool active,bool foreground,bool focused,bool granted)=>active&&foreground&&focused&&granted;
-    internal static int MapKey(int key)=>key is >=65 and <=90?4+key-65:key is >=49 and <=57?30+key-49:key is >=112 and <=123?58+key-112
-        :key switch{48=>39,13=>40,27=>41,8=>42,9=>43,32=>44,189=>45,187=>46,219=>47,221=>48,220=>49,186=>51,222=>52,192=>53,188=>54,190=>55,191=>56,46=>76,39=>79,37=>80,40=>81,38=>82,17 or 162=>224,163=>228,16 or 160=>225,161=>229,164=>226,165=>230,91=>227,92=>231,_=>0};
+    internal static int MapKey(int key)=>key is >=65 and <=90?4+key-65:key is >=49 and <=57?30+key-49:key is >=112 and <=123?58+key-112:key is >=124 and <=135?104+key-124:key is >=97 and <=105?89+key-97
+        :key switch{20=>57,44=>70,145=>71,19=>72,45=>73,36=>74,33=>75,35=>77,34=>78,144=>83,111=>84,106=>85,109=>86,107=>87,96=>98,110=>99,226=>100,93=>101,48=>39,13=>40,27=>41,8=>42,9=>43,32=>44,189=>45,187=>46,219=>47,221=>48,220=>49,186=>51,222=>52,192=>53,188=>54,190=>55,191=>56,46=>76,39=>79,37=>80,40=>81,38=>82,17 or 162=>224,163=>228,16 or 160=>225,161=>229,164=>226,165=>230,91=>227,92=>231,_=>0};
     private IntPtr Handle(int code,IntPtr message,IntPtr data)
     {
         if(code<0)return CallNextHookEx(hook,code,message,data);
@@ -115,17 +166,14 @@ internal sealed class RemoteKeyboardCapture : IDisposable
             lock(routeLock)
             {
                 var current=route;
-                if(current==null||GetForegroundWindow()!=current.Window){held.Clear();return CallNextHookEx(hook,code,message,data);}
+                if(current==null||Environment.TickCount64>=Volatile.Read(ref expires)||GetForegroundWindow()!=current.Window){SetRoute(null);return CallNextHookEx(hook,code,message,data);}
                 var keyboard=Marshal.PtrToStructure<Keyboard>(data);
                 // An injected event must never be forwarded back into another control session.
                 if((keyboard.Flags&0x10)!=0)return new IntPtr(1);
-                var key=MapKey((int)keyboard.Key);if(key==0)return CallNextHookEx(hook,code,message,data);
+                var key=MapKey((int)keyboard.Key);
+                if(key==40&&(keyboard.Flags&1)!=0)key=88;
                 var down=message.ToInt64() is 0x100 or 0x104;
-                var ctrl=held.Contains(224)||held.Contains(228);var alt=held.Contains(226)||held.Contains(230);
-                if(down)held.Add(key);else held.Remove(key);
-                if(ctrl&&alt&&key==41){held.Clear();current.Model.EmergencyRemoteStop();}
-                else if(ctrl&&key is 6 or 25){if(down)Enqueue(current,new(current.Target,key==6?4:5));}
-                else Enqueue(current,new(current.Target,2,Code:key,Down:down));
+                RouteKey(current,key,down);
                 return new IntPtr(1);
             }
         }
@@ -134,9 +182,9 @@ internal sealed class RemoteKeyboardCapture : IDisposable
     public void Dispose()
     {
         if(Interlocked.Exchange(ref disposed,1)!=0)return;
-        SetRoute(null);window.Activated-=Activated;window.Deactivated-=Deactivated;window.GotFocus-=FocusChanged;window.LostFocus-=FocusChanged;
+        lease.Stop();SetRoute(null);platform?.Dispose();window.Activated-=Activated;window.Deactivated-=Deactivated;window.GotFocus-=FocusChanged;window.LostFocus-=FocusChanged;
         keys.Writer.TryComplete();
         if(threadId!=0)PostThreadMessageW(threadId,0x12,UIntPtr.Zero,IntPtr.Zero);
-        worker?.Join(200);GC.KeepAlive(callback);
+        if(worker!=null)keySender=Task.WhenAll(keySender,Task.Run(()=>{worker.Join();GC.KeepAlive(callback);}));
     }
 }

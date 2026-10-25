@@ -7,7 +7,7 @@ int main() {
         fireuser::screen_quality(1600000).height != 1080 || fireuser::screen_quality(3199999).fps != 30 ||
         fireuser::screen_quality(3200000).fps != 60 || fireuser::screen_quality(6400000, true).fps != 15 ||
         fireuser::screen_quality(-1).height != 720) return 5;
-    if (fu_abi_version() != 6) return 1;
+    if (fu_abi_version() != 7) return 1;
 #ifdef __linux__
     constexpr int interactive_fps=30;
 #else

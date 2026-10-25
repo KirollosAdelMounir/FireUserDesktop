@@ -40,6 +40,11 @@ public partial class CallWindow : Window
         Closed += (_, _) => entryMotion.Cancel();
         SizeChanged += (_, _) => UpdateGalleryLayout();
         AddHandler(KeyDownEvent, PresentationKeyDown, RoutingStrategies.Tunnel);
+        AddHandler(KeyUpEvent,(_,e)=>RouteControlKey(e,false),RoutingStrategies.Tunnel);
+        AddHandler(PointerPressedEvent,RouteControlPointer,RoutingStrategies.Tunnel);
+        AddHandler(PointerReleasedEvent,RouteControlPointer,RoutingStrategies.Tunnel);
+        AddHandler(PointerMovedEvent,RouteControlPointer,RoutingStrategies.Tunnel);
+        AddHandler(PointerWheelChangedEvent,RouteControlPointer,RoutingStrategies.Tunnel);
         DataContextChanged += (_, _) =>
         {
             controlRequestToast?.Close(); controlRequestToast = null;
@@ -113,18 +118,36 @@ public partial class CallWindow : Window
     }
     private void PresentationKeyDown(object? sender, KeyEventArgs e)
     {
-        if (OperatingSystem.IsLinux() && e.Key == Key.Escape && observedModel?.ControlledScreen != null &&
-            (e.KeyModifiers == KeyModifiers.None || e.KeyModifiers == (KeyModifiers.Control|KeyModifiers.Alt)))
+        if(observedModel?.ControlledScreen!=null)
         {
-            // A Linux VM may be busy in portal/X11 input. Do not synchronously
-            // acquire the media lock to escape, or forward the escape to the guest.
-            foreach(var view in this.GetVisualDescendants().OfType<NativeVideoView>()) view.SuspendRemoteInput();
-            observedModel.PauseRemoteInput();
-            ExitShareFullscreen(); e.Handled=true; return;
+            if(e.Key==Key.Escape && e.KeyModifiers==(KeyModifiers.Control|KeyModifiers.Alt))
+            {
+                foreach(var view in this.GetVisualDescendants().OfType<NativeVideoView>())view.SuspendRemoteInput();
+                observedModel.PauseRemoteInput();ExitShareFullscreen();e.Handled=true;return;
+            }
+            RouteControlKey(e,true);return;
         }
         if (e.KeyModifiers != KeyModifiers.None) return;
         if (e.Key == Key.Escape && presentationFullscreen) { ExitShareFullscreen(); e.Handled = true; }
         else if (e.Key == Key.F11 && (presentationFullscreen || observedModel?.HasFocusedScreen == true)) { ToggleShareFullscreen(); e.Handled = true; }
+    }
+    private NativeVideoView? ControlledView()=>FocusedStage.GetVisualDescendants().OfType<NativeVideoView>().FirstOrDefault(x=>x.RemoteControlEnabled);
+    private void RouteControlKey(KeyEventArgs e,bool down)
+    {
+        if(!IsActive || observedModel?.ControlledScreen==null)return;
+        if(keyboardCapture?.Capturing!=true)ControlledView()?.ForwardKeyEvent(e,down);
+        e.Handled=true;
+    }
+    private void RouteControlPointer(object? sender,PointerEventArgs e)
+    {
+        if(!IsActive || observedModel?.ControlledScreen==null)return;
+        if(e.Source is Control source && (source as Button ?? source.FindAncestorOfType<Button>()) is {} button && button.Classes.Contains("remote-release"))
+        {
+            if(e is PointerPressedEventArgs){observedModel.PauseRemoteInput();ExitShareFullscreen();}
+            e.Handled=true;return;
+        }
+        ControlledView()?.ForwardPointer(e);
+        e.Handled=true;
     }
     private void OnPresentationChanged(object? sender, PropertyChangedEventArgs e)
     {

@@ -15,7 +15,8 @@ public sealed class RemoteControlPolicy(TimeProvider? clock = null)
     public string? Controller { get; private set; }
     public string? Controlling { get; private set; }
     private string? localGrant, remoteGrant, outgoingRequest;
-    private long receivedSequence, sentSequence;
+    private long receivedSequence, sentSequence, nextInputEpoch;
+    public long InputEpoch {get;private set;}
     private long receivedMoveSequence, sentMoveSequence;
     private DateTimeOffset remoteExpires;
     private DateTimeOffset expires;
@@ -23,7 +24,7 @@ public sealed class RemoteControlPolicy(TimeProvider? clock = null)
     private DateTimeOffset rateWindow;
     private int rateCount;
     private int moveRateCount;
-    public RemoteControlStatus Status => new(Peers.Values.ToArray(), RequestedBy, Controller, Controlling) { RequestExpiresAt = RequestExpiresAt };
+    public RemoteControlStatus Status => new(Peers.Values.ToArray(), RequestedBy, Controller, Controlling) { RequestExpiresAt = RequestExpiresAt, InputEpoch=InputEpoch };
     public void Sharing(bool enabled) { Revoke(); LocalScope = enabled ? Guid.NewGuid().ToString("N") : null; }
     public bool Hello(string sender, RemotePacket packet)
     {
@@ -31,7 +32,7 @@ public sealed class RemoteControlPolicy(TimeProvider? clock = null)
         if (packet.Sharing && !Guid.TryParseExact(packet.Scope, "N", out _)) return false;
         var first = !Peers.ContainsKey(sender);
         if (Controlling == sender && (!packet.Sharing || Peers[sender].Scope != packet.Scope)) StopControlling();
-        Peers[sender] = new NativePeer(sender, packet.CanHost, packet.Sharing, packet.Scope) { FastInput = packet.FastInput, ClipboardSupport = packet.ClipboardSupport };
+        Peers[sender] = new NativePeer(sender, packet.CanHost, packet.Sharing, packet.Scope) { FastInput = packet.FastInput, ClipboardSupport = packet.ClipboardSupport, ExtendedInput=packet.ExtendedInput };
         return first;
     }
     public bool Request(string sender)
@@ -63,7 +64,7 @@ public sealed class RemoteControlPolicy(TimeProvider? clock = null)
     public bool AcceptGrant(string sender, RemotePacket packet)
     {
         if (outgoingRequest != sender || !Peers.TryGetValue(sender, out var peer) || !peer.Sharing || peer.Scope != packet.Scope || !Guid.TryParseExact(packet.Grant, "N", out _)) return false;
-        Controlling = sender; outgoingRequest = null; remoteGrant = packet.Grant; sentSequence = sentMoveSequence = 0; remoteExpires = time.GetUtcNow().AddMinutes(5); return true;
+        Controlling = sender; InputEpoch=++nextInputEpoch; outgoingRequest = null; remoteGrant = packet.Grant; sentSequence = sentMoveSequence = 0; remoteExpires = time.GetUtcNow().AddMinutes(5); return true;
     }
     public RemotePacket? Outgoing(RemoteInput input)
     {
@@ -76,10 +77,12 @@ public sealed class RemoteControlPolicy(TimeProvider? clock = null)
         var previous = packet.Type == "move" ? receivedMoveSequence : receivedSequence;
         if (LocalScope == null || sender != Controller || packet.Scope != LocalScope || packet.Grant != localGrant || time.GetUtcNow() >= expires || packet.Sequence <= previous || packet.Sequence - previous > 10000) return false;
         var input = packet.Input;
-        if (input == null || !double.IsFinite(input.X) || !double.IsFinite(input.Y) || input.X < 0 || input.X > 1 || input.Y < 0 || input.Y > 1 || input.Kind is < 0 or > 3) return false;
+        if (input == null || !double.IsFinite(input.X) || !double.IsFinite(input.Y) || input.X < 0 || input.X > 1 || input.Y < 0 || input.Y > 1 || !(input.Kind is >=0 and <=3 or 6)) return false;
         if (packet.Type == "move" && input.Kind != 0) return false;
-        if (input.Kind == 1 && input.Code is < 1 or > 3) return false;
-        if (input.Kind == 2 && !(input.Code is >= 4 and <= 56 or >= 58 and <= 69 or 76 or >= 79 and <= 82 or >= 224 and <= 231)) return false;
+        if (input.Kind == 1 && input.Code is < 1 or > 5) return false;
+        if (input.Kind == 2 && !RemoteInputCodes.IsKey(input.Code)) return false;
+        if(input.Kind==6 && (!double.IsFinite(input.DeltaX)||!double.IsFinite(input.DeltaY)||System.Math.Abs(input.DeltaX)>10||System.Math.Abs(input.DeltaY)>10||input.Code!=0||input.Down))return false;
+        if(input.Kind!=6&&(input.DeltaX!=0||input.DeltaY!=0))return false;
         var now = time.GetUtcNow();
         if (now - rateWindow >= TimeSpan.FromSeconds(1)) { rateWindow = now; rateCount = moveRateCount = 0; }
         if (packet.Type=="move" ? ++moveRateCount>240 : ++rateCount>120) return false;
@@ -87,7 +90,7 @@ public sealed class RemoteControlPolicy(TimeProvider? clock = null)
         else
         {
             receivedSequence = packet.Sequence;
-            if((input.Kind is 1 or 3)&&packet.PointerSequence>receivedMoveSequence&&packet.PointerSequence-receivedMoveSequence<=10000)receivedMoveSequence=packet.PointerSequence;
+            if((input.Kind is 1 or 3 or 6)&&packet.PointerSequence>receivedMoveSequence&&packet.PointerSequence-receivedMoveSequence<=10000)receivedMoveSequence=packet.PointerSequence;
         }
         return true;
     }
@@ -111,7 +114,7 @@ public sealed class RemoteControlPolicy(TimeProvider? clock = null)
     public void Deny(string sender) { if (RequestedBy == sender) { RequestedBy = null; RequestExpiresAt = null; } if (outgoingRequest == sender) outgoingRequest = null; }
     public void Remove(string sender) { Peers.Remove(sender); Deny(sender); if (Controller == sender) Revoke(); if (Controlling == sender) StopControlling(); }
     public void Revoke() { Controller = null; RequestedBy = null; RequestExpiresAt = null; localGrant = null; receivedSequence = 0; }
-    public void StopControlling() { Controlling = null; remoteGrant = null; outgoingRequest = null; }
+    public void StopControlling() { InputEpoch=0;Controlling = null; remoteGrant = null; outgoingRequest = null; }
     public void Clear() { Revoke(); StopControlling(); LocalScope = null; Peers.Clear(); }
     public static bool SupportsDesktopSource(MediaDevices devices, int width, int height)
     {

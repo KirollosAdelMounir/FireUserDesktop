@@ -195,7 +195,7 @@ public:
 };
 }
 
-int fu_abi_version() { return 6; }
+int fu_abi_version() { return 7; }
 void* fu_create(fu_video_callback video, fu_audio_callback audio, fu_event_callback event, fu_data_callback data) {
     std::lock_guard lock(runtime_mutex);
     try {

@@ -119,9 +119,8 @@ public sealed class CallStageInteractionTests
         finally{window.CloseAfterCall();Dispatcher.UIThread.RunJobs();await vm.DisposeAsync();}
     }
     [AvaloniaFact]
-    public async Task LinuxEscapeStopsForwardingAndLeavesFullscreenWhileRevokeIsBlocked()
+    public async Task EmergencyEscapeStopsForwardingAndLeavesPresentationWhileRevokeIsBlocked()
     {
-        if(!OperatingSystem.IsLinux())return;
         var (vm,media)=Create();vm.InCall=true;
         var track="one · screen · track";
         vm.Videos.Add(new(track,media.SendRemoteInput){Frame=new(track,16,9,new byte[16*9*4])});
@@ -136,7 +135,7 @@ public sealed class CallStageInteractionTests
             Assert.Equal(OperatingSystem.IsLinux()?WindowState.Normal:WindowState.FullScreen,window.WindowState);Assert.Contains("share-fullscreen",window.Classes);
             var video=window.FindControl<ContentControl>("FocusedStage")!.GetVisualDescendants().OfType<NativeVideoView>().Single();
             video.ForwardKey(4,true,false);media.Received(1).SendRemoteInput(Arg.Is<RemoteInput>(x=>x.Code==4));
-            video.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.Escape});
+            video.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.Escape,KeyModifiers=KeyModifiers.Control|KeyModifiers.Alt});
             Assert.NotEqual(WindowState.FullScreen,window.WindowState);Assert.DoesNotContain("share-fullscreen",window.Classes);
             Assert.False(release.Task.IsCompleted);
             video.ForwardKey(5,true,false);media.DidNotReceive().SendRemoteInput(Arg.Is<RemoteInput>(x=>x.Code==5));
@@ -260,9 +259,54 @@ public sealed class CallStageInteractionTests
         media.RemoteControlChanged+=Raise.Event<Action<RemoteControlStatus>>(new RemoteControlStatus(new[]{peer},null,null,owner));Dispatcher.UIThread.RunJobs();Assert.NotEqual(WindowState.FullScreen,window.WindowState);Assert.DoesNotContain("share-fullscreen",window.Classes);
         media.VideoReceived+=Raise.Event<Action<VideoPicture>>(new VideoPicture(owner+" · screen · track",2,2,new byte[16]));Dispatcher.UIThread.RunJobs();Assert.Equal(OperatingSystem.IsLinux()?WindowState.Normal:WindowState.FullScreen,window.WindowState);Assert.Contains("share-fullscreen",window.Classes);Assert.True(vm.FocusedVideo!.CanControl);
         media.ParticipantJoined+=Raise.Event<Action<MediaParticipant>>(new MediaParticipant(owner,"Dina Example"));Dispatcher.UIThread.RunJobs();Assert.Equal("Dina Example's screen",vm.FocusedVideo.Name);Assert.Equal("Dina Example's screen",Assert.Single(vm.RemotePeers).ScreenLabel);
-        window.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.Escape});Dispatcher.UIThread.RunJobs();Assert.NotEqual(WindowState.FullScreen,window.WindowState);Assert.DoesNotContain("share-fullscreen",window.Classes);
+        window.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.Escape});Dispatcher.UIThread.RunJobs();
+        Assert.Contains("share-fullscreen",window.Classes);media.Received().SendRemoteInput(Arg.Is<RemoteInput>(x=>x.Kind==2&&x.Code==41&&x.Down));
+        window.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.F11});Assert.Contains("share-fullscreen",window.Classes);
+        media.Received().SendRemoteInput(Arg.Is<RemoteInput>(x=>x.Kind==2&&x.Code==68&&x.Down));
+        window.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.Escape,KeyModifiers=KeyModifiers.Control|KeyModifiers.Alt});Dispatcher.UIThread.RunJobs();Assert.NotEqual(WindowState.FullScreen,window.WindowState);Assert.DoesNotContain("share-fullscreen",window.Classes);
         media.RemoteControlChanged+=Raise.Event<Action<RemoteControlStatus>>(new RemoteControlStatus(new[]{peer},null,null,owner));Dispatcher.UIThread.RunJobs();Assert.NotEqual(WindowState.FullScreen,window.WindowState);Assert.DoesNotContain("share-fullscreen",window.Classes);
         window.CloseAfterCall();Dispatcher.UIThread.RunJobs();await vm.DisposeAsync();
+    }
+    [AvaloniaFact]
+    public async Task ControlledCallRoutesScrollAndConsumesLocalToolbarInput()
+    {
+        var (vm,media)=Create();vm.InCall=true;const string track="one · screen · track";
+        vm.Videos.Add(new(track,vm.ForwardRemoteKeyboard){Frame=new(track,16,9,new byte[16*9*4])});var window=new CallWindow{DataContext=vm};window.Show();Dispatcher.UIThread.RunJobs();
+        try
+        {
+            media.RemoteControlChanged+=Raise.Event<Action<RemoteControlStatus>>(new RemoteControlStatus(new[]{new NativePeer("one",true,true,"scope")},null,null,"one"));Dispatcher.UIThread.RunJobs();
+            using(var rendered=window.CaptureRenderedFrame())Assert.NotNull(rendered);
+            var view=window.FindControl<ContentControl>("FocusedStage")!.GetVisualDescendants().OfType<NativeVideoView>().Single();
+            var point=view.TranslatePoint(new Point(view.Bounds.Width/2,view.Bounds.Height/2),window)!.Value;
+            window.MouseWheel(point,new Vector(.5,-1));
+            media.Received().SendRemoteInput(Arg.Is<RemoteInput>(x=>x.Kind==6&&x.DeltaX==.5&&x.DeltaY==-1&&x.PositionIncluded));
+            var button=window.FindControl<Button>("ExitFullscreenButton")!;
+            var local=button.TranslatePoint(new Point(button.Bounds.Width/2,button.Bounds.Height/2),window)!.Value;
+            window.MouseDown(local,MouseButton.Left);window.MouseUp(local,MouseButton.Left);Dispatcher.UIThread.RunJobs();
+            Assert.Contains("share-fullscreen",window.Classes);
+        }
+        finally{window.CloseAfterCall();Dispatcher.UIThread.RunJobs();await vm.DisposeAsync();}
+    }
+    [AvaloniaTheory]
+    [InlineData("track")][InlineData("owner")][InlineData("revoke")]
+    public async Task LossOfControlledShareRestoresWindowAndRejectsStaleGrantInput(string reason)
+    {
+        var (vm,media)=Create();vm.InCall=true;const string track="one · screen · track";
+        vm.Videos.Add(new(track){Frame=new(track,16,9,new byte[16*9*4])});
+        var window=new CallWindow{DataContext=vm};window.Show();Dispatcher.UIThread.RunJobs();
+        var peer=new NativePeer("one",true,true,"scope");
+        try
+        {
+            media.RemoteControlChanged+=Raise.Event<Action<RemoteControlStatus>>(new RemoteControlStatus(new[]{peer},null,null,"one"){InputEpoch=7});Dispatcher.UIThread.RunJobs();
+            Assert.Contains("share-fullscreen",window.Classes);
+            media.ClearReceivedCalls();vm.ForwardRemoteKeyboard(new(track,2,Code:4,Down:true,ControlEpoch:6));
+            media.DidNotReceive().SendRemoteInput(Arg.Any<RemoteInput>());
+            vm.ForwardRemoteKeyboard(new(track,2,Code:4,Down:true,ControlEpoch:7));media.Received(1).SendRemoteInput(Arg.Is<RemoteInput>(x=>x.Code==4));
+            if(reason=="revoke")media.RemoteControlChanged+=Raise.Event<Action<RemoteControlStatus>>(new RemoteControlStatus(new[]{peer},null,null,null));
+            else media.ParticipantLeft+=Raise.Event<Action<string>>(reason=="track"?track:"one");
+            Dispatcher.UIThread.RunJobs();Assert.Null(vm.ControlledScreen);Assert.DoesNotContain("share-fullscreen",window.Classes);Assert.NotEqual(WindowState.FullScreen,window.WindowState);
+        }
+        finally{window.CloseAfterCall();Dispatcher.UIThread.RunJobs();await vm.DisposeAsync();}
     }
     [Theory]
     [InlineData(ScreenCaptureBackend.Windows,ScreenShareKind.Screen,0,0,1920,1080,true)]

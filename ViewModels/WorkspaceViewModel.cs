@@ -350,8 +350,10 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             if (participant != null) participant.Frame = null;
             return;
         }
+        var lostControl=Videos.Any(x=>x.CanControl&&(x.Identity==identity||x.Identity.StartsWith(identity+" · ",StringComparison.Ordinal)));
         foreach (var tile in Videos.Where(x => x.Identity == identity || x.Identity.StartsWith(identity + " · ", StringComparison.Ordinal)).ToList())
         { if (FocusedVideo == tile) FocusedVideo = null; Videos.Remove(tile); }
+        if(lostControl)PauseRemoteInput();else OnPropertyChanged(nameof(ControlledScreen));
     });
     private void OnCaptureStopped(string kind)
     {
@@ -393,15 +395,21 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
     private void OnRemoteControl(RemoteControlStatus status) => Dispatcher.UIThread.Post(() => ApplyRemoteControl(status));
     private void OnClipboardTransfer(string message) => Dispatcher.UIThread.Post(() => { if(!disposed) Feedback=message; });
     private bool remoteInputPaused;
-    private void ForwardRemoteInput(RemoteInput input) { if(!remoteInputPaused)media.SendRemoteInput(input); }
+    internal long RemoteInputEpoch=>remoteStatus.InputEpoch;
+    private void ForwardRemoteInput(RemoteInput input)
+    {
+        if(remoteInputPaused||input.ControlEpoch!=0&&input.ControlEpoch!=remoteStatus.InputEpoch)return;
+        media.SendRemoteInput(input.ControlEpoch==0?input with{ControlEpoch=remoteStatus.InputEpoch}:input);
+    }
     internal void ForwardRemoteKeyboard(RemoteInput input)=>ForwardRemoteInput(input);
     internal void PauseRemoteInput()
     {
         remoteInputPaused=true;
         foreach(var tile in Videos)tile.CanControl=false;
-        EmergencyRemoteStop();
+        OnPropertyChanged(nameof(ControlledScreen));
+        _=Task.Run(async()=>{try{await media.RevokeControlAsync();}catch{}});
     }
-    internal void EmergencyRemoteStop()=>_=Task.Run(async()=>{try{await media.RevokeControlAsync();}catch{}});
+    internal void EmergencyRemoteStop()=>Dispatcher.UIThread.Post(()=>{if(!disposed)PauseRemoteInput();});
     private void ApplyRemoteControl(RemoteControlStatus status)
     {
         if (disposed) return;
