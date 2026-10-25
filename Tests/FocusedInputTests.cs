@@ -6,6 +6,26 @@ using Xunit;
 namespace UserIdentityDesktop.Tests;
 public sealed class FocusedInputTests
 {
+    [Theory]
+    [InlineData(false)][InlineData(true)]
+    public async Task UnavailableReliableWriterNotifiesControlLossImmediately(bool saturated)
+    {
+        await using var session=new NativeMediaSession();
+        // Establish protocol state without opening media or touching OS devices.
+        var type=typeof(NativeMediaSession);var flags=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
+        type.GetProperty(nameof(session.Connected))!.SetValue(session,true);
+        var policy=(RemoteControlPolicy)type.GetField("control",flags)!.GetValue(session)!;
+        var scope=Guid.NewGuid().ToString("N");policy.Hello("host",new("hello",CanHost:true,Sharing:true,Scope:scope));policy.BeginRequest("host");
+        Assert.True(policy.AcceptGrant("host",new("grant",Scope:scope,Grant:Guid.NewGuid().ToString("N"))));
+        if(saturated)
+        {
+            var writer=System.Threading.Channels.Channel.CreateBounded<(string,RemotePacket)>(1);Assert.True(writer.Writer.TryWrite(("host",new("hello"))));
+            type.GetField("outgoingData",flags)!.SetValue(session,writer);
+        }
+        RemoteControlStatus? observed=null;session.RemoteControlChanged+=value=>observed=value;
+        session.SendRemoteInput(new("host · screen · track",2,Code:4,Down:true,ControlEpoch:policy.InputEpoch));
+        Assert.NotNull(observed);Assert.Null(observed.Controlling);Assert.Equal(0,observed.InputEpoch);
+    }
     [Fact]
     public async Task PointerFloodKeepsLatestPositionAndDoesNotDelayReliableKeys()
     {

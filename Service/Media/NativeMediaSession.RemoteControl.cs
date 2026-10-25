@@ -131,7 +131,7 @@ public sealed partial class NativeMediaSession
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
-            catch { Error?.Invoke("Remote control stopped. Request permission again."); lock (remoteLock) RevokeLocal(); }
+            catch { Error?.Invoke("Remote control stopped. Request permission again."); lock (remoteLock) {RevokeLocal();control.StopControlling();RemoteControlChanged?.Invoke(CurrentControlStatus);} }
         });
         remoteWriter = Task.Run(async () =>
         {
@@ -222,6 +222,7 @@ public sealed partial class NativeMediaSession
         {
             // Fail closed on backpressure; never leave queued control input behind.
             control.StopControlling(); RevokeLocal();
+            RemoteControlChanged?.Invoke(CurrentControlStatus);
             Error?.Invoke("Remote control paused because its data channel is busy.");
         }
     }
