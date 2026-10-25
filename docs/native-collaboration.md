@@ -215,3 +215,16 @@ screen before awaiting transport revocation. An already queued status update can
 reactivate that paused grant. A completed revoke and new approval are required to
 resume. Headless tests verify input priority and escape with a blocked revoke;
 these tests do not establish a real Fedora/Ubuntu VM performance result.
+
+### Linux borderless presentation
+
+Linux screen-share presentation uses an undecorated, non-topmost **normal** window
+sized to the current monitor's full pixel bounds, converted to logical units using
+that monitor's DPI scaling. Attachment image/video presentation uses the same window behavior. Manual call
+presentation and approved remote control use the same path; neither sends a native fullscreen request. Window size limits are
+suspended while presenting so smaller displays are not clipped. Escape, the exit
+button, revocation and the end of sharing restore the saved normal geometry,
+decorations, resize/size policies, limits and prior maximized state. Other platforms
+continue using native fullscreen. Desktop panels/docks and the compositor retain
+normal window-management control; headless tests cannot prove a real compositor's
+placement or resolve a VM freeze without an actual retest.

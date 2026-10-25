@@ -40,11 +40,14 @@ public sealed class AttachmentGalleryWindow : Window
     private readonly System.Threading.SemaphoreSlim selection = new(1, 1);
     private bool closing;
     private WindowState beforeFullscreen;
+    private readonly BorderlessPresentation borderlessPresentation;
+    internal bool IsPresenting=>OperatingSystem.IsLinux()?borderlessPresentation.IsActive:WindowState==WindowState.FullScreen;
     public int SelectedIndex { get; private set; }
     public AttachmentGalleryWindow(IReadOnlyList<ChatAttachmentItemViewModel> files, int initial = -1, System.Windows.Input.ICommand? downloadAll = null)
     {
         attachments = files; Width = 1000; Height = 760; MinWidth = 400; MinHeight = 400; Title = "Attachments";
         WindowStartupLocation = WindowStartupLocation.CenterOwner; WindowDecorations = WindowDecorations.Full; ShowInTaskbar = false;
+        borderlessPresentation=new(this);
         TransparencyLevelHint = [WindowTransparencyLevel.None];
         this.Bind(BackgroundProperty, this.GetResourceObservable("ForgeSurface"));
         this.Bind(ForegroundProperty, this.GetResourceObservable("ForgeTextPrimary"));
@@ -70,7 +73,7 @@ public sealed class AttachmentGalleryWindow : Window
         fullscreen.Click += (_, _) => ExitFullscreen();
         KeyDown += async (_, e) =>
         {
-            if (e.Key == Key.Escape) { if (WindowState == WindowState.FullScreen) ExitFullscreen(); else if (!IsOverview && attachments.Count > 1) await ShowOverviewAsync(); else Close(); e.Handled = true; }
+            if (e.Key == Key.Escape) { if (IsPresenting) ExitFullscreen(); else if (!IsOverview && attachments.Count > 1) await ShowOverviewAsync(); else Close(); e.Handled = true; }
             else if (!IsOverview && e.Source is not Slider && e.Key is Key.Left or Key.Right) { await SelectAsync(SelectedIndex + (e.Key == Key.Left ? -1 : 1)); e.Handled = true; }
         };
         Opened += async (_, _) =>
@@ -90,13 +93,14 @@ public sealed class AttachmentGalleryWindow : Window
     }
     private void ExitFullscreen()
     {
-        WindowState = beforeFullscreen; fullscreen.IsVisible = false;
+        if(OperatingSystem.IsLinux())borderlessPresentation.Exit();else WindowState=beforeFullscreen;
+        fullscreen.IsVisible=false;
         surface.HorizontalAlignment = HorizontalAlignment.Stretch; surface.VerticalAlignment = VerticalAlignment.Stretch;
     }
     private void ToggleFullscreen()
     {
-        if (WindowState == WindowState.FullScreen) ExitFullscreen();
-        else { beforeFullscreen = WindowState; WindowState = WindowState.FullScreen; fullscreen.IsVisible = true; surface.MaxWidth = surface.MaxHeight = double.PositiveInfinity; surface.HorizontalAlignment = HorizontalAlignment.Stretch; surface.VerticalAlignment = VerticalAlignment.Stretch; }
+        if (IsPresenting) ExitFullscreen();
+        else { beforeFullscreen = WindowState; if(OperatingSystem.IsLinux())borderlessPresentation.Enter();else WindowState=WindowState.FullScreen; fullscreen.IsVisible = true; surface.MaxWidth = surface.MaxHeight = double.PositiveInfinity; surface.HorizontalAlignment = HorizontalAlignment.Stretch; surface.VerticalAlignment = VerticalAlignment.Stretch; }
     }
     private void ApplyMode(bool overview)
     {
@@ -123,7 +127,7 @@ public sealed class AttachmentGalleryWindow : Window
         {
             if (version != generation || closing) return;
             await ClearAsync(); loading?.Dispose(); loading = new(); var token = loading.Token;
-            if (WindowState == WindowState.FullScreen) ExitFullscreen(); ApplyMode(true);
+            if (IsPresenting) ExitFullscreen(); ApplyMode(true);
             Title = title.Text = Summary(attachments); detail.Text = "Attachments from this message";
             var cards = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(14) };
             for (var index = 0; index < attachments.Count; index++)
@@ -168,7 +172,7 @@ public sealed class AttachmentGalleryWindow : Window
         var item = attachments[index]; Title = title.Text = item.FileName; position.Text = $"{index + 1} / {attachments.Count}";
         previous.IsEnabled = index > 0; next.IsEnabled = index + 1 < attachments.Count;
         preview.Content = new TextBlock { Text = "Loading preview…", Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        if (WindowState == WindowState.FullScreen) ExitFullscreen();
+        if (IsPresenting) ExitFullscreen();
         try
         {
             if (item.IsAudio) { preview.Content = new InlineAudioPlayer { Attachment = item, IsSent = false, HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16), MaxWidth = 720, IsPreview = true }; return; }

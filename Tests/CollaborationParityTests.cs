@@ -280,7 +280,7 @@ public sealed class CollaborationParityTests
         var window = new CallWindow { DataContext = vm, RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark }; window.Show(); Dispatcher.UIThread.RunJobs();
         var button = window.FindControl<Button>("FullscreenButton")!; Assert.True(button.IsVisible);
         button.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); Dispatcher.UIThread.RunJobs();
-        Assert.Equal(WindowState.FullScreen,window.WindowState); Assert.Contains("share-fullscreen",window.Classes);
+        Assert.Equal(OperatingSystem.IsLinux()?WindowState.Normal:WindowState.FullScreen,window.WindowState);Assert.Contains("share-fullscreen",window.Classes);
         Assert.False(window.FindControl<Border>("CallHeader")!.IsVisible); Assert.False(window.FindControl<Border>("CallFooter")!.IsVisible);
         Assert.False(vm.ShowCallMembers); Assert.False(vm.ShowCallChat); Assert.True(vm.InCall);
         Assert.True(window.FindControl<Button>("ExitFullscreenButton")!.IsVisible); Save(window,"fullscreen-screen-share.png");
@@ -300,7 +300,7 @@ public sealed class CollaborationParityTests
         Assert.Equal(WindowState.Maximized,window.WindowState);
         media.VideoReceived += Raise.Event<Action<VideoPicture>>(new VideoPicture("peer · screen · share",2,2,new byte[16])); Dispatcher.UIThread.RunJobs();
         window.RaiseEvent(new Avalonia.Input.KeyEventArgs { RoutedEvent = Avalonia.Input.InputElement.KeyDownEvent, Key = Avalonia.Input.Key.F11 }); Dispatcher.UIThread.RunJobs();
-        Assert.Equal(WindowState.FullScreen,window.WindowState);
+        Assert.Equal(OperatingSystem.IsLinux()?WindowState.Normal:WindowState.FullScreen,window.WindowState);Assert.Contains("share-fullscreen",window.Classes);
         media.ParticipantLeft += Raise.Event<Action<string>>("peer · screen · share"); Dispatcher.UIThread.RunJobs();
         Assert.Equal(WindowState.Maximized,window.WindowState); Assert.DoesNotContain("share-fullscreen",window.Classes); Assert.True(vm.InCall);
         await media.DidNotReceive().DisconnectAsync(); window.CloseAfterCall(); Dispatcher.UIThread.RunJobs(); await vm.DisposeAsync();

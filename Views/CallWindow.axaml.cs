@@ -17,6 +17,7 @@ public partial class CallWindow : Window
 {
     private bool closingAfterCall, leaving, presentationFullscreen, windowStateCheckQueued, controlFullscreen;
     private WindowState previousWindowState;
+    private readonly BorderlessPresentation borderlessPresentation;
     private bool previousMembers, previousChat;
     private WorkspaceViewModel? observedModel;
     private RemoteControlRequestWindow? controlRequestToast;
@@ -31,6 +32,7 @@ public partial class CallWindow : Window
     public CallWindow()
     {
         InitializeComponent();
+        borderlessPresentation=new(this);
         Opened += (_, _) => keyboardCapture = new RemoteKeyboardCapture(this);
         Closed += (_, _) => { keyboardCapture?.Dispose(); keyboardCapture = null; };
         var entryMotion = new SurfaceMotion();
@@ -56,8 +58,8 @@ public partial class CallWindow : Window
             Dispatcher.UIThread.Post(() =>
             {
                 windowStateCheckQueued = false;
-                if (WindowState == WindowState.FullScreen && !presentationFullscreen) { WindowState = WindowState.Normal; return; }
-                if (presentationFullscreen && WindowState != WindowState.FullScreen) ExitShareFullscreen(restoreWindowState: false);
+                if (WindowState == WindowState.FullScreen && (OperatingSystem.IsLinux() || !presentationFullscreen)) { WindowState = WindowState.Normal; return; }
+                if (presentationFullscreen && WindowState != (OperatingSystem.IsLinux()?WindowState.Normal:WindowState.FullScreen)) ExitShareFullscreen(restoreWindowState: false);
             });
         };
         Closed += (_, _) => { controlRequestToast?.Close(); controlRequestToast = null; if (observedModel != null) { observedModel.PropertyChanged -= OnPresentationChanged; observedModel.ChooseScreenShareSourceAsync = null; } };
@@ -96,14 +98,17 @@ public partial class CallWindow : Window
         if (DataContext is not WorkspaceViewModel { HasFocusedScreen: true } vm) return;
         previousWindowState = WindowState; previousMembers = vm.ShowCallMembers; previousChat = vm.ShowCallChat;
         vm.ShowCallMembers = vm.ShowCallChat = false;
-        presentationFullscreen = true; Classes.Add("share-fullscreen"); WindowState = WindowState.FullScreen;
+        presentationFullscreen = true; Classes.Add("share-fullscreen");
+        if(OperatingSystem.IsLinux())borderlessPresentation.Enter();
+        else WindowState = WindowState.FullScreen;
         SetFullscreenControls(false);
     }
     private void ExitShareFullscreen(bool restoreWindowState = true)
     {
         if (!presentationFullscreen) return;
-        presentationFullscreen = false; controlFullscreen = false; Classes.Remove("share-fullscreen"); SetFullscreenControls(false);
-        if (restoreWindowState) WindowState = previousWindowState;
+        presentationFullscreen = false;controlFullscreen = false; Classes.Remove("share-fullscreen");SetFullscreenControls(false);
+        if(OperatingSystem.IsLinux())borderlessPresentation.Exit(restoreWindowState);
+        else if(restoreWindowState)WindowState=previousWindowState;
         if (observedModel != null) { observedModel.ShowCallMembers = previousMembers; observedModel.ShowCallChat = previousChat; }
     }
     private void PresentationKeyDown(object? sender, KeyEventArgs e)
