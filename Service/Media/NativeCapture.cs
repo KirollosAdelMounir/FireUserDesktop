@@ -39,7 +39,7 @@ public static class NativeCapture
         var device = kind == "microphone" ? devices.Microphone : kind == "camera" ? devices.Camera : devices.Screen;
         if (kind == "screen")
         {
-            if (wayland) throw new InvalidOperationException("Wayland screen sharing requires the system ScreenCast portal; X11 capture is not a fallback.");
+            if (platform == "linux" && wayland) throw new InvalidOperationException("Wayland screen sharing requires the system ScreenCast portal; X11 capture is not a fallback.");
             var source = devices.ShareSource ?? throw new InvalidOperationException("Choose a screen or window before sharing.");
             if (source.Backend is ScreenCaptureBackend.Portal or ScreenCaptureBackend.MacOS) throw new InvalidOperationException("This screen source requires its native capture provider.");
             if (platform == "windows" && source.Backend != ScreenCaptureBackend.Windows || platform == "linux" && source.Backend != ScreenCaptureBackend.X11) throw new InvalidOperationException("The selected screen source belongs to another platform.");

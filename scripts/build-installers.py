@@ -162,7 +162,7 @@ gtk-update-icon-cache -q -t /usr/share/icons/hicolor >/dev/null 2>&1 || :
         size = sum(p.stat().st_size for p in stage.rglob('*') if p.is_file())
         metadata = [f'pkgname = fire-user-connect', f'pkgver = {version}-1',
                     'pkgdesc = Fire User native chat, meetings and workplace client',
-                    'url = https://github.com/KirollosAdelMounir/FireUserDesktop',
+                    'url = https://github.com/Tetracheia/FireUserDesktop',
                     f'builddate = {int(time.time())}', 'packager = Fire User',
                     f'size = {size}', f'arch = {arch}', 'license = LicenseRef-Proprietary']
         metadata += [f'depend = {dependency}' for dependency in ARCH_DEPS]

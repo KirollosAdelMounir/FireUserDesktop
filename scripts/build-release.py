@@ -62,7 +62,7 @@ def build(repo, target, ref, output, run_id=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--repo', default='KirollosAdelMounir/FireUserDesktop', help='GitHub owner/repository containing this workflow and source')
+    parser.add_argument('--repo', default='Tetracheia/FireUserDesktop', help='GitHub owner/repository containing this workflow and source')
     parser.add_argument('--target', choices=TARGETS, default='all')
     parser.add_argument('--ref', help='Already-pushed branch or tag; defaults to the GitHub default branch')
     parser.add_argument('--output', type=Path, default=Path(__file__).resolve().parent.parent / 'artifacts/downloads')

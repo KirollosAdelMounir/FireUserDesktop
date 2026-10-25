@@ -4,7 +4,7 @@ Run the build command locally; GitHub Actions compiles and packages each native 
 
 ## First use
 
-The GitHub repository is `KirollosAdelMounir/FireUserDesktop`. The workflow and source changes must be committed and pushed there before dispatch. The local command does not push files, create commits or upload an uncommitted working tree. The workflow must exist on the repository's default branch to enable manual dispatch.
+The GitHub repository is `Tetracheia/FireUserDesktop`. The workflow and source changes must be committed and pushed there before dispatch. The local command does not push files, create commits or upload an uncommitted working tree. The workflow must exist on the repository's default branch to enable manual dispatch.
 
 Install the GitHub CLI and sign in on the machine running the command:
 
