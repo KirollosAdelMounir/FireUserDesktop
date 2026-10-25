@@ -115,13 +115,18 @@ public sealed class FfmpegVideoCaptureTests
         Assert.Contains(args, arg => arg.Contains($"scale_d3d11=width={outputWidth}:height={outputHeight}:format=nv12,hwdownload,format=nv12"));
         Assert.Contains(args, arg => arg.Contains("pad=1920:1080:(ow-iw)/2:(oh-ih)/2"));
     }
-    [Fact]
-    public async Task PackagedFfmpeg_ProducesCorrectPlanarPixelsFromSyntheticSource()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PackagedFfmpeg_ProducesCorrectPlanarPixelsFromSyntheticSource(bool portableCpuPath)
     {
         using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         using var capture = new FfmpegVideoCapture("screen", Monitor, "windows", args =>
         {
             var synthetic = args.ToList();
+            // Exercise scalar scaling as well as host SIMD: fast_bilinear can
+            // differ by two chroma levels on ARM and the portable CPU path.
+            if (portableCpuPath) synthetic.InsertRange(0, new[] { "-cpuflags", "0" });
             // Replace the complete capture filter with generated color, so this
             // exercises the packaged process/pipe without opening a real device.
             synthetic[synthetic.IndexOf("-i") + 1] = "color=c=red:size=320x180:rate=60";
@@ -134,9 +139,13 @@ public sealed class FfmpegVideoCaptureTests
         {
             await capture.RunAsync(frame =>
             {
-                Assert.InRange(frame[0], (byte)80, (byte)82);
-                Assert.InRange(frame[1920 * 1080], (byte)89, (byte)91);
-                Assert.InRange(frame[1920 * 1080 * 5 / 4], (byte)239, (byte)241);
+                const int lumaLength = 1920 * 1080, chromaLength = lumaLength / 4;
+                Assert.Equal(lumaLength + 2 * chromaLength, frame.Length);
+                // Check every pixel and each I420 plane boundary, allowing the
+                // observed scalar/ARM rounding without accepting swapped planes.
+                Assert.Equal(-1, frame.AsSpan(0, lumaLength).IndexOfAnyExceptInRange((byte)80, (byte)82));
+                Assert.Equal(-1, frame.AsSpan(lumaLength, chromaLength).IndexOfAnyExceptInRange((byte)89, (byte)91));
+                Assert.Equal(-1, frame.AsSpan(lumaLength + chromaLength, chromaLength).IndexOfAnyExceptInRange((byte)238, (byte)241));
                 received = true; stop.Cancel();
             }, stop.Token);
         }
