@@ -198,3 +198,20 @@ checks.
 See [call-stage-and-browser-control.md](call-stage-and-browser-control.md) for share-only full-screen controls, focus behavior and current verification.
 
 See [Call recovery and Linux fullscreen](call-recovery-and-linux-crash.md) for reconnect behavior, disconnect diagnostics and the native window-state crash correction.
+
+### Linux virtual-machine control responsiveness
+
+Linux screen transmission is capped at 30 FPS (15 FPS under congestion), and
+approving control no longer increases the adaptive frame rate to 60 FPS. This
+bounds software encoding work in guests while retaining resolution and bitrate
+adaptation. Windows and macOS retain their existing interactive frame policy.
+Linux video UI delivery runs below input priority. Linux pointer forwarding is
+limited to about 60 updates/second and suppresses repeated source pixels, including
+absolute-motion echoes from VM mouse integration. This is not isolation from a
+hypervisor's global pointer grab; same-machine VM tests still need runtime validation.
+
+On Linux, Escape or Ctrl+Alt+Escape stops forwarding locally and leaves the full
+screen before awaiting transport revocation. An already queued status update cannot
+reactivate that paused grant. A completed revoke and new approval are required to
+resume. Headless tests verify input priority and escape with a blocked revoke;
+these tests do not establish a real Fedora/Ubuntu VM performance result.

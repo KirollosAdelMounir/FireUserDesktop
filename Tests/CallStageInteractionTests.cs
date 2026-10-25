@@ -68,6 +68,69 @@ public sealed class CallStageInteractionTests
         Assert.Same(vm.DenyControlCommand, reject.Command); await vm.DenyControlCommand.ExecuteAsync(null); await media.Received(1).AnswerControlAsync("one", false);
         window.CloseAfterCall(); Dispatcher.UIThread.RunJobs(); Assert.False(secondToast.IsVisible); await vm.DisposeAsync();
     }
+    [AvaloniaFact]
+    public async Task LinuxEscapeStopsForwardingAndLeavesFullscreenWhileRevokeIsBlocked()
+    {
+        if(!OperatingSystem.IsLinux())return;
+        var (vm,media)=Create();vm.InCall=true;
+        var track="one · screen · track";
+        vm.Videos.Add(new(track,media.SendRemoteInput){Frame=new(track,16,9,new byte[16*9*4])});
+        var window=new CallWindow{DataContext=vm};window.Show();
+        var started=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        media.RevokeControlAsync().Returns(_=>{started.TrySetResult();return release.Task;});
+        try
+        {
+            media.RemoteControlChanged+=Raise.Event<Action<RemoteControlStatus>>(new RemoteControlStatus(new[]{new NativePeer("one",true,true,"scope")},null,null,"one"));
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(WindowState.FullScreen,window.WindowState);
+            var video=window.FindControl<ContentControl>("FocusedStage")!.GetVisualDescendants().OfType<NativeVideoView>().Single();
+            video.ForwardKey(4,true,false);media.Received(1).SendRemoteInput(Arg.Is<RemoteInput>(x=>x.Code==4));
+            video.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.Escape});
+            Assert.NotEqual(WindowState.FullScreen,window.WindowState);
+            Assert.False(release.Task.IsCompleted);
+            video.ForwardKey(5,true,false);media.DidNotReceive().SendRemoteInput(Arg.Is<RemoteInput>(x=>x.Code==5));
+            // A queued latency/status notification cannot re-enable a paused grant.
+            media.RemoteControlChanged+=Raise.Event<Action<RemoteControlStatus>>(new RemoteControlStatus(new[]{new NativePeer("one",true,true,"scope")},null,null,"one"));
+            Dispatcher.UIThread.RunJobs();Assert.False(vm.Videos.Single(x=>x.Identity==track).CanControl);
+            Assert.NotEqual(WindowState.FullScreen,window.WindowState);
+            Assert.Same(started.Task,await Task.WhenAny(started.Task,Task.Delay(3000,TestContext.Current.CancellationToken)));
+        }
+        finally{release.TrySetResult();window.CloseAfterCall();Dispatcher.UIThread.RunJobs();await vm.DisposeAsync();}
+    }
+    [AvaloniaFact]
+    public async Task LinuxPointerEchoDoesNotResendTheSameSourcePixel()
+    {
+        if(!OperatingSystem.IsLinux())return;
+        var inputs=new List<RemoteInput>();
+        var video=new NativeVideoView{Width=200,Height=200,RemoteControlEnabled=true,Frame=new("peer · screen · track",2,2,new byte[16]),InputCommand=new CommunityToolkit.Mvvm.Input.RelayCommand<RemoteInput>(x=>inputs.Add(x!))};
+        var window=new Window{Width=200,Height=200,Content=video};window.Show();Dispatcher.UIThread.RunJobs();
+        try
+        {
+            using var rendered=window.CaptureRenderedFrame();
+            window.MouseMove(new Point(20,20));Dispatcher.UIThread.RunJobs();
+            Assert.Single(inputs,x=>x.Kind==0);
+            await Task.Delay(25,TestContext.Current.CancellationToken);
+            window.MouseMove(new Point(21,21));Dispatcher.UIThread.RunJobs();
+            Assert.Single(inputs,x=>x.Kind==0);
+            await Task.Delay(25,TestContext.Current.CancellationToken);
+            window.MouseMove(new Point(150,150));Dispatcher.UIThread.RunJobs();
+            Assert.Equal(2,inputs.Count(x=>x.Kind==0));Assert.True(inputs.Last().X>.5);
+        }
+        finally{window.Close();Dispatcher.UIThread.RunJobs();}
+    }
+    [AvaloniaFact]
+    public async Task LinuxVideoDeliveryYieldsToQueuedKeyboardInput()
+    {
+        if(!OperatingSystem.IsLinux())return;
+        var (vm,media)=Create();vm.InCall=true;
+        var inputRan=false;
+        media.VideoReceived+=Raise.Event<Action<VideoPicture>>(new VideoPicture("one · screen · new",16,9,new byte[16*9*4]));
+        Dispatcher.UIThread.Post(()=>{Assert.DoesNotContain(vm.Videos,x=>x.Identity=="one · screen · new");inputRan=true;},DispatcherPriority.Input);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(inputRan);Assert.NotNull(Assert.Single(vm.Videos,x=>x.Identity=="one · screen · new").Frame);
+        await vm.DisposeAsync();
+    }
     private static (WorkspaceViewModel Vm,INativeMediaSession Media) Create()
     {
         var auth=Substitute.For<IAuthService>();auth.CurrentUser.Returns(new UserData{Id=Guid.NewGuid()});var chat=Substitute.For<IChatService>();var media=Substitute.For<INativeMediaSession>();

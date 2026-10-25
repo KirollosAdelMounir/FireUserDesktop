@@ -9,7 +9,14 @@ struct ScreenQuality {
     bool operator==(const ScreenQuality&) const = default;
 };
 inline ScreenQuality control_quality(ScreenQuality quality,bool active) {
+#if defined(__linux__)
+    // Software encoding in Linux guests must not double its workload when a
+    // grant arrives. Keep congestion adaptation and bound the high-bandwidth tier.
+    (void)active;
+    quality.fps=std::min(quality.fps,30);
+#else
     if(active&&quality.height>=720)quality.fps=60;
+#endif
     return quality;
 }
 // Upload estimates are bits/sec: 100 decimal KB/sec = 800,000 bits/sec.

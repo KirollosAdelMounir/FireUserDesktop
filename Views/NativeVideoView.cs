@@ -22,6 +22,10 @@ public sealed class NativeVideoView : Control
     public ICommand? InputCommand { get => GetValue(InputCommandProperty); set => SetValue(InputCommandProperty, value); }
     private long lastMove;
     private bool releasingPointer;
+    private bool inputSuspended;
+    private Point? lastLinuxPosition;
+    // Stop locally before the asynchronous revoke can wait on transport or OS input.
+    internal void SuspendRemoteInput() => inputSuspended = true;
     public NativeVideoView()
     {
         Focusable = true; ClipToBounds = true;
@@ -29,7 +33,12 @@ public sealed class NativeVideoView : Control
     }
     private WriteableBitmap? bitmap;
     private bool frameDirty = true;
-    static NativeVideoView() => FrameProperty.Changed.AddClassHandler<NativeVideoView>((view, _) => view.UpdateFrame());
+    static NativeVideoView()
+    {
+        FrameProperty.Changed.AddClassHandler<NativeVideoView>((view, _) => view.UpdateFrame());
+        RemoteControlEnabledProperty.Changed.AddClassHandler<NativeVideoView>((view, _) =>
+        { if (!view.RemoteControlEnabled) { view.inputSuspended=false; view.lastLinuxPosition=null; } });
+    }
     private void UpdateFrame() { frameDirty = true; InvalidateVisual(); }
     private void CopyFrame()
     {
@@ -65,7 +74,7 @@ public sealed class NativeVideoView : Control
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e) { base.OnAttachedToVisualTree(e); UpdateFrame(); }
     private void Send(int kind, double x = 0, double y = 0, int code = 0, bool down = false, bool positioned = false)
     {
-        if (RemoteControlEnabled && Frame != null) InputCommand?.Execute(new RemoteInput(Frame.Identity, kind, x, y, code, down,positioned));
+        if (RemoteControlEnabled && !inputSuspended && Frame != null) InputCommand?.Execute(new RemoteInput(Frame.Identity, kind, x, y, code, down,positioned));
     }
     private bool Position(Point position, out double x, out double y)
     {
@@ -78,7 +87,15 @@ public sealed class NativeVideoView : Control
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        if (!RemoteControlEnabled || Environment.TickCount64 - lastMove < 8 || !Position(e.GetPosition(this), out var x, out var y)) return;
+        if (!RemoteControlEnabled || inputSuspended || Environment.TickCount64 - lastMove < (OperatingSystem.IsLinux()?16:8) || !Position(e.GetPosition(this), out var x, out var y)) return;
+        if (OperatingSystem.IsLinux())
+        {
+            // VM mouse integration can echo an absolute warp back to the viewer.
+            // Re-sending the same source pixel creates work without moving the cursor.
+            var position=new Point(Math.Floor(x*Frame!.Width),Math.Floor(y*Frame.Height));
+            if(lastLinuxPosition==position)return;
+            lastLinuxPosition=position;
+        }
         lastMove = Environment.TickCount64; Send(0, x, y); e.Handled = true;
     }
     protected override void OnPointerPressed(PointerPressedEventArgs e)

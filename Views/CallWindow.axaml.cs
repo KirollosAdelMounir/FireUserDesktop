@@ -108,6 +108,15 @@ public partial class CallWindow : Window
     }
     private void PresentationKeyDown(object? sender, KeyEventArgs e)
     {
+        if (OperatingSystem.IsLinux() && e.Key == Key.Escape && observedModel?.ControlledScreen != null &&
+            (e.KeyModifiers == KeyModifiers.None || e.KeyModifiers == (KeyModifiers.Control|KeyModifiers.Alt)))
+        {
+            // A Linux VM may be busy in portal/X11 input. Do not synchronously
+            // acquire the media lock to escape, or forward the escape to the guest.
+            foreach(var view in this.GetVisualDescendants().OfType<NativeVideoView>()) view.SuspendRemoteInput();
+            observedModel.PauseRemoteInput();
+            ExitShareFullscreen(); e.Handled=true; return;
+        }
         if (e.KeyModifiers != KeyModifiers.None) return;
         if (e.Key == Key.Escape && presentationFullscreen) { ExitShareFullscreen(); e.Handled = true; }
         else if (e.Key == Key.F11 && (presentationFullscreen || observedModel?.HasFocusedScreen == true)) { ToggleShareFullscreen(); e.Handled = true; }
