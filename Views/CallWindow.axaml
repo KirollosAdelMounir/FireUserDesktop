@@ -36,7 +36,7 @@
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
           <Button Classes="quiet" Content="Chat" Command="{Binding ToggleCallChatCommand}" />
           <Button Classes="quiet" Content="Members" Command="{Binding ToggleCallMembersCommand}" />
-          <Button x:Name="FullscreenButton" Classes="quiet" Content="Full screen share" Click="Fullscreen_Click" IsVisible="{Binding HasFocusedScreen}" AutomationProperties.Name="Full screen screen share" ToolTip.Tip="Full screen (F11); Escape to return" />
+          <Button x:Name="FullscreenButton" Classes="quiet" Content="Full screen share" Click="Fullscreen_Click" IsVisible="{Binding HasFocusedScreen}" AutomationProperties.Name="Full screen screen share" ToolTip.Tip="Full screen (F11); Escape to return when viewing. Ctrl+Alt+Escape releases remote control." />
           <Button Classes="quiet" Content="Gallery" Command="{Binding ClearVideoFocusCommand}" IsVisible="{Binding HasFocusedVideo}" />
           <Button Content="Devices" Classes="quiet" Margin="0" Click="Devices_Click" AutomationProperties.Name="Call devices">
             <Button.Flyout><Flyout><StackPanel Width="320" Spacing="10">
@@ -102,7 +102,7 @@
                 <ComboBox.ItemTemplate><DataTemplate x:DataType="model:NativePeer"><TextBlock Text="{Binding ScreenLabel}" TextTrimming="CharacterEllipsis" /></DataTemplate></ComboBox.ItemTemplate>
               </ComboBox>
               <Button Content="Request control" Command="{Binding RequestControlCommand}" IsEnabled="{Binding CanRequestControl}" Margin="8,0" />
-              <Button Content="Stop control / revoke access" Command="{Binding StopControlCommand}" IsEnabled="{Binding HasRemoteControl}" />
+              <Button Classes="remote-release" Content="Stop control / revoke access" Command="{Binding StopControlCommand}" IsEnabled="{Binding HasRemoteControl}" />
             </WrapPanel>
             <Border Background="{DynamicResource ForgeBgSecondary}" BorderBrush="{DynamicResource ForgePrimary}" BorderThickness="1" Padding="12" CornerRadius="8" IsVisible="{Binding ControlRequester, Converter={StaticResource NullToBoolConverter}}">
               <StackPanel Spacing="8">
@@ -118,12 +118,12 @@
 </StackPanel></Grid>    <Border x:Name="FullscreenControls" Grid.Row="2" VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Padding="12,4" MinHeight="76" Background="{DynamicResource ForgeBg}" PointerEntered="FullscreenControls_Entered" PointerExited="FullscreenControls_Exited" GotFocus="FullscreenControls_Focused" LostFocus="FullscreenControls_Blurred">
       <Border x:Name="FullscreenToolbar" Background="{DynamicResource ForgeSurface}" CornerRadius="14" Padding="14" Opacity="0" IsHitTestVisible="False">
         <StackPanel Spacing="8"><WrapPanel HorizontalAlignment="Center">
-          <Button x:Name="ExitFullscreenButton" Classes="call-control" Content="Exit full screen (Esc)" Click="Fullscreen_Click" AutomationProperties.Name="Exit full screen screen share" />
+          <Button x:Name="ExitFullscreenButton" Classes="call-control" Content="Exit full screen" ToolTip.Tip="Escape when viewing; Ctrl+Alt+Escape to stop remote control" Click="Fullscreen_Click" AutomationProperties.Name="Exit full screen screen share" />
           <Button Classes="call-control" Content="{Binding MicrophoneActionLabel}" Command="{Binding ToggleMicrophoneCommand}" />
           <Button Classes="call-control" Content="{Binding CameraActionLabel}" Command="{Binding ToggleCameraCommand}" />
           <Button Classes="call-control" Content="{Binding ScreenActionLabel}" Command="{Binding ToggleScreenCommand}" />
           <Button x:Name="FullscreenRequestControl" Classes="call-control" Content="Request control of this share" Click="RequestFocusedControl_Click" IsEnabled="{Binding CanRequestFocusedControl}" />
-          <Button Classes="call-control" Content="Stop control / revoke access" Command="{Binding StopControlCommand}" IsEnabled="{Binding HasRemoteControl}" />
+          <Button Classes="call-control remote-release" Content="Stop control / revoke access" Command="{Binding StopControlCommand}" IsEnabled="{Binding HasRemoteControl}" />
           <Button Classes="call-control" Content="Chat / members" Click="OpenPanelsFromFullscreen_Click" />
           <Button Classes="call-control danger" Content="Leave call" Command="{Binding LeaveCommand}" />
         </WrapPanel>

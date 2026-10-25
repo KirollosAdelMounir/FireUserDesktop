@@ -5,7 +5,7 @@
     <RootNamespace>UserIdentityDesktop</RootNamespace>
     <AssemblyTitle>Fire User Connect</AssemblyTitle>
     <Product>Fire User Connect</Product>
-    <Version>1.0.1</Version>
+    <Version>1.0.4</Version>
     <Description>Fire User Connect</Description>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>

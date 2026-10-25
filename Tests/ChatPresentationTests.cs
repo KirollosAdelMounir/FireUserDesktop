@@ -109,7 +109,7 @@ public sealed class ChatPresentationTests
         window.MouseMove(point); window.MouseDown(point,MouseButton.Right); window.MouseUp(point,MouseButton.Right); Dispatcher.UIThread.RunJobs();
         var menu=Assert.IsType<ContextMenu>(card.ContextMenu); Assert.True(menu.IsOpen); Assert.Null(workspace.FocusedVideo);
         menu.Items.OfType<MenuItem>().Single(x=>x.Header?.ToString()=="Full screen").Command!.Execute(null); menu.Close(); Dispatcher.UIThread.RunJobs();
-        Assert.Same(tile,workspace.FocusedVideo); Assert.Equal(WindowState.FullScreen,window.WindowState); Assert.True(workspace.InCall);
+        Assert.Same(tile,workspace.FocusedVideo); Assert.Equal(OperatingSystem.IsLinux()?WindowState.Normal:WindowState.FullScreen,window.WindowState);Assert.Contains("share-fullscreen",window.Classes); Assert.True(workspace.InCall);
         window.CloseAfterCall(); Dispatcher.UIThread.RunJobs(); await workspace.DisposeAsync();
     }
     [AvaloniaFact]

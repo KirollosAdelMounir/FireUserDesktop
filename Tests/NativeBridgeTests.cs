@@ -109,7 +109,7 @@ public sealed class NativeBridgeTests
     [Fact]
     public void ManagedCallbacks_MatchCppAbi_AndDisconnectedRoomDisposes()
     {
-        Assert.Equal(6, LiveKitNative.fu_abi_version());
+        Assert.Equal(7, LiveKitNative.fu_abi_version());
         LiveKitNative.VideoCallback video = (_, _, _, _, _) => { };
         LiveKitNative.AudioCallback audio = (_, _, _, _, _) => { };
         LiveKitNative.EventCallback events = (_, _) => { };

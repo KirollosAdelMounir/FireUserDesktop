@@ -36,6 +36,14 @@ FU_API int fu_interactive_screen(void* session, int enabled);
 FU_API int fu_desktop_bounds(int* width, int* height);
 FU_API int fu_screen_output_index(int x, int y, int width, int height);
 FU_API int fu_input_supported(void);
+// UI renews a foreground/grant lease; expiry releases capture even if UI stalls.
+// Callback -1 releases held remote input. Never call close from its callback.
+// Status: 0 inactive, 1 active, 2 Xwayland (compositor policy applies),
+// -1 unavailable, -2 macOS permission required, -3 expired/lost capture.
+typedef void (*fu_keyboard_callback)(int64_t epoch, int hid, int down);
+FU_API void* fu_keyboard_capture_open(uintptr_t window, fu_keyboard_callback callback);
+FU_API int fu_keyboard_capture_renew(void* handle, int enabled, int64_t epoch);
+FU_API void fu_keyboard_capture_close(void* handle);
 FU_API int fu_apply_input(int kind, double x, double y, int code, int down);
 FU_API void fu_release_input(void);
 typedef void (*fu_pcm_callback)(const uint8_t* pcm, int length);

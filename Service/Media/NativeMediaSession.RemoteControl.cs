@@ -14,14 +14,14 @@ public sealed partial class NativeMediaSession
     private readonly object remoteLock = new();
     private readonly RemoteControlPolicy control = new();
     private readonly LiveKitNative.DataCallback dataCallback;
-    private Channel<(string Sender, RemotePacket Packet)>? incomingData;
+    private RemoteInputInbox? incomingData;
     private Channel<(string Destination, RemotePacket Packet)>? outgoingData;
     private Task remoteReader = Task.CompletedTask, remoteWriter = Task.CompletedTask;
     private Channel<(string Destination, RemotePacket Packet)>? outgoingMoves;
     private Task moveWriter = Task.CompletedTask;
     private double? inputRtt;
     private long lastProbe;
-    private long lastLegacyMove;
+    private long lastLegacyMove,lastExtendedNotice;
     private Timer? grantExpiry;
     private Timer? requestExpiry;
     private Timer? inputLease;
@@ -43,7 +43,7 @@ public sealed partial class NativeMediaSession
 
     private void StartData(CancellationToken ct)
     {
-        incomingData = Channel.CreateBounded<(string, RemotePacket)>(256);
+        incomingData = new RemoteInputInbox();
         outgoingData = Channel.CreateBounded<(string, RemotePacket)>(128);
         outgoingMoves=Channel.CreateBounded<(string,RemotePacket)>(new BoundedChannelOptions(1){FullMode=BoundedChannelFullMode.DropOldest,SingleReader=true});
         moveWriter=Task.Run(async()=>
@@ -64,7 +64,7 @@ public sealed partial class NativeMediaSession
         {
             try
             {
-                await foreach (var item in incomingData.Reader.ReadAllAsync(ct))
+                await foreach (var item in incomingData.ReadAllAsync(ct))
                 {
                     if(OperatingSystem.IsLinux() && ScreenSources.IsWayland && item.Packet.Type is "input" or "release" or "move") { await HandleWaylandInputAsync(item.Sender,item.Packet);continue; }
                     lock (remoteLock)
@@ -113,13 +113,13 @@ public sealed partial class NativeMediaSession
                             {
                                 var x = input.X; var y = input.Y;
                                 if (input.Kind == 0 && !RemoteControlPolicy.TryMapScreenPoint(x, y, desktopWidth, desktopHeight, out x, out y)) continue;
-                                if(input.Kind==1&&input.PositionIncluded)
+                                if((input.Kind is 1 or 6) && input.PositionIncluded)
                                 {
                                     if(RemoteControlPolicy.TryMapScreenPoint(input.X,input.Y,desktopWidth,desktopHeight,out var px,out var py))
                                     {if(LiveKitNative.fu_apply_input(0,px,py,0,0)!=0){RevokeLocal();continue;}}
-                                    else if(input.Down)continue;
+                                    else if(input.Down||input.Kind==6)continue;
                                 }
-                                if (LiveKitNative.fu_apply_input(input.Kind, x, y, input.Code, input.Down ? 1 : 0) != 0) RevokeLocal();
+                                if (LiveKitNative.fu_apply_input(input.Kind, input.Kind==6?input.DeltaX:x, input.Kind==6?input.DeltaY:y, input.Code, input.Down ? 1 : 0) != 0) RevokeLocal();
                             }
                             if(packet.Probe>0&&control.Controller==sender)QueuePacket(sender,new RemotePacket("latency",Scope:packet.Scope,Grant:packet.Grant,Probe:packet.Probe));
                             continue;
@@ -131,7 +131,7 @@ public sealed partial class NativeMediaSession
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
-            catch { Error?.Invoke("Remote control stopped. Request permission again."); lock (remoteLock) RevokeLocal(); }
+            catch { Error?.Invoke("Remote control stopped. Request permission again."); lock (remoteLock) {RevokeLocal();control.StopControlling();RemoteControlChanged?.Invoke(CurrentControlStatus);} }
         });
         remoteWriter = Task.Run(async () =>
         {
@@ -172,8 +172,11 @@ public sealed partial class NativeMediaSession
         }
         try
         {
-            if(input.Kind==1&&input.PositionIncluded&&RemoteControlPolicy.TryMapScreenPoint(input.X,input.Y,desktopWidth,desktopHeight,out var px,out var py))
-                if(!await portal.ApplyInputAsync(input with{Kind=0,X=px,Y=py},epoch))throw new InvalidOperationException("The pointer position could not be applied.");
+            if((input.Kind is 1 or 6)&&input.PositionIncluded)
+            {
+                if(!RemoteControlPolicy.TryMapScreenPoint(input.X,input.Y,desktopWidth,desktopHeight,out var px,out var py)){if(input.Down||input.Kind==6)return;}
+                else if(!await portal.ApplyInputAsync(input with{Kind=0,X=px,Y=py,DeltaX=0,DeltaY=0},epoch))throw new InvalidOperationException("The pointer position could not be applied.");
+            }
             if(await portal.ApplyInputAsync(input,epoch))
             {
                 lock(remoteLock)if(packet.Probe>0&&control.Controller==sender&&control.IsGrantPeer(sender,packet))QueuePacket(sender,new("latency",Scope:packet.Scope,Grant:packet.Grant,Probe:packet.Probe));
@@ -204,7 +207,11 @@ public sealed partial class NativeMediaSession
                 return;
             }
             if(length>4096)return;
-            if (packet != null && incomingData?.Writer.TryWrite((Marshal.PtrToStringUTF8(sender) ?? "", packet)) == false)
+            if(packet?.Type=="move")
+            {
+                lock(remoteLock)if(!control.IsHostedGrantPeer(Marshal.PtrToStringUTF8(sender)??"",packet))return;
+            }
+            if (packet != null && incomingData?.TryWrite((Marshal.PtrToStringUTF8(sender) ?? "", packet)) == false)
             { lock (remoteLock) { RevokeLocal(); RemoteControlChanged?.Invoke(CurrentControlStatus); } }
         }
         catch { }
@@ -215,11 +222,12 @@ public sealed partial class NativeMediaSession
         {
             // Fail closed on backpressure; never leave queued control input behind.
             control.StopControlling(); RevokeLocal();
+            RemoteControlChanged?.Invoke(CurrentControlStatus);
             Error?.Invoke("Remote control paused because its data channel is busy.");
         }
     }
     private void SendHello(string destination = "") => QueuePacket(destination,
-        new RemotePacket("hello", CanHost: canHost, Sharing: control.LocalScope != null, Scope: control.LocalScope,FastInput:true,ClipboardSupport:clipboardStore!=null));
+        new RemotePacket("hello", CanHost: canHost, Sharing: control.LocalScope != null, Scope: control.LocalScope,FastInput:true,ClipboardSupport:clipboardStore!=null,ExtendedInput:true));
     private void RevokeLocal()
     {
         var controller = control.Controller;
@@ -309,9 +317,14 @@ public sealed partial class NativeMediaSession
     {
         lock (remoteLock)
         {
-            if (!Connected) return;
+            if (!Connected || input.ControlEpoch!=0&&input.ControlEpoch!=control.InputEpoch) return;
+            if(RemoteInputCodes.RequiresExtension(input)&&control.Controlling is {} host&&control.Peers.TryGetValue(host,out var capability)&&!capability.ExtendedInput)
+            {
+                if(Environment.TickCount64-lastExtendedNotice>3000){lastExtendedNotice=Environment.TickCount64;Error?.Invoke("Update the other desktop client to use scrolling, extra mouse buttons and extended keyboard keys.");}
+                return;
+            }
             if(input.Kind is 4 or 5){ClipboardGesture(input.Kind==5);return;}
-            if(input.Kind==1&&input.PositionIncluded&&control.Controlling is {} oldPeer&&control.Peers.TryGetValue(oldPeer,out var oldCapability)&&!oldCapability.FastInput)
+            if((input.Kind is 1 or 6) && input.PositionIncluded&&control.Controlling is {} oldPeer&&control.Peers.TryGetValue(oldPeer,out var oldCapability)&&!oldCapability.FastInput)
             {
                 var position=control.Outgoing(input with{Kind=0,Code=0,Down=false,PositionIncluded=false});
                 if(position!=null)QueuePacket(oldPeer,position);

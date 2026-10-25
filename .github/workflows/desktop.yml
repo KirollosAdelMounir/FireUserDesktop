@@ -80,7 +80,7 @@ jobs:
           key: source-media-${{ matrix.rid }}-${{ hashFiles('scripts/media-runtimes.json', 'scripts/build-native.py') }}
       - name: Linux development dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxtst-dev libfontconfig1 libice6 libsm6 libssl-dev python3 xvfb dbus-daemon libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 gstreamer1.0-plugins-base gstreamer1.0-pipewire rpm zstd squashfs-tools desktop-file-utils file
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxtst-dev libxcb1-dev libfontconfig1 libice6 libsm6 libssl-dev python3 xvfb dbus-daemon libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 gstreamer1.0-plugins-base gstreamer1.0-pipewire rpm zstd squashfs-tools desktop-file-utils file
       - name: macOS media build dependencies
         if: runner.os == 'macOS'
         run: brew list nasm >/dev/null 2>&1 || brew install nasm

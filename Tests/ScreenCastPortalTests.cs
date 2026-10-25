@@ -25,6 +25,7 @@ public sealed class ScreenCastPortalTests
         public string? StartInterface {get;private set;}
         public ConcurrentQueue<(string Method,int Code,uint State)> Inputs {get;}=new();
         public ConcurrentQueue<(uint Stream,double X,double Y)> Points {get;}=new();
+        public ConcurrentQueue<(double X,double Y,bool Finish)> Axes {get;}=new();
         public uint Types { get; private set; }
         public bool Multiple { get; private set; }
         public bool Persist { get; private set; }
@@ -60,6 +61,9 @@ public sealed class ScreenCastPortalTests
             }
             if(member is "NotifyKeyboardKeycode" or "NotifyPointerButton") {
                 reader.ReadObjectPath();reader.ReadDictionaryOfStringToVariantValue();Inputs.Enqueue((member,reader.ReadInt32(),reader.ReadUInt32()));using var reply=context.CreateReplyWriter(null);context.Reply(reply.CreateMessage());return default;
+            }
+            if(member=="NotifyPointerAxis") {
+                reader.ReadObjectPath();var axisOptions=reader.ReadDictionaryOfStringToVariantValue();Axes.Enqueue((reader.ReadDouble(),reader.ReadDouble(),axisOptions["finish"].GetBool()));using var reply=context.CreateReplyWriter(null);context.Reply(reply.CreateMessage());return default;
             }
             if(member=="NotifyPointerMotionAbsolute") {
                 reader.ReadObjectPath();reader.ReadDictionaryOfStringToVariantValue();Points.Enqueue((reader.ReadUInt32(),reader.ReadDouble(),reader.ReadDouble()));using var reply=context.CreateReplyWriter(null);context.Reply(reply.CreateMessage());return default;
@@ -152,6 +156,12 @@ public sealed class ScreenCastPortalTests
         var point=Assert.Single(server.Points);Assert.Equal(42u,point.Stream);Assert.Equal(959.5,point.X);Assert.Equal(269.75,point.Y);
         Assert.True(await portal.ApplyInputAsync(new("peer",2,Code:4,Down:true),grant));
         Assert.True(await portal.ApplyInputAsync(new("peer",1,Code:2,Down:true),grant));
+        Assert.True(await portal.ApplyInputAsync(new("peer",6,DeltaX:.5,DeltaY:-1),grant));
+        Assert.Equal((-60d,120d,true),Assert.Single(server.Axes));
+        Assert.False(await portal.ApplyInputAsync(new("peer",6,DeltaY:double.PositiveInfinity),grant));
+        Assert.False(await portal.ApplyInputAsync(new("peer",6,Code:1,DeltaY:1),grant));
+        Assert.False(await portal.ApplyInputAsync(new("peer",6,Down:true,DeltaY:1),grant));
+        Assert.Single(server.Axes);
         portal.DisableInput();await portal.ReleaseInputAsync();
         Assert.Contains(("NotifyKeyboardKeycode",30,0u),server.Inputs);Assert.Contains(("NotifyPointerButton",0x111,0u),server.Inputs);
         Assert.False(await portal.ApplyInputAsync(new("peer",2,Code:5,Down:true),grant));

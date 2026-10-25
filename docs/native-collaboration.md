@@ -198,3 +198,71 @@ checks.
 See [call-stage-and-browser-control.md](call-stage-and-browser-control.md) for share-only full-screen controls, focus behavior and current verification.
 
 See [Call recovery and Linux fullscreen](call-recovery-and-linux-crash.md) for reconnect behavior, disconnect diagnostics and the native window-state crash correction.
+
+### Linux virtual-machine control responsiveness
+
+Linux screen transmission is capped at 30 FPS (15 FPS under congestion), and
+approving control no longer increases the adaptive frame rate to 60 FPS. This
+bounds software encoding work in guests while retaining resolution and bitrate
+adaptation. Windows and macOS retain their existing interactive frame policy.
+Linux video UI delivery runs below input priority. Linux pointer forwarding is
+limited to about 60 updates/second and suppresses repeated source pixels, including
+absolute-motion echoes from VM mouse integration. This is not isolation from a
+hypervisor's global pointer grab; same-machine VM tests still need runtime validation.
+
+On Linux, Ctrl+Alt+Escape stops forwarding locally and leaves the full
+screen before awaiting transport revocation. An already queued status update cannot
+reactivate that paused grant. A completed revoke and new approval are required to
+resume. Headless tests verify input priority and escape with a blocked revoke;
+these tests do not establish a real Fedora/Ubuntu VM performance result.
+
+### Linux borderless presentation
+
+Linux screen-share presentation uses an undecorated, non-topmost **normal** window
+sized to the current monitor's full pixel bounds, converted to logical units using
+that monitor's DPI scaling. Attachment image/video presentation uses the same window behavior. Manual call
+presentation and approved remote control use the same path; neither sends a native fullscreen request. Window size limits are
+suspended while presenting so smaller displays are not clipped. Escape (view-only), the exit
+button, revocation and the end of sharing restore the saved normal geometry,
+decorations, resize/size policies, limits and prior maximized state. Other platforms
+continue using native fullscreen. Desktop panels/docks and the compositor retain
+normal window-management control; headless tests cannot prove a real compositor's
+placement or resolve a VM freeze without an actual retest.
+
+
+### Focused remote input (1.0.4)
+
+An approved remote screen owns call-window keyboard, pointer buttons and scrolling
+while that window is active. Ordinary Escape and F11 go to the remote host;
+Ctrl+Alt+Escape releases control locally. Focus departure releases held input.
+Revocation, shared-track/participant departure and disconnect disable forwarding
+and restore Windows/macOS fullscreen or Linux borderless presentation. Queued
+keyboard work is bound to its original local grant epoch and cannot enter a later
+grant. Extended keys, side buttons and scroll negotiate an explicit capability;
+older hosts need an update for these inputs. Clipboard gestures remain explicit
+Ctrl+C/V (and Command+C/V on macOS).
+
+Windows retains its foreground low-level hook. Linux uses an asynchronous XCB
+keyboard grab scoped to the call XID, plus the XWayland compositor grab request;
+it never changes compositor policy or uses a synchronous server grab. macOS uses
+an Accessibility-authorized session event tap scoped to the frontmost call window.
+Capture renews from the UI every 200 ms and expires after 750 ms if the UI stalls.
+Native workers join off the UI thread; callbacks remain rooted until that join.
+X11 hosted injection stops if this same process is capturing another remote
+keyboard, preventing reciprocal XTest feedback. Wayland hosting still uses only
+the explicitly approved RemoteDesktop portal. Compositor-reserved combinations
+and OS secure sequences remain subject to system policy; no permission bypass is
+implemented. In-window keys remain available if system capture is unavailable.
+
+Incoming pointer positions now occupy one latest-value slot, separate from the
+bounded reliable key/button/release queue. This removes motion backlog before
+keys; positioned clicks/scroll/releases fence stale pointer packets. The 50 ms
+healthy-network input budget remains a target. The displayed injection-acknowledgment
+round trip excludes screen capture, codecs and display refresh and is not an
+input-to-photon maximum. Linux keeps its 30 FPS VM protection. ABI is now 7.
+
+Validation includes policy replay/code/bounds tests, headless call routing,
+portal axis messages, and a keyboard lease/focus test using a private Xvfb display.
+These checks never grab or inject into the user's desktop. Real cross-machine
+shortcuts, macOS consent, compositor policy and measured end-to-end latency need
+runtime device testing.

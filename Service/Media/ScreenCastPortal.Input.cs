@@ -28,9 +28,14 @@ internal sealed partial class ScreenCastPortal
         {
             if(!CanControl||epoch==0||epoch!=Volatile.Read(ref activeGrant))return false;
             if(!double.IsFinite(input.X)||!double.IsFinite(input.Y)||input.X<0||input.X>1||input.Y<0||input.Y>1)return false;
+            if(input.Kind==6)
+            {
+                if(input.Code!=0||input.Down||!double.IsFinite(input.DeltaX)||!double.IsFinite(input.DeltaY)||Math.Abs(input.DeltaX)>10||Math.Abs(input.DeltaY)>10)return false;
+                await AxisAsync(-input.DeltaX*120,-input.DeltaY*120);return true;
+            }
             if(input.Kind==3){await ReleaseHeldCoreAsync();return true;}
             if(input.Kind==0){await PointerAsync(input.X*(LogicalWidth-1),input.Y*(LogicalHeight-1));return true;}
-            var code=input.Kind==1?input.Code switch{1=>0x110,2=>0x111,3=>0x112,_=>-1}:input.Kind==2?EvdevKey(input.Code):-1;
+            var code=input.Kind==1?input.Code switch{1=>0x110,2=>0x111,3=>0x112,4=>0x113,5=>0x114,_=>-1}:input.Kind==2?EvdevKey(input.Code):-1;
             if(code<0)return false;
             var held=input.Kind==1?heldButtons:heldKeys;
             if(!input.Down&&!held.Contains(code))return true;
@@ -63,6 +68,14 @@ internal sealed partial class ScreenCastPortal
         writer.WriteObjectPath(session);writer.WriteDictionary(new Dictionary<string,VariantValue>());writer.WriteInt32(code);writer.WriteUInt32(state);
         return connection.CallMethodAsync(writer.CreateMessage()).WaitAsync(TimeSpan.FromSeconds(2));
     }
+    private Task AxisAsync(double x,double y)
+    {
+        if(session==null)throw new IOException("The remote desktop session ended.");
+        using var writer=connection.GetMessageWriter();
+        writer.WriteMethodCallHeader(destination:Service,path:Path,@interface:RemoteInterface,member:"NotifyPointerAxis",signature:"oa{sv}dd");
+        writer.WriteObjectPath(session);writer.WriteDictionary(new Dictionary<string,VariantValue>{{"finish",true}});writer.WriteDouble(x);writer.WriteDouble(y);
+        return connection.CallMethodAsync(writer.CreateMessage()).WaitAsync(TimeSpan.FromSeconds(2));
+    }
     private Task PointerAsync(double x,double y)
     {
         if(session==null)throw new IOException("The remote desktop session ended.");
@@ -77,6 +90,9 @@ internal sealed partial class ScreenCastPortal
         if(hid is >=4 and <=29)return letters[hid-4];
         if(hid is >=30 and <=39)return hid-28;
         if(hid is >=58 and <=67)return hid+1;
-        return hid switch{40=>28,41=>1,42=>14,43=>15,44=>57,45=>12,46=>13,47=>26,48=>27,49=>43,51=>39,52=>40,53=>41,54=>51,55=>52,56=>53,68=>87,69=>88,76=>111,79=>106,80=>105,81=>108,82=>103,224=>29,225=>42,226=>56,227=>125,228=>97,229=>54,230=>100,231=>126,_=>-1};
+        if(hid is >=104 and <=115)return hid+79;
+        ReadOnlySpan<int> keypad=[79,80,81,75,76,77,71,72,73];
+        if(hid is >=89 and <=97)return keypad[hid-89];
+        return hid switch{40=>28,41=>1,42=>14,43=>15,44=>57,45=>12,46=>13,47=>26,48=>27,49 or 50=>43,51=>39,52=>40,53=>41,54=>51,55=>52,56=>53,57=>58,68=>87,69=>88,70=>99,71=>70,72=>119,73=>110,74=>102,75=>104,76=>111,77=>107,78=>109,79=>106,80=>105,81=>108,82=>103,83=>69,84=>98,85=>55,86=>74,87=>78,88=>96,98=>82,99=>83,100=>86,101=>127,103=>117,224=>29,225=>42,226=>56,227=>125,228=>97,229=>54,230=>100,231=>126,_=>-1};
     }
 }

@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Interactivity;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -62,7 +63,13 @@ public sealed class AttachmentPreviewControlTests
             Assert.Equal(WindowTransparencyLevel.None,Assert.Single(gallery.TransparencyLevelHint));Assert.Equal(255,Assert.IsAssignableFrom<ISolidColorBrush>(gallery.Background).Color.A);Assert.Equal(WindowDecorations.Full,gallery.WindowDecorations);
             var surface=Assert.IsType<Border>(gallery.Content);Assert.Equal(HorizontalAlignment.Stretch,surface.HorizontalAlignment);Assert.Equal(double.PositiveInfinity,surface.MaxWidth);Assert.Equal(255,Assert.IsAssignableFrom<ISolidColorBrush>(surface.Background).Color.A);
             var photo=Assert.Single(gallery.GetVisualDescendants().OfType<PhotoPreview>());Click(photo,"Rotate right");Assert.Equal(90,photo.Rotation);Click(photo,"Fit");
-            Click(photo,"Fullscreen");Assert.Equal(WindowState.FullScreen,gallery.WindowState);Click(gallery,"Exit fullscreen");Assert.NotEqual(WindowState.FullScreen,gallery.WindowState);
+            var originalPosition=gallery.Position;var originalWidth=gallery.Width;var originalHeight=gallery.Height;
+            Click(photo,"Fullscreen");Assert.Equal(OperatingSystem.IsLinux()?WindowState.Normal:WindowState.FullScreen,gallery.WindowState);Assert.True(gallery.IsPresenting);
+            if(OperatingSystem.IsLinux())Assert.Equal(WindowDecorations.None,gallery.WindowDecorations);
+            Click(gallery,"Exit fullscreen");Assert.NotEqual(WindowState.FullScreen,gallery.WindowState);Assert.False(gallery.IsPresenting);Assert.Equal(WindowDecorations.Full,gallery.WindowDecorations);
+            Assert.Equal(originalPosition,gallery.Position);Assert.Equal(originalWidth,gallery.Width);Assert.Equal(originalHeight,gallery.Height);
+            Click(photo,"Fullscreen");gallery.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.Escape});
+            Assert.False(gallery.IsPresenting);Assert.True(gallery.IsVisible);Assert.Equal(WindowDecorations.Full,gallery.WindowDecorations);
             Assert.DoesNotContain(gallery.GetVisualDescendants().OfType<Button>(),x=>x.Content?.ToString() is "Close" or "X" or "×");
             if(Environment.GetEnvironmentVariable("FIREUSER_TEST_ARTIFACTS") is {} dir){Directory.CreateDirectory(dir);using var frame=gallery.CaptureRenderedFrame();Assert.NotNull(frame);using var output=File.Create(Path.Combine(dir,$"opaque-photo-preview-{(dark?"dark":"light")}.png"));frame.Save(output,new PngBitmapEncoderOptions());}
         }

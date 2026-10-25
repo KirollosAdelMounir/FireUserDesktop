@@ -43,7 +43,7 @@ public sealed partial class NativeMediaSession : INativeMediaSession
         {
             if (room != IntPtr.Zero) throw new InvalidOperationException("Leave the current call first.");
             if (!Uri.TryCreate(token.ServerUrl, UriKind.Absolute, out var url) || url.Scheme is not ("wss" or "ws")) throw new InvalidOperationException("The server returned an invalid media endpoint.");
-            if (await Task.Run(LiveKitNative.fu_abi_version) != 6) throw new InvalidOperationException("The native LiveKit bridge version does not match this client.");
+            if (await Task.Run(LiveKitNative.fu_abi_version) != 7) throw new InvalidOperationException("The native LiveKit bridge version does not match this client.");
             lifetime = new CancellationTokenSource();
             room = await Task.Run(() => LiveKitNative.fu_create(videoCallback, audioCallback, eventCallback, dataCallback));
             if (room == IntPtr.Zero) throw new InvalidOperationException("Could not create the native LiveKit room.");

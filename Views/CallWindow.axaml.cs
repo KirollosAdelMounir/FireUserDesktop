@@ -17,6 +17,7 @@ public partial class CallWindow : Window
 {
     private bool closingAfterCall, leaving, presentationFullscreen, windowStateCheckQueued, controlFullscreen;
     private WindowState previousWindowState;
+    private readonly BorderlessPresentation borderlessPresentation;
     private bool previousMembers, previousChat;
     private WorkspaceViewModel? observedModel;
     private RemoteControlRequestWindow? controlRequestToast;
@@ -31,6 +32,7 @@ public partial class CallWindow : Window
     public CallWindow()
     {
         InitializeComponent();
+        borderlessPresentation=new(this);
         Opened += (_, _) => keyboardCapture = new RemoteKeyboardCapture(this);
         Closed += (_, _) => { keyboardCapture?.Dispose(); keyboardCapture = null; };
         var entryMotion = new SurfaceMotion();
@@ -38,6 +40,12 @@ public partial class CallWindow : Window
         Closed += (_, _) => entryMotion.Cancel();
         SizeChanged += (_, _) => UpdateGalleryLayout();
         AddHandler(KeyDownEvent, PresentationKeyDown, RoutingStrategies.Tunnel);
+        AddHandler(KeyUpEvent,(_,e)=>RouteControlKey(e,false),RoutingStrategies.Tunnel);
+        AddHandler(TextInputEvent,(_,e)=>{if(IsActive&&observedModel?.ControlledScreen!=null)e.Handled=true;},RoutingStrategies.Tunnel);
+        AddHandler(PointerPressedEvent,RouteControlPointer,RoutingStrategies.Tunnel);
+        AddHandler(PointerReleasedEvent,RouteControlPointer,RoutingStrategies.Tunnel);
+        AddHandler(PointerMovedEvent,RouteControlPointer,RoutingStrategies.Tunnel);
+        AddHandler(PointerWheelChangedEvent,RouteControlPointer,RoutingStrategies.Tunnel);
         DataContextChanged += (_, _) =>
         {
             controlRequestToast?.Close(); controlRequestToast = null;
@@ -56,8 +64,8 @@ public partial class CallWindow : Window
             Dispatcher.UIThread.Post(() =>
             {
                 windowStateCheckQueued = false;
-                if (WindowState == WindowState.FullScreen && !presentationFullscreen) { WindowState = WindowState.Normal; return; }
-                if (presentationFullscreen && WindowState != WindowState.FullScreen) ExitShareFullscreen(restoreWindowState: false);
+                if (WindowState == WindowState.FullScreen && (OperatingSystem.IsLinux() || !presentationFullscreen)) { WindowState = WindowState.Normal; return; }
+                if (presentationFullscreen && WindowState != (OperatingSystem.IsLinux()?WindowState.Normal:WindowState.FullScreen)) ExitShareFullscreen(restoreWindowState: false);
             });
         };
         Closed += (_, _) => { controlRequestToast?.Close(); controlRequestToast = null; if (observedModel != null) { observedModel.PropertyChanged -= OnPresentationChanged; observedModel.ChooseScreenShareSourceAsync = null; } };
@@ -96,21 +104,51 @@ public partial class CallWindow : Window
         if (DataContext is not WorkspaceViewModel { HasFocusedScreen: true } vm) return;
         previousWindowState = WindowState; previousMembers = vm.ShowCallMembers; previousChat = vm.ShowCallChat;
         vm.ShowCallMembers = vm.ShowCallChat = false;
-        presentationFullscreen = true; Classes.Add("share-fullscreen"); WindowState = WindowState.FullScreen;
+        presentationFullscreen = true; Classes.Add("share-fullscreen");
+        if(OperatingSystem.IsLinux())borderlessPresentation.Enter();
+        else WindowState = WindowState.FullScreen;
         SetFullscreenControls(false);
     }
     private void ExitShareFullscreen(bool restoreWindowState = true)
     {
         if (!presentationFullscreen) return;
-        presentationFullscreen = false; controlFullscreen = false; Classes.Remove("share-fullscreen"); SetFullscreenControls(false);
-        if (restoreWindowState) WindowState = previousWindowState;
+        presentationFullscreen = false;controlFullscreen = false; Classes.Remove("share-fullscreen");SetFullscreenControls(false);
+        if(OperatingSystem.IsLinux())borderlessPresentation.Exit(restoreWindowState);
+        else if(restoreWindowState)WindowState=previousWindowState;
         if (observedModel != null) { observedModel.ShowCallMembers = previousMembers; observedModel.ShowCallChat = previousChat; }
     }
     private void PresentationKeyDown(object? sender, KeyEventArgs e)
     {
+        if(observedModel?.ControlledScreen!=null)
+        {
+            if(e.Key==Key.Escape && e.KeyModifiers==(KeyModifiers.Control|KeyModifiers.Alt))
+            {
+                foreach(var view in this.GetVisualDescendants().OfType<NativeVideoView>())view.SuspendRemoteInput();
+                observedModel.PauseRemoteInput();ExitShareFullscreen();e.Handled=true;return;
+            }
+            RouteControlKey(e,true);return;
+        }
         if (e.KeyModifiers != KeyModifiers.None) return;
         if (e.Key == Key.Escape && presentationFullscreen) { ExitShareFullscreen(); e.Handled = true; }
         else if (e.Key == Key.F11 && (presentationFullscreen || observedModel?.HasFocusedScreen == true)) { ToggleShareFullscreen(); e.Handled = true; }
+    }
+    private NativeVideoView? ControlledView()=>FocusedStage.GetVisualDescendants().OfType<NativeVideoView>().FirstOrDefault(x=>x.RemoteControlEnabled);
+    private void RouteControlKey(KeyEventArgs e,bool down)
+    {
+        if(!IsActive || observedModel?.ControlledScreen==null)return;
+        if(keyboardCapture?.Capturing!=true)ControlledView()?.ForwardKeyEvent(e,down);
+        e.Handled=true;
+    }
+    private void RouteControlPointer(object? sender,PointerEventArgs e)
+    {
+        if(!IsActive || observedModel?.ControlledScreen==null)return;
+        if(e.Source is Control source && (source as Button ?? source.FindAncestorOfType<Button>()) is {} button && button.Classes.Contains("remote-release"))
+        {
+            if(e is PointerPressedEventArgs){observedModel.PauseRemoteInput();ExitShareFullscreen();}
+            e.Handled=true;return;
+        }
+        ControlledView()?.ForwardPointer(e);
+        e.Handled=true;
     }
     private void OnPresentationChanged(object? sender, PropertyChangedEventArgs e)
     {
