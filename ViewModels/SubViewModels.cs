@@ -190,7 +190,7 @@ public partial class ChatAttachmentItemViewModel : ObservableObject
             if (!string.IsNullOrEmpty(savePath))
             {
                 using var transfer = Transfers?.Start(TransferDirection.Download, 1, TransferSize);
-                var success = await _chatService.SaveAttachmentToFileAsync(Attachment.Id, savePath, Attachment.Encryption, default, transfer);
+                var success = await _chatService.SaveAttachmentToFileAsync(Attachment.Id, savePath, Attachment.Encryption, transfer?.CancellationToken??default, transfer);
                 if (success) transfer?.FileCompleted();
                 transfer?.Complete(success);
                 if (!success) throw new IOException("Unable to download this attachment.");

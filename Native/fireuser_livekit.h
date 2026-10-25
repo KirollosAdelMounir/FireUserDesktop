@@ -21,14 +21,20 @@ FU_API void fu_tone_close(void* handle);
 FU_API int fu_abi_version(void);
 FU_API void* fu_create(fu_video_callback video, fu_audio_callback audio, fu_event_callback event, fu_data_callback data);
 FU_API int fu_connect(void* session, const char* url, const char* token);
-// kind: 0 microphone (48kHz mono PCM16); 1 camera; 2 screen (RGBA).
+// kind: 0 microphone (48kHz mono PCM16); 1 camera (RGBA); 2 screen (RGBA or 1920x1080 planar I420).
+// I420 screen input is continuous: early frames are dropped, and local RGBA
+// preview arrives on the video callback as "You · screen" at up to 10 FPS.
 FU_API int fu_publish(void* session, int kind, int width, int height);
 FU_API int fu_push(void* session, int kind, const uint8_t* data, int length);
 FU_API int fu_unpublish(void* session, int kind);
 // Stops native readers and joins workers before returning. Never call from a callback.
 FU_API void fu_destroy(void* session);
 FU_API int fu_send_data(void* session, const char* destination, const uint8_t* data, int length);
+FU_API int fu_send_input(void* session, const char* destination, const uint8_t* data, int length);
+FU_API int fu_send_transfer(void* session, const char* destination, const uint8_t* data, int length);
+FU_API int fu_interactive_screen(void* session, int enabled);
 FU_API int fu_desktop_bounds(int* width, int* height);
+FU_API int fu_screen_output_index(int x, int y, int width, int height);
 FU_API int fu_input_supported(void);
 FU_API int fu_apply_input(int kind, double x, double y, int code, int down);
 FU_API void fu_release_input(void);

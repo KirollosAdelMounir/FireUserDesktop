@@ -30,6 +30,15 @@ public class SystemNotificationService : INotificationService
     public void Activate(Guid senderId) => NotificationActivated?.Invoke(senderId);
 
     [SupportedOSPlatform("windows")]
+    public static void InitializeWindowsProcessIdentity()
+    {
+        var result=SetCurrentProcessExplicitAppUserModelID(ApplicationIdentity.WindowsAppUserModelId);
+        if(result<0)Console.WriteLine($"Windows taskbar identity could not be set (0x{result:X8}).");
+    }
+    [DllImport("shell32.dll",CharSet=CharSet.Unicode,ExactSpelling=true)]
+    private static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
+
+    [SupportedOSPlatform("windows")]
     public void InitializeWindowsRegistration()
     {
         try
@@ -56,31 +65,9 @@ public class SystemNotificationService : INotificationService
             if (string.IsNullOrWhiteSpace(executablePath))
                 throw new InvalidOperationException("The current executable path is unavailable.");
 
-            var applicationsDirectory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".local", "share", "applications");
-            Directory.CreateDirectory(applicationsDirectory);
-
-            var desktopFilePath = Path.Combine(applicationsDirectory, "fire-user-connect.desktop");
-            var iconPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "UserIdentityDesktop", "app_icon.png");
-
-            var desktopEntries = File.Exists(desktopFilePath)
-                ? new List<string>(File.ReadAllLines(desktopFilePath))
-                : new List<string> { "[Desktop Entry]" };
-
-            SetDesktopEntry(desktopEntries, "Type", "Application");
-            SetDesktopEntry(desktopEntries, "Name", "Fire User Connect");
-            SetDesktopEntry(desktopEntries, "Comment", "Real-time chatting for User Identity");
-            SetDesktopEntry(desktopEntries, "Exec", $"{EscapeDesktopExecPath(executablePath)} --open-chat %u");
-            SetDesktopEntry(desktopEntries, "TryExec", executablePath);
-            SetDesktopEntry(desktopEntries, "Icon", File.Exists(iconPath) ? iconPath : executablePath);
-            SetDesktopEntry(desktopEntries, "Terminal", "false");
-            SetDesktopEntry(desktopEntries, "Categories", "Network;Chat;");
-            SetDesktopEntry(desktopEntries, "MimeType", "x-scheme-handler/fireuserconnect;");
-
-            File.WriteAllLines(desktopFilePath, desktopEntries);
+            var dataHome=ResolveLinuxDataHome(Environment.GetEnvironmentVariable("XDG_DATA_HOME"),Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+            using var icon=AssetLoader.Open(new Uri("avares://Fire%20User%20Connect/Assets/Icons/fire-user-connect-512.png"));
+            var desktopFilePath=WriteLinuxDesktopRegistration(executablePath,dataHome,icon);
             File.SetUnixFileMode(desktopFilePath,
                 UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
                 UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
@@ -93,6 +80,27 @@ public class SystemNotificationService : INotificationService
         {
             Console.WriteLine($"Linux notification registration error: {ex}");
         }
+    }
+
+    internal static string ResolveLinuxDataHome(string? configured,string home)=>
+        !string.IsNullOrEmpty(configured)&&Path.IsPathFullyQualified(configured)?configured:Path.Combine(home,".local","share");
+
+    internal static string WriteLinuxDesktopRegistration(string executablePath,string dataHome,Stream icon)
+    {
+        var iconPath=Path.Combine(dataHome,"icons","hicolor","512x512","apps",ApplicationIdentity.LinuxDesktopId+".png");
+        Directory.CreateDirectory(Path.GetDirectoryName(iconPath)!);
+        using(var output=File.Create(iconPath))icon.CopyTo(output);
+        var desktop=Path.Combine(dataHome,"applications",ApplicationIdentity.LinuxDesktopId+".desktop");
+        Directory.CreateDirectory(Path.GetDirectoryName(desktop)!);
+        var entries=File.Exists(desktop)?new List<string>(File.ReadAllLines(desktop)):new List<string>{"[Desktop Entry]"};
+        SetDesktopEntry(entries,"Type","Application");SetDesktopEntry(entries,"Name","Fire User Connect");
+        SetDesktopEntry(entries,"Comment","Chat, meetings and workplace collaboration");
+        SetDesktopEntry(entries,"Exec",$"{EscapeDesktopExecPath(executablePath)} --open-chat %u");
+        SetDesktopEntry(entries,"TryExec",executablePath);SetDesktopEntry(entries,"Icon",iconPath);
+        SetDesktopEntry(entries,"StartupWMClass",ApplicationIdentity.LinuxDesktopId);
+        SetDesktopEntry(entries,"Terminal","false");SetDesktopEntry(entries,"Categories","Network;Chat;");
+        SetDesktopEntry(entries,"MimeType","x-scheme-handler/fireuserconnect;");
+        File.WriteAllLines(desktop,entries);return desktop;
     }
 
     [SupportedOSPlatform("linux")]
@@ -116,6 +124,8 @@ public class SystemNotificationService : INotificationService
                 "Type=Application",
                 "Name=Fire User Connect",
                 "Exec=" + EscapeDesktopExecPath(executablePath),
+                "Icon="+Path.Combine(ResolveLinuxDataHome(Environment.GetEnvironmentVariable("XDG_DATA_HOME"),Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)),"icons","hicolor","512x512","apps",ApplicationIdentity.LinuxDesktopId+".png"),
+                "StartupWMClass="+ApplicationIdentity.LinuxDesktopId,
                 "Terminal=false",
                 "X-GNOME-Autostart-enabled=true"
             };
@@ -371,7 +381,7 @@ $toast.SuppressPopup = $true
         finally { Marshal.ReleaseComObject(link); }
     }
 
-    private const string AppUserModelId = "UserIdentityDesktop.Desktop";
+    private const string AppUserModelId = ApplicationIdentity.WindowsAppUserModelId;
     private static readonly Guid AppUserModelIdFormatId = new("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");
 
     [ComImport, Guid("00021401-0000-0000-C000-000000000046")]

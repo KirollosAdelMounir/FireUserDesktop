@@ -25,8 +25,8 @@ Name: desktopicon; Description: "Create a desktop shortcut"; Flags: unchecked
 [Files]
 Source: "{#PublishDirectory}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 [Icons]
-Name: "{group}\Fire User Connect"; Filename: "{app}\Fire User Connect.exe"; AppUserModelID: "UserIdentityDesktop.Desktop"
-Name: "{autodesktop}\Fire User Connect"; Filename: "{app}\Fire User Connect.exe"; Tasks: desktopicon
+Name: "{group}\Fire User Connect"; Filename: "{app}\Fire User Connect.exe"; IconFilename: "{app}\Fire User Connect.exe"; AppUserModelID: "UserIdentityDesktop.Desktop"
+Name: "{autodesktop}\Fire User Connect"; Filename: "{app}\Fire User Connect.exe"; IconFilename: "{app}\Fire User Connect.exe"; AppUserModelID: "UserIdentityDesktop.Desktop"; Tasks: desktopicon
 [Registry]
 Root: HKCU; Subkey: "Software\Classes\fireuserconnect"; ValueType: string; ValueData: "URL:Fire User Connect"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\fireuserconnect"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""

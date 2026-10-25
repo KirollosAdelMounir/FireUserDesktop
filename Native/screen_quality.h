@@ -8,6 +8,10 @@ struct ScreenQuality {
     unsigned bitrate;
     bool operator==(const ScreenQuality&) const = default;
 };
+inline ScreenQuality control_quality(ScreenQuality quality,bool active) {
+    if(active&&quality.height>=720)quality.fps=60;
+    return quality;
+}
 // Upload estimates are bits/sec: 100 decimal KB/sec = 800,000 bits/sec.
 inline ScreenQuality screen_quality(double available, bool congested = false) {
     if (congested) return {854, 480, 15, 240000};

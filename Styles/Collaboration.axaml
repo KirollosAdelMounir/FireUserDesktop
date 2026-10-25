@@ -36,6 +36,7 @@
     <StreamGeometry x:Key="Glyph.Plus">M11,3 L13,3 13,11 21,11 21,13 13,13 13,21 11,21 11,13 3,13 3,11 11,11 Z</StreamGeometry>
     <StreamGeometry x:Key="Glyph.File">M5,2 L15,2 21,8 21,23 5,23 Z M14,4 L14,9 19,9 M8,13 L17,13 M8,17 L15,17</StreamGeometry>
     <StreamGeometry x:Key="Glyph.Search">F0 M10,2 A8,8 0 1 1 10,18 A8,8 0 1 1 10,2 Z M10,4 A6,6 0 1 0 10,16 A6,6 0 1 0 10,4 Z M15,17 L17,15 23,21 21,23 Z </StreamGeometry>
+    <StreamGeometry x:Key="Glyph.Remote">F0 M8,1 L16,1 Q19,1 19,4 L19,21 Q19,24 16,24 L8,24 Q5,24 5,21 L5,4 Q5,1 8,1 Z M8,3 Q7,3 7,5 L7,20 Q7,22 9,22 L15,22 Q17,22 17,20 L17,5 Q17,3 15,3 Z M11,5 L13,5 13,7 11,7 Z M11,9 L13,9 13,11 15,11 15,13 13,13 13,15 11,15 11,13 9,13 9,11 11,11 Z M9,17 L11,17 11,19 9,19 Z M13,17 L15,17 15,19 13,19 Z</StreamGeometry>
     <StreamGeometry x:Key="Glyph.Image">M3,3 L21,3 21,21 3,21 Z M5,5 L5,19 19,19 19,5 Z M5,17 L10,11 14,15 16,12 19,17 19,19 5,19 Z M15,7 A2,2 0 1 1 15,11 A2,2 0 1 1 15,7</StreamGeometry>
     <StreamGeometry x:Key="Glyph.Play">M8,5 L20,12 8,19 Z</StreamGeometry>
     <StreamGeometry x:Key="Glyph.Audio">M3,9 L5,9 5,15 3,15 Z M7,5 L9,5 9,19 7,19 Z M11,2 L13,2 13,22 11,22 Z M15,5 L17,5 17,19 15,19 Z M19,9 L21,9 21,15 19,15 Z</StreamGeometry>

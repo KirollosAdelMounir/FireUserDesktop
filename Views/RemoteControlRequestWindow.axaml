@@ -1,0 +1,18 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:UserIdentityDesktop.ViewModels" x:Class="UserIdentityDesktop.Views.RemoteControlRequestWindow"
+        x:DataType="vm:WorkspaceViewModel" Width="380" SizeToContent="Height" CanResize="False"
+        WindowDecorations="None" ShowInTaskbar="False" ShowActivated="False" Topmost="True"
+        Title="Remote control request" Background="{DynamicResource ForgeSurface}" Foreground="{DynamicResource ForgeTextPrimary}">
+  <Border Padding="20" BorderBrush="{DynamicResource ForgePrimary}" BorderThickness="2" CornerRadius="12">
+    <StackPanel Spacing="12">
+      <TextBlock Text="Remote control request" FontSize="18" FontWeight="SemiBold" />
+      <TextBlock Text="{Binding ControlRequesterName, StringFormat='{}{0} requests keyboard and mouse control of your shared desktop.'}" TextWrapping="Wrap" />
+      <TextBlock Text="Approval also allows Ctrl+C / Ctrl+V to transfer text, files and folders during this control session." TextWrapping="Wrap" />
+      <TextBlock x:Name="Countdown" AutomationProperties.LiveSetting="Polite" />
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <Button Content="Approve" Command="{Binding AllowControlCommand}" AutomationProperties.Name="Approve remote control for five minutes" />
+        <Button Content="Reject" Command="{Binding DenyControlCommand}" />
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</Window>

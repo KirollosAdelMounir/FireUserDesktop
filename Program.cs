@@ -18,6 +18,8 @@ sealed class Program
     public static int Main(string[] args)
     {
         StartupSmokeTest = args.Contains("--startup-smoke-test", StringComparer.Ordinal);
+        if(OperatingSystem.IsWindows()&&!StartupSmokeTest)
+            SystemNotificationService.InitializeWindowsProcessIdentity();
         var deepLink = ParseDeepLinkArgument(args);
         App.PendingDeepLink = deepLink;
 
@@ -72,6 +74,7 @@ sealed class Program
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
+            .With(new X11PlatformOptions { WmClass = ApplicationIdentity.LinuxDesktopId })
 #if DEBUG
             .WithDeveloperTools()
 #endif

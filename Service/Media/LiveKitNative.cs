@@ -25,7 +25,11 @@ internal static class LiveKitNative
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int fu_unpublish(IntPtr session, int kind);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern void fu_destroy(IntPtr session);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int fu_send_data(IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string destination, byte[] data, int length);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int fu_send_input(IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string destination, byte[] data, int length);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int fu_send_transfer(IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string destination, byte[] data, int length);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int fu_interactive_screen(IntPtr session,int enabled);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int fu_desktop_bounds(out int width, out int height);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int fu_screen_output_index(int x, int y, int width, int height);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int fu_input_supported();
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int fu_apply_input(int kind, double x, double y, int code, int down);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern void fu_release_input();

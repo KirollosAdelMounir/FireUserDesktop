@@ -278,13 +278,14 @@ public partial class ChatService : IChatService
         try
         {
             using var client = _authService.CreateAuthenticatedClient();
-            foreach (var path in paths) prepared.Add(await ChatEncryption.PrepareFileAsync(path));
-            var encrypted = await Protect(receiverId, conversationId, text, prepared.ConvertAll(x => x.Metadata).ToArray());
+            foreach (var path in paths) prepared.Add(await ChatEncryption.PrepareFileAsync(path,transfer.CancellationToken));
+            var encrypted = await Protect(receiverId, conversationId, text, prepared.ConvertAll(x => x.Metadata).ToArray(),transfer.CancellationToken);
+            transfer.CancellationToken.ThrowIfCancellationRequested();
             if (_authService.CurrentUser?.Id != currentUser.Id) throw new OperationCanceledException("The signed-in account changed.");
             await ResumableAttachmentUpload.SendAsync(client, _configService.ServerUrl,
                 new AttachmentUploadRequest(currentUser.Id, receiverId, conversationId, encrypted, replyTo,
                     prepared.ConvertAll(x => new AttachmentUploadFile(x.Metadata.Id + ".fua", "application/octet-stream", new FileInfo(x.Path).Length))),
-                prepared.ConvertAll(x => x.Path), transfer);
+                prepared.ConvertAll(x => x.Path), transfer,transfer.CancellationToken);
             transfer.Complete(true);
             return true;
         }

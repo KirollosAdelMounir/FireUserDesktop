@@ -80,6 +80,7 @@ public interface INativeMediaSession : IAsyncDisposable
     event Action<string>? Error;
     event Action<string>? CaptureStopped;
     event Action<RemoteControlStatus>? RemoteControlChanged;
+    event Action<string>? ClipboardTransferChanged;
     Task RequestControlAsync(string identity);
     Task AnswerControlAsync(string identity, bool allow);
     Task RevokeControlAsync();

@@ -133,4 +133,12 @@ public sealed class ScreenSharingTests
         Assert.Throws<InvalidOperationException>(() => NativeCapture.Input("screen", new("", "", "", Screen), "linux", ":0", false));
         Assert.Throws<InvalidOperationException>(() => NativeCapture.Input("screen", new("", "", "", new("1", "Window", ScreenShareKind.Window, ScreenCaptureBackend.Windows)), "linux", ":0", false));
     }
+    [Fact]
+    public void DesktopDuplication_UsesResolvedOutputWithCursorAndFreshFrames()
+    {
+        var source = Screen with { Id = "dxgi:2", Width = 1920, Height = 1080 };
+        var args = NativeCapture.Input("screen", new("", "", "", source), "windows", null, false);
+        Assert.Equal(new[] { "-f", "lavfi", "-i", "ddagrab=output_idx=2:framerate=60:draw_mouse=1:dup_frames=1,scale_d3d11=width=1920:height=1080:format=nv12,hwdownload,format=nv12" }, args);
+        Assert.Throws<InvalidOperationException>(() => NativeCapture.Input("screen", new("", "", "", source with { Id = "dxgi:-1" }), "windows", null, false));
+    }
 }

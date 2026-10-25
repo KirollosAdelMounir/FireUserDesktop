@@ -21,7 +21,12 @@ public sealed class NativeVideoView : Control
     public static readonly StyledProperty<ICommand?> InputCommandProperty = AvaloniaProperty.Register<NativeVideoView, ICommand?>(nameof(InputCommand));
     public ICommand? InputCommand { get => GetValue(InputCommandProperty); set => SetValue(InputCommandProperty, value); }
     private long lastMove;
-    public NativeVideoView() { Focusable = true; ClipToBounds = true; }
+    private bool releasingPointer;
+    public NativeVideoView()
+    {
+        Focusable = true; ClipToBounds = true;
+        ContextRequested += (_, e) => { if (RemoteControlEnabled) e.Handled = true; };
+    }
     private WriteableBitmap? bitmap;
     private bool frameDirty = true;
     static NativeVideoView() => FrameProperty.Changed.AddClassHandler<NativeVideoView>((view, _) => view.UpdateFrame());
@@ -37,8 +42,11 @@ public sealed class NativeVideoView : Control
             bitmap = new WriteableBitmap(new PixelSize(frame.Width, frame.Height), new Vector(96, 96), PixelFormat.Rgba8888, AlphaFormat.Opaque);
         }
         using (var target = bitmap.Lock())
-            for (var row = 0; row < frame.Height; row++)
-                Marshal.Copy(frame.Rgba, row * frame.Width * 4, target.Address + row * target.RowBytes, frame.Width * 4);
+        {
+            if (target.RowBytes == frame.Width * 4) Marshal.Copy(frame.Rgba, 0, target.Address, frame.Rgba.Length);
+            else for (var row = 0; row < frame.Height; row++)
+                    Marshal.Copy(frame.Rgba, row * frame.Width * 4, target.Address + row * target.RowBytes, frame.Width * 4);
+        }
     }
     public override void Render(DrawingContext context)
     {
@@ -55,9 +63,9 @@ public sealed class NativeVideoView : Control
         base.OnDetachedFromVisualTree(e);
     }
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e) { base.OnAttachedToVisualTree(e); UpdateFrame(); }
-    private void Send(int kind, double x = 0, double y = 0, int code = 0, bool down = false)
+    private void Send(int kind, double x = 0, double y = 0, int code = 0, bool down = false, bool positioned = false)
     {
-        if (RemoteControlEnabled && Frame != null) InputCommand?.Execute(new RemoteInput(Frame.Identity, kind, x, y, code, down));
+        if (RemoteControlEnabled && Frame != null) InputCommand?.Execute(new RemoteInput(Frame.Identity, kind, x, y, code, down,positioned));
     }
     private bool Position(Point position, out double x, out double y)
     {
@@ -70,7 +78,7 @@ public sealed class NativeVideoView : Control
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        if (!RemoteControlEnabled || Environment.TickCount64 - lastMove < 33 || !Position(e.GetPosition(this), out var x, out var y)) return;
+        if (!RemoteControlEnabled || Environment.TickCount64 - lastMove < 8 || !Position(e.GetPosition(this), out var x, out var y)) return;
         lastMove = Environment.TickCount64; Send(0, x, y); e.Handled = true;
     }
     protected override void OnPointerPressed(PointerPressedEventArgs e)
@@ -79,18 +87,24 @@ public sealed class NativeVideoView : Control
         if (!RemoteControlEnabled || !Position(e.GetPosition(this), out var x, out var y)) return;
         Focus(); e.Pointer.Capture(this); Send(0, x, y);
         var kind = e.GetCurrentPoint(this).Properties.PointerUpdateKind;
-        Send(1, code: kind == PointerUpdateKind.LeftButtonPressed ? 1 : kind == PointerUpdateKind.RightButtonPressed ? 2 : 3, down: true); e.Handled = true;
+        Send(1, x,y,code: kind == PointerUpdateKind.LeftButtonPressed ? 1 : kind == PointerUpdateKind.RightButtonPressed ? 2 : 3, down: true,positioned:true); e.Handled = true;
     }
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e); if (!RemoteControlEnabled) return;
         var kind = e.GetCurrentPoint(this).Properties.PointerUpdateKind;
-        Send(1, code: kind == PointerUpdateKind.LeftButtonReleased ? 1 : kind == PointerUpdateKind.RightButtonReleased ? 2 : 3, down: false);
-        e.Pointer.Capture(null); e.Handled = true;
+        var positioned=Position(e.GetPosition(this),out var x,out var y);
+        Send(1,positioned?x:0,positioned?y:0,code: kind == PointerUpdateKind.LeftButtonReleased ? 1 : kind == PointerUpdateKind.RightButtonReleased ? 2 : 3, down: false,positioned:positioned);
+        releasingPointer=true;try{e.Pointer.Capture(null);}finally{releasingPointer=false;}e.Handled = true;
     }
     protected override void OnLostFocus(FocusChangedEventArgs e) { Send(3); base.OnLostFocus(e); }
-    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e) { Send(3); base.OnPointerCaptureLost(e); }
-    protected override void OnKeyDown(KeyEventArgs e) { if (RemoteControlEnabled) { if (e.Key == Key.Escape) Send(3); else SendKey(e, true); e.Handled = true; } base.OnKeyDown(e); }
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e) { if(!releasingPointer)Send(3); base.OnPointerCaptureLost(e); }
+    protected override void OnKeyDown(KeyEventArgs e) { if (RemoteControlEnabled) { if ((e.KeyModifiers & KeyModifiers.Control) != 0 && e.Key is Key.C or Key.V) Send(e.Key == Key.C ? 4 : 5); else if (e.Key == Key.Escape) Send(3); else SendKey(e, true); e.Handled = true; } base.OnKeyDown(e); }
+    internal void ForwardKey(int code, bool down, bool ctrl)
+    {
+        if (ctrl && code is 6 or 25) { if (down) Send(code == 6 ? 4 : 5); return; }
+        Send(2, code: code, down: down);
+    }
     protected override void OnKeyUp(KeyEventArgs e) { if (RemoteControlEnabled) { SendKey(e, false); e.Handled = true; } base.OnKeyUp(e); }
     private void SendKey(KeyEventArgs e, bool down)
     {

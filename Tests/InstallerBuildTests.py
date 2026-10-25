@@ -2,6 +2,8 @@ import importlib.util
 import os
 from pathlib import Path
 import plistlib
+import struct
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -29,7 +31,50 @@ class InstallerBuildTests(unittest.TestCase):
             desktop = (stage / 'usr/share/applications/fire-user-connect.desktop').read_text()
             self.assertIn('Exec="/opt/fire-user-connect/Fire User Connect" --open-chat %u', desktop)
             self.assertIn('MimeType=x-scheme-handler/fireuserconnect;', desktop)
-            self.assertGreater((stage / 'usr/share/icons/hicolor/256x256/apps/fire-user-connect.png').stat().st_size, 0)
+            self.assertIn('StartupWMClass=fire-user-connect', desktop)
+            self.assertNotIn('OnlyShowIn=', desktop)
+            for size in installer.ICON_SIZES:
+                png = (stage / f'usr/share/icons/hicolor/{size}x{size}/apps/fire-user-connect.png').read_bytes()
+                self.assertEqual(png[:8], b'\x89PNG\r\n\x1a\n')
+                self.assertEqual(struct.unpack('>II', png[16:24]), (size, size))
+            self.assertTrue((stage / 'usr/share/pixmaps/fire-user-connect.png').is_file())
+
+    def test_appimage_has_root_icon_diricon_hicolor_and_matching_window_class(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'publish'
+            source.mkdir()
+            (source / 'Fire User Connect').write_bytes(b'executable')
+            repository = root / 'repository'
+            shutil.copytree(installer.ROOT / 'Assets/Icons', repository / 'Assets/Icons')
+            (repository / 'packaging').mkdir()
+            shutil.copy2(installer.ROOT / 'packaging/appimage-tools.json', repository / 'packaging/appimage-tools.json')
+            with patch.object(installer, 'ROOT', repository), patch.object(installer, 'verified_download', side_effect=lambda url, digest, target: target.touch()), patch.object(installer, 'run'):
+                installer.appimage(source, root / 'out', '1.0.0', 'x86_64', root)
+            app = root / 'FireUserConnect.AppDir'
+            desktop = (app / 'fire-user-connect.desktop').read_text()
+            self.assertIn('Icon=fire-user-connect', desktop)
+            self.assertIn('StartupWMClass=fire-user-connect', desktop)
+            self.assertEqual((app / '.DirIcon').read_bytes(), (app / 'fire-user-connect.png').read_bytes())
+            self.assertEqual(struct.unpack('>II', (app / 'fire-user-connect.png').read_bytes()[16:24]), (512, 512))
+            self.assertTrue((app / 'usr/share/icons/hicolor/48x48/apps/fire-user-connect.png').is_file())
+
+    def test_windows_icon_sizes_and_shortcut_identity_match_runtime(self):
+        root = Path(__file__).resolve().parents[1]
+        icon = (root / 'Assets/favicon.ico').read_bytes()
+        self.assertEqual(struct.unpack('<HH', icon[:4]), (0, 1))
+        count = struct.unpack('<H', icon[4:6])[0]
+        sizes = {(icon[6+i*16] or 256, icon[7+i*16] or 256) for i in range(count)}
+        self.assertTrue({(16, 16), (32, 32), (48, 48), (256, 256)}.issubset(sizes))
+        setup = (root / 'packaging/windows/setup.iss').read_text()
+        shortcuts = [line for line in setup.splitlines() if line.startswith('Name: "{group}') or line.startswith('Name: "{autodesktop}')]
+        self.assertEqual(len(shortcuts), 2)
+        for shortcut in shortcuts:
+            self.assertIn('AppUserModelID: "UserIdentityDesktop.Desktop"', shortcut)
+            self.assertIn('IconFilename: "{app}\\Fire User Connect.exe"', shortcut)
+        identity = (root / 'Core/ApplicationIdentity.cs').read_text()
+        self.assertIn('WindowsAppUserModelId = "UserIdentityDesktop.Desktop"', identity)
+        self.assertIn('WmClass = ApplicationIdentity.LinuxDesktopId', (root / 'Program.cs').read_text())
 
     def test_macos_installer_limits_architecture_and_sonoma_minimum(self):
         for rid, arch in [('osx-x64', 'x86_64'), ('osx-arm64', 'arm64')]:

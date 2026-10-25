@@ -36,6 +36,7 @@ public sealed class DesktopToastPresenter(Window owner, Func<bool> reducedMotion
             if(transfers==null)
             {
                 transfers=new TransferToastWindow(reducedMotion()) { RequestedThemeVariant=owner.ActualThemeVariant };
+                transfers.CancelRequested+=tracker.Cancel;
                 transfers.SizeChanged+=(_,_)=>PositionAll();
                 transfers.Update(states);transfers.Show();
                 var motion=new SurfaceMotion();

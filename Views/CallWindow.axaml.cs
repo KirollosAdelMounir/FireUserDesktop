@@ -19,6 +19,9 @@ public partial class CallWindow : Window
     private WindowState previousWindowState;
     private bool previousMembers, previousChat;
     private WorkspaceViewModel? observedModel;
+    private RemoteControlRequestWindow? controlRequestToast;
+    private RemoteKeyboardCapture? keyboardCapture;
+    internal RemoteControlRequestWindow? ControlRequestToast => controlRequestToast;
     private async void ChooseCallAttendees_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (DataContext is not WorkspaceViewModel vm) return;
@@ -28,6 +31,8 @@ public partial class CallWindow : Window
     public CallWindow()
     {
         InitializeComponent();
+        Opened += (_, _) => keyboardCapture = new RemoteKeyboardCapture(this);
+        Closed += (_, _) => { keyboardCapture?.Dispose(); keyboardCapture = null; };
         var entryMotion = new SurfaceMotion();
         Opened += (_, _) => { if (Content is Control surface) _ = entryMotion.EnterAsync(surface, SurfaceMotion.Reduced(this), SurfaceMotionKind.Popup); };
         Closed += (_, _) => entryMotion.Cancel();
@@ -35,6 +40,7 @@ public partial class CallWindow : Window
         AddHandler(KeyDownEvent, PresentationKeyDown, RoutingStrategies.Tunnel);
         DataContextChanged += (_, _) =>
         {
+            controlRequestToast?.Close(); controlRequestToast = null;
             ExitShareFullscreen();
             if (observedModel != null) { observedModel.PropertyChanged -= OnPresentationChanged; observedModel.ChooseScreenShareSourceAsync = null; }
             observedModel = DataContext as WorkspaceViewModel;
@@ -54,7 +60,7 @@ public partial class CallWindow : Window
                 if (presentationFullscreen && WindowState != WindowState.FullScreen) ExitShareFullscreen(restoreWindowState: false);
             });
         };
-        Closed += (_, _) => { if (observedModel != null) { observedModel.PropertyChanged -= OnPresentationChanged; observedModel.ChooseScreenShareSourceAsync = null; } };
+        Closed += (_, _) => { controlRequestToast?.Close(); controlRequestToast = null; if (observedModel != null) { observedModel.PropertyChanged -= OnPresentationChanged; observedModel.ChooseScreenShareSourceAsync = null; } };
         Closing += async (_, args) =>
         {
             if (args.CloseReason is WindowCloseReason.OSShutdown or WindowCloseReason.ApplicationShutdown or WindowCloseReason.OwnerWindowClosing) return;
@@ -108,6 +114,18 @@ public partial class CallWindow : Window
     }
     private void OnPresentationChanged(object? sender, PropertyChangedEventArgs e)
     {
+        keyboardCapture?.Refresh();
+        if (e.PropertyName == nameof(WorkspaceViewModel.ControlRequester))
+        {
+            controlRequestToast?.Close(); controlRequestToast = null;
+            if (observedModel?.ControlRequester != null)
+            {
+                controlRequestToast = new RemoteControlRequestWindow { DataContext = observedModel, RequestedThemeVariant = ActualThemeVariant };
+                controlRequestToast.Show();
+                var area = (Screens.ScreenFromWindow(this) ?? Screens.Primary)?.WorkingArea;
+                if (area is {} bounds) controlRequestToast.Position = new(bounds.Right - (int)(controlRequestToast.Width * controlRequestToast.RenderScaling) - 20, bounds.Y + 24);
+            }
+        }
         if (e.PropertyName == nameof(WorkspaceViewModel.ControlledScreen))
         {
             if (observedModel?.ControlledScreen is {} controlled)
@@ -136,10 +154,12 @@ public partial class CallWindow : Window
     }
     private void FocusedTile_ContextRequested(object? sender, ContextRequestedEventArgs e)
     {
+        if (observedModel?.FocusedVideo?.CanControl == true) { e.Handled = true; return; }
         if (sender is Control target && observedModel?.FocusedVideo is {} tile) { OpenTileMenu(target,tile,e.TryGetPosition(target,out _)); e.Handled = true; }
     }
     private void Tile_ContextRequested(object? sender, ContextRequestedEventArgs e)
     {
+        if (sender is Control { DataContext: VideoTileViewModel { CanControl: true } }) { e.Handled = true; return; }
         if (sender is Control { DataContext: VideoTileViewModel tile } target) { OpenTileMenu(target,tile,true); e.Handled = true; }
     }
     private void TileMenu_Click(object? sender, RoutedEventArgs e) { if (sender is Control { DataContext: VideoTileViewModel tile } target) OpenTileMenu(target,tile,false); }

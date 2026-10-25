@@ -18,6 +18,7 @@ public static class AttachmentArchive
         long? total = 0;
         foreach (var item in items) { if (item.TransferSize is not {} size) { total=null; break; } try { total=checked(total+size); } catch (OverflowException) { total=null; break; } }
         using var transfer = items.FirstOrDefault()?.Transfers?.Start(TransferDirection.Download, items.Length, total);
+        var cancellationToken=transfer?.CancellationToken??default;
         var progress = transfer == null ? null : new BatchProgress(transfer);
         var staging = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(destination))!, ".fireuser-" + Guid.NewGuid().ToString("N"));
         try
@@ -31,7 +32,7 @@ public static class AttachmentArchive
                 foreach (var attachment in items)
                 {
                     transfer?.SetPhase("Downloading attachments…");
-                    var source = await attachment.PreparePreviewAsync(progress: progress);
+                    var source = await attachment.PreparePreviewAsync(cancellationToken,progress);
                     try
                     {
                         var original = Path.GetFileName(attachment.FileName.Replace('\\', '/'));
@@ -40,13 +41,14 @@ public static class AttachmentArchive
                         while (!names.Add(name)) name = Path.GetFileNameWithoutExtension(original) + " (" + suffix++ + ")" + Path.GetExtension(original);
                         var entry = archive.CreateEntry(name);
                         await using var input = File.OpenRead(source); await using var zipped = entry.Open();
-                        await input.CopyToAsync(zipped);
+                        await input.CopyToAsync(zipped,cancellationToken);
                         transfer?.FileCompleted();
                     }
                     finally { File.Delete(source); }
                 }
             }
             transfer?.SetPhase("Finalizing ZIP…");
+            cancellationToken.ThrowIfCancellationRequested();
             File.Move(staging, destination, overwrite: true);
             transfer?.Complete(true);
         }

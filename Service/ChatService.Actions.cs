@@ -18,16 +18,16 @@ public partial class ChatService
         return message == null ? null : await _encryption.DecryptAsync(message);
     }
 
-    private async Task<string> Protect(Guid receiver, string? conversation, string? text, EncryptedFile[]? files = null)
+    private async Task<string> Protect(Guid receiver, string? conversation, string? text, EncryptedFile[]? files = null,System.Threading.CancellationToken cancellationToken = default)
     {
         Guid[]? audience = null;
         if (conversation != null)
         {
-            var recipients = await GetRecipientsAsync();
+            var recipients = await GetRecipientsAsync().WaitAsync(cancellationToken);
             audience = recipients.FirstOrDefault(x => x.ConversationId == conversation)?.ParticipantIds.ToArray() ?? throw new InvalidOperationException("Conversation is unavailable.");
             if (!audience.Contains(_authService.CurrentUser!.Id)) throw new InvalidOperationException("You are no longer a conversation member.");
         }
-        return await _encryption.EncryptAsync(receiver, text, files, conversation, audience);
+        return await _encryption.EncryptAsync(receiver, text, files, conversation, audience,cancellationToken);
     }
     public async Task<bool> SendConversationAsync(string conversationId, string text, string? replyTo = null)
     {

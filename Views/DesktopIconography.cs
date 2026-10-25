@@ -105,7 +105,7 @@ public sealed class DesktopIconography : AvaloniaObject
         if(Has("notification","announcement"))return "Bell";
         if(Has("time","hour","speed") || value.EndsWith('×'))return "Clock";
         if(Has("file","attachment","folder"))return "File";
-        if(Has("share","screen","control","gallery"))return "Image";
+        if(Has("share","sharing","screen","control","gallery"))return "Remote";
         if(Has("add","new","create","select","choose"))return "Plus";
         return "Action";
     }

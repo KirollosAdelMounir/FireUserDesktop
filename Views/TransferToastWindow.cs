@@ -10,6 +10,7 @@ namespace UserIdentityDesktop.Views;
 /// <summary>Persistent, non-activating transfer surface. Never consumes the ordinary toast limit.</summary>
 public sealed class TransferToastWindow : Window
 {
+    public event Action<Guid>? CancelRequested;
     private readonly StackPanel list = new() { Spacing = 12 };
     private readonly Dictionary<Guid, Row> rows = new();
     private readonly ScrollViewer scroll;
@@ -26,7 +27,7 @@ public sealed class TransferToastWindow : Window
     {
         this.reducedMotion = reducedMotion;
         scroll = new ScrollViewer { MaxHeight=420, Content=list };
-        Title="Attachment transfers • Fire User Connect"; Width=396; SizeToContent=SizeToContent.Height;
+        Title="File transfers • Fire User Connect"; Width=396; SizeToContent=SizeToContent.Height;
         CanResize=false; ShowInTaskbar=false; ShowActivated=false; Topmost=true;
         WindowDecorations=WindowDecorations.None; Background=Brushes.Transparent;
         TransparencyLevelHint=new[]{WindowTransparencyLevel.Transparent};
@@ -56,6 +57,8 @@ public sealed class TransferToastWindow : Window
     {
         public StackPanel Panel {get;} = new(){Spacing=7};
         private readonly TextBlock title, count, stats, phase, percentage;
+        private readonly Button cancel=new(){Content="Cancel",HorizontalAlignment=Avalonia.Layout.HorizontalAlignment.Right};
+        private Guid id;
         private readonly bool ownerReducedMotion;
         private readonly ProgressBar bar=new(){Minimum=0,Maximum=100,Height=5,CornerRadius=new CornerRadius(3)};
         private TextBlock Label(TransferToastWindow owner,string resource,double size=12)
@@ -71,12 +74,16 @@ public sealed class TransferToastWindow : Window
             var progress=new Grid{ColumnDefinitions=new ColumnDefinitions("*,Auto"),ColumnSpacing=10};progress.Children.Add(bar);Grid.SetColumn(percentage,1);progress.Children.Add(percentage);
             bar.Bind(ProgressBar.ForegroundProperty,owner.GetResourceObservable("ForgePrimary"));
             Panel.Children.Add(heading);Panel.Children.Add(count);Panel.Children.Add(progress);Panel.Children.Add(stats);Panel.Children.Add(phase);
+            cancel.Click+=(_,_)=>owner.CancelRequested?.Invoke(id);Panel.Children.Add(cancel);
+            Avalonia.Automation.AutomationProperties.SetName(cancel,"Cancel file transfer");
             Avalonia.Automation.AutomationProperties.SetLiveSetting(Panel,Avalonia.Automation.AutomationLiveSetting.Polite);
         }
         public void Update(TransferSnapshot s)
         {
-            var upload=s.Direction==TransferDirection.Upload; title.Text=s.Finished ? s.Succeeded ? upload?"Upload complete":"Download complete" : "Transfer failed" : upload?"Uploading attachments":"Downloading attachments";
-            count.Text=$"{s.CompletedFiles} of {s.TotalFiles} attachment{(s.TotalFiles==1?"":"s")} {(upload?"uploaded":"downloaded")}";
+            id=s.Id;cancel.IsVisible=!s.Finished;cancel.IsEnabled=!s.CancellationRequested;
+            var upload=s.Direction==TransferDirection.Upload;var remote=s.Purpose==TransferPurpose.RemoteFile;
+            title.Text=s.Finished ? s.Succeeded ? upload?"Upload complete":"Download complete" : s.CancellationRequested?"Transfer cancelled":"Transfer failed" : remote?upload?"Uploading remote files":"Downloading remote files":upload?"Uploading attachments":"Downloading attachments";
+            count.Text=$"{s.CompletedFiles} of {s.TotalFiles} {(remote?"item":"attachment")}{(s.TotalFiles==1?"":"s")} {(upload?"uploaded":"downloaded")}";
             bar.IsIndeterminate=!s.Finished && s.TotalBytes is null && !ownerReducedMotion;bar.Value=s.Percentage;
             percentage.Text=s.TotalBytes is null && !s.Succeeded ? "—" : $"{s.Percentage:0}%";
             stats.Text=$"{FormatBytes(s.Bytes)}{(s.TotalBytes is {} total ? " / "+FormatBytes(total):"")}  •  {(upload?"Upload":"Download")} {FormatBytes(s.BytesPerSecond)}/s";

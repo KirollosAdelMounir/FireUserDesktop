@@ -43,7 +43,7 @@ also revokes remote input and releases injected keys/buttons.
 
 | Platform | Capture and output | Remote input | Validation status |
 | --- | --- | --- | --- |
-| Windows x64 | DirectShow device names; GDI desktop capture; native miniaudio audio | SendInput, current interactive desktop | C++ build/smoke test, managed tests and self-contained publish verified |
+| Windows x64 | DirectShow device names; DXGI Desktop Duplication for matching monitor outputs, GDI fallback/window capture; native miniaudio audio | SendInput, current interactive desktop | C++ build/smoke test, managed tests and self-contained publish verified |
 | Linux x64/ARM64 | PulseAudio/PipeWire, V4L2 camera, X11 desktop capture; native miniaudio audio | XTest on the default X11 display | Fedora Linux build, native ABI smoke, startup window and managed/headless tests verified; actual devices and two-party network media unverified |
 | macOS Intel/Apple Silicon | AVFoundation device names/indices; default `Capture screen 0`; native miniaudio audio | CoreGraphics events, Accessibility permission, main display | Source/build scripts, `.app` manifest and CI targets added; not executed on macOS in this session |
 
@@ -64,7 +64,7 @@ Screen sharing first opens a native screen/window picker. Wayland uses the compo
    support only (`canHost:false`); browser screen shares remain view-only.
 2. A request is permitted only while the host is sharing its supported desktop (or approved Wayland monitor) and
    the OS input provider is available. The sharing user sees the request and
-   must explicitly approve that participant. Merely joining never grants input.
+   must explicitly approve that participant in a right-side toast. Unanswered requests reject after 30 seconds; pending duplicates cannot extend consent time. Merely joining never grants input.
 3. The host issues a random grant bound to the authenticated LiveKit sender and
    current screen-share scope. Input must present that grant and a strictly
    increasing sequence. The host checks ranges, input kinds, finite coordinates,
@@ -75,8 +75,7 @@ Screen sharing first opens a native screen/window picker. Wayland uses the compo
    accepted input to avoid stuck modifiers after packet/channel loss.
 5. Stop control, Ctrl+Alt+Escape, unshare, disconnect, participant departure and
    expiry revoke access and release injected input. A fresh share needs fresh
-   consent. Clipboard synchronization, file transfer and privileged input are
-   not included in this protocol.
+   consent. Explicit Ctrl+C/Ctrl+V clipboard transfers are bound to that same grant; unattended clipboard synchronization and privileged input remain excluded.
 
 The native capability announcement is **feature negotiation, not application
 attestation**. An arbitrary modified client could send the same topic. The

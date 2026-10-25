@@ -34,7 +34,7 @@ public sealed class ChatEncryption(IAuthService auth, IConfigurationService conf
     public sealed record PreparedFile(string Path, EncryptedFile Metadata);
     public void Lock() { Interlocked.Increment(ref identityEpoch); deviceToken = null; deviceOwner = Guid.Empty; sessionIdentity = null; publicKeys.Clear(); }
 
-    private async Task<T> Request<T>(string path, object? body = null)
+    private async Task<T> Request<T>(string path, object? body = null,CancellationToken cancellationToken = default)
     {
         var origin = new Uri(config.ServerUrl);
         if (origin.Scheme != "https" && !origin.IsLoopback) throw new InvalidOperationException("Encrypted chat requires an HTTPS server connection.");
@@ -42,8 +42,8 @@ public sealed class ChatEncryption(IAuthService auth, IConfigurationService conf
         using var request = new HttpRequestMessage(body == null ? HttpMethod.Get : HttpMethod.Post, config.ServerUrl.TrimEnd('/') + "/api/Chat/Encryption/" + path);
         if (deviceOwner == auth.CurrentUser?.Id && deviceToken != null) request.Headers.Add("X-Chat-Device", deviceToken);
         if (body != null) request.Content = JsonContent.Create(body, options: ApiPayload.Json);
-        using var response = await client.SendAsync(request);
-        return await ApiPayload.ReadAsync<T>(response);
+        using var response = await client.SendAsync(request,cancellationToken);
+        return await ApiPayload.ReadAsync<T>(response,cancellationToken);
     }
 
     public async Task UnlockAsync(string pin)
@@ -78,20 +78,20 @@ public sealed class ChatEncryption(IAuthService auth, IConfigurationService conf
         finally { gate.Release(); }
     }
 
-    private async Task<Recovery> Identity(Guid owner)
+    private async Task<Recovery> Identity(Guid owner,CancellationToken cancellationToken = default)
     {
         if (sessionIdentity is { } cached && cached.Value.UserId == owner && cached.Epoch == Volatile.Read(ref identityEpoch) && auth.CurrentUser?.Id == owner) return cached.Value;
         var epoch = Volatile.Read(ref identityEpoch);
-        var identity = await Request<Recovery>("Identity");
+        var identity = await Request<Recovery>("Identity",cancellationToken:cancellationToken);
         if (epoch != Volatile.Read(ref identityEpoch)) throw new InvalidOperationException("Chat was locked during this operation.");
         if (identity.UserId != owner || auth.CurrentUser?.Id != owner) throw new CryptographicException("The chat identity does not match this session.");
         sessionIdentity = new CachedIdentity(identity, epoch); return identity;
     }
 
-    private async Task<PublicIdentity> Public(Guid id, Guid owner)
+    private async Task<PublicIdentity> Public(Guid id, Guid owner,CancellationToken cancellationToken = default)
     {
         if (publicKeys.TryGetValue(id, out var cached) && cached.Owner == owner && DateTime.UtcNow - cached.Checked < TimeSpan.FromMinutes(5)) return cached.Key;
-        var response = await Request<PublicResponse>("Public/" + id);
+        var response = await Request<PublicResponse>("Public/" + id,cancellationToken:cancellationToken);
         if (response.UserId != id) throw new CryptographicException("Unexpected chat identity.");
         var identity = JsonSerializer.Deserialize<PublicIdentity>(response.PublicKey, ApiPayload.Json)!;
         // Public key pins survive restarts. Never persist a private key or unlock credential.
@@ -112,16 +112,16 @@ public sealed class ChatEncryption(IAuthService auth, IConfigurationService conf
         return identity;
     }
 
-    public async Task<string> EncryptAsync(Guid receiver, string? text, EncryptedFile[]? files = null, string? conversationId = null, Guid[]? participants = null)
+    public async Task<string> EncryptAsync(Guid receiver, string? text, EncryptedFile[]? files = null, string? conversationId = null, Guid[]? participants = null,CancellationToken cancellationToken = default)
     {
-        await gate.WaitAsync();
+        await gate.WaitAsync(cancellationToken);
         try
         {
             var owner = auth.CurrentUser?.Id ?? throw new InvalidOperationException("Sign in first.");
-            var identity = await Identity(owner);
+            var identity = await Identity(owner,cancellationToken);
             var audience = (conversationId == null ? new[] { owner, receiver } : participants ?? throw new InvalidOperationException("Conversation membership is unavailable.")).Distinct().OrderBy(x => x.ToString("D"), StringComparer.Ordinal).ToArray();
             var keys = new Dictionary<Guid, PublicIdentity>();
-            foreach (var id in audience) keys[id] = await Public(id, owner);
+            foreach (var id in audience) keys[id] = await Public(id, owner,cancellationToken);
             if (auth.CurrentUser?.Id != owner) throw new InvalidOperationException("The session changed.");
             return await Task.Run(() => Protect(new Payload(1, Guid.NewGuid().ToString("D"), owner, receiver, conversationId, audience, text, files ?? Array.Empty<EncryptedFile>()), identity, keys));
         }
@@ -262,7 +262,7 @@ public sealed class ChatEncryption(IAuthService auth, IConfigurationService conf
     {
         if (file.Size < 0 || file.ChunkSize != 1048576 || Convert.FromBase64String(file.Key).Length != 32 || Convert.FromBase64String(file.NoncePrefix).Length != 8 || !Guid.TryParse(file.Id, out _)) throw new CryptographicException("Invalid attachment metadata.");
     }
-    public static async Task<PreparedFile> PrepareFileAsync(string path)
+    public static async Task<PreparedFile> PrepareFileAsync(string path,CancellationToken cancellationToken = default)
     {
         var file = new FileInfo(path);
         var metadata = new EncryptedFile(Guid.NewGuid().ToString("D"), file.Name, ChatService.GetMimeType(file.Extension.ToLowerInvariant()), file.Length, 1048576, Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)), Convert.ToBase64String(RandomNumberGenerator.GetBytes(8)));
@@ -270,8 +270,8 @@ public sealed class ChatEncryption(IAuthService auth, IConfigurationService conf
         {
             try
             {
-                var duration = await Media.AudioNotePlayback.DurationAsync(path, CancellationToken.None);
-                metadata = metadata with { Waveform = await Media.AudioNotePlayback.WaveformAsync(path, duration, CancellationToken.None) };
+                var duration = await Media.AudioNotePlayback.DurationAsync(path, cancellationToken);
+                metadata = metadata with { Waveform = await Media.AudioNotePlayback.WaveformAsync(path, duration, cancellationToken) };
             }
             catch (Exception) { /* Optional visual metadata must not prevent an attachment upload. */ }
         }
@@ -279,7 +279,7 @@ public sealed class ChatEncryption(IAuthService auth, IConfigurationService conf
         try
         {
             await using var source = File.OpenRead(path); await using var destination = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, true);
-            await TransformFileAsync(source, destination, metadata, encrypt: true);
+            await TransformFileAsync(source, destination, metadata, encrypt: true,cancellationToken);
             return new PreparedFile(temporary, metadata);
         }
         catch { File.Delete(temporary); throw; }

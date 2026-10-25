@@ -4,6 +4,7 @@
              xmlns:views="using:UserIdentityDesktop.Views"
              xmlns:converters="using:UserIdentityDesktop.Converters"
              x:Class="UserIdentityDesktop.App"
+             Name="Fire User Connect"
              RequestedThemeVariant="Dark">
 
     <Application.DataTemplates>
@@ -101,5 +102,6 @@
 
     <Application.Styles>
         <StyleInclude Source="/Styles/FireUserStyles.axaml" />
+        <Style Selector=":is(Window)"><Setter Property="Icon" Value="/Assets/favicon.ico" /></Style>
     </Application.Styles>
 </Application>

@@ -12,6 +12,13 @@ namespace UserIdentityDesktop.Service.Media;
 /// <summary>Native FFmpeg device capture. Arguments never pass through a shell.</summary>
 public static class NativeCapture
 {
+    internal static MediaDevices ResolveScreenOutput(MediaDevices devices)
+    {
+        if (!OperatingSystem.IsWindows() || devices.ShareSource is not { Backend: ScreenCaptureBackend.Windows, Kind: ScreenShareKind.Screen } source) return devices;
+        var output = LiveKitNative.fu_screen_output_index(source.X, source.Y, source.Width, source.Height);
+        // Other adapters retain the selected GDI bounds; never capture a different monitor.
+        return output < 0 ? devices : devices with { ShareSource = source with { Id = "dxgi:" + output } };
+    }
     public static string ResolveExecutable(string executable)
     {
         var fileName = executable + (OperatingSystem.IsWindows() ? ".exe" : "");
@@ -36,6 +43,17 @@ public static class NativeCapture
             var source = devices.ShareSource ?? throw new InvalidOperationException("Choose a screen or window before sharing.");
             if (source.Backend is ScreenCaptureBackend.Portal or ScreenCaptureBackend.MacOS) throw new InvalidOperationException("This screen source requires its native capture provider.");
             if (platform == "windows" && source.Backend != ScreenCaptureBackend.Windows || platform == "linux" && source.Backend != ScreenCaptureBackend.X11) throw new InvalidOperationException("The selected screen source belongs to another platform.");
+            if (platform == "windows" && source.Kind == ScreenShareKind.Screen && source.Id.StartsWith("dxgi:", StringComparison.Ordinal))
+            {
+                if (!int.TryParse(source.Id.AsSpan(5), out var output) || output < 0) throw new InvalidOperationException("The selected desktop output is invalid.");
+                if (source.Width <= 0 || source.Height <= 0) throw new InvalidOperationException("The selected screen has no valid dimensions.");
+                var scale = Math.Min(1920d / source.Width, 1080d / source.Height);
+                var width = Math.Max(2, (int)(source.Width * scale) / 2 * 2);
+                var height = Math.Max(2, (int)(source.Height * scale) / 2 * 2);
+                // Resize/convert on the capture GPU before crossing the process pipe.
+                // A driver without this path is retried using the same GDI bounds.
+                return new[] { "-f", "lavfi", "-i", $"ddagrab=output_idx={output}:framerate=60:draw_mouse=1:dup_frames=1,scale_d3d11=width={width}:height={height}:format=nv12,hwdownload,format=nv12" };
+            }
             var selected = new List<string> { "-f", platform == "windows" ? "gdigrab" : "x11grab", "-framerate", "60" };
             if (source.Kind == ScreenShareKind.Window)
             {

@@ -111,12 +111,15 @@ public sealed class AttachmentTransferTests
         await Assert.ThrowsAsync<NotSupportedException>(()=>failed.CopyToAsync(new MemoryStream(Array.Empty<byte>(),false)));
         Assert.Equal(150_000,Assert.Single(tracker.Snapshot()).Bytes);
     }
-    private sealed class UploadHandler(TransferTracker tracker,HttpStatusCode result) : HttpMessageHandler
+    private sealed class UploadHandler(TransferTracker tracker,HttpStatusCode result,string? cancelAt = null) : HttpMessageHandler
     {
+        internal int Completions;
         private static HttpResponseMessage Json(object value)=>new(HttpStatusCode.OK){Content=System.Net.Http.Json.JsonContent.Create(value)};
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken token)
         {
             var path=request.RequestUri!.AbsolutePath;
+            if((cancelAt=="chunk"&&path.Contains("/Files/"))||(cancelAt=="identity"&&path.EndsWith("/Identity")))
+            {tracker.Cancel(Assert.Single(tracker.Snapshot()).Id);await Task.Delay(Timeout.Infinite,token);}
             if(path.EndsWith("/Uploads")) return Json(new{uploadId=new string('a',32),offsets=new long[]{0,0}});
             if(path.Contains("/Files/")) {
                 var index=int.Parse(path.Split('/').Last());var bytes=await request.Content!.ReadAsByteArrayAsync(token);
@@ -125,6 +128,7 @@ public sealed class AttachmentTransferTests
             }
             if(path.EndsWith("/Complete"))
             {
+                Completions++;
                 var pending=Assert.Single(tracker.Snapshot());Assert.Equal(332,pending.Bytes);Assert.Equal(332,pending.TotalBytes);Assert.Equal(2,pending.CompletedFiles);Assert.False(pending.Finished);Assert.Equal(99,pending.Percentage);
                 return new HttpResponseMessage(result){Content=new StringContent("true")};
             }
@@ -200,7 +204,7 @@ public sealed class AttachmentTransferTests
         using var two=tracker.Start(TransferDirection.Download,2,2_000_000);two.Report(100_000);two.SetPhase("Downloading…");
         Dispatcher.UIThread.RunJobs();var window=Assert.IsType<TransferToastWindow>(presenter.TransferWindow);
         for(int i=0;i<5;i++)presenter.Show("Message","New chat",()=>{});Dispatcher.UIThread.RunJobs();
-        Assert.True(window.IsVisible);Assert.InRange(presenter.ActiveWindows.Count,0,3);Assert.False(window.ShowActivated);Assert.True(window.Topmost);Assert.Empty(window.GetVisualDescendants().OfType<Button>());
+        Assert.True(window.IsVisible);Assert.InRange(presenter.ActiveWindows.Count,0,3);Assert.False(window.ShowActivated);Assert.True(window.Topmost);Assert.Equal(2,window.GetVisualDescendants().OfType<Button>().Count());
         var labels=window.GetVisualDescendants().OfType<TextBlock>().Select(t=>t.Text).ToArray();Assert.Contains("2 of 5 attachments uploaded",labels);Assert.Contains("0 of 2 attachments downloaded",labels);Assert.Contains("40%",labels);Assert.Contains(labels,t=>t?.Contains("Upload ")==true && t.EndsWith("/s"));
         Assert.All(window.GetVisualDescendants().OfType<ProgressBar>(),bar=>Assert.False(bar.IsIndeterminate));
         if(Environment.GetEnvironmentVariable("FIREUSER_TEST_ARTIFACTS") is {} dir){Directory.CreateDirectory(dir);using var frame=window.CaptureRenderedFrame();Assert.NotNull(frame);using var file=File.Create(Path.Combine(dir,$"transfers-{(dark?"dark":"light")}.png"));frame.Save(file,new Avalonia.Media.Imaging.PngBitmapEncoderOptions());}
@@ -208,5 +212,95 @@ public sealed class AttachmentTransferTests
         var area=owner.Screens.Primary!.WorkingArea;Assert.True(window.Position.Y>=area.Y);Assert.True(window.Position.Y+window.Bounds.Height*owner.Screens.Primary.Scaling<=area.Bottom);
         tracker.Clear();Dispatcher.UIThread.RunJobs();Assert.False(window.IsVisible);Assert.Null(presenter.TransferWindow);
         foreach(var toast in presenter.ActiveWindows.ToArray())toast.Close();owner.Close();
+    }
+    [AvaloniaTheory][InlineData(true)][InlineData(false)]
+    public void RemoteFileToast_UsesSharedSurfaceWithProgressAndCancelForEachDirection(bool dark)
+    {
+        var owner=new Window{Width=900,Height=700,RequestedThemeVariant=dark?ThemeVariant.Dark:ThemeVariant.Light};owner.Show();
+        var tracker=new TransferTracker();var presenter=new DesktopToastPresenter(owner,()=>true);presenter.ObserveTransfers(tracker);
+        using var upload=tracker.Start(TransferDirection.Upload,2,1000,TransferPurpose.RemoteFile);upload.Report(400);
+        using var download=tracker.Start(TransferDirection.Download,1,2000,TransferPurpose.RemoteFile);download.Report(500);
+        Dispatcher.UIThread.RunJobs();var window=Assert.IsType<TransferToastWindow>(presenter.TransferWindow);
+        var text=window.GetVisualDescendants().OfType<TextBlock>().Select(x=>x.Text).ToArray();
+        Assert.Contains("Uploading remote files",text);Assert.Contains("Downloading remote files",text);Assert.Contains("40%",text);Assert.Contains("25%",text);
+        Assert.Contains("0 of 2 items uploaded",text);Assert.False(window.ShowActivated);
+        var buttons=window.GetVisualDescendants().OfType<Button>().ToArray();Assert.Equal(2,buttons.Length);
+        if(Environment.GetEnvironmentVariable("FIREUSER_TEST_ARTIFACTS") is {} dir){Directory.CreateDirectory(dir);using var frame=window.CaptureRenderedFrame();Assert.NotNull(frame);using var file=File.Create(Path.Combine(dir,$"remote-transfers-{(dark?"dark":"light")}.png"));frame.Save(file,new Avalonia.Media.Imaging.PngBitmapEncoderOptions());}
+        buttons[0].RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));Dispatcher.UIThread.RunJobs();
+        Assert.True(upload.CancellationToken.IsCancellationRequested);Assert.False(download.CancellationToken.IsCancellationRequested);Assert.False(buttons[0].IsEnabled);
+        upload.Dispose();download.Complete(true);Dispatcher.UIThread.RunJobs();
+        text=window.GetVisualDescendants().OfType<TextBlock>().Select(x=>x.Text).ToArray();Assert.Contains("Transfer cancelled",text);Assert.Contains("Download complete",text);Assert.All(buttons,b=>Assert.False(b.IsVisible));
+        tracker.Clear();Dispatcher.UIThread.RunJobs();owner.Close();
+    }
+    [Fact]
+    public void CancelTargetsOneOperationAndCompletedTransfersRemainComplete()
+    {
+        var tracker=new TransferTracker();using var one=tracker.Start(TransferDirection.Upload,1);using var two=tracker.Start(TransferDirection.Download,1);
+        var id=tracker.Snapshot()[0].Id;tracker.Cancel(id);tracker.Cancel(id);Assert.True(one.CancellationToken.IsCancellationRequested);Assert.False(two.CancellationToken.IsCancellationRequested);
+        one.Dispose();two.Complete(true);tracker.Cancel(tracker.Snapshot()[1].Id);
+        Assert.False(two.CancellationToken.IsCancellationRequested);Assert.True(tracker.Snapshot()[1].Succeeded);Assert.Equal("Cancelled",tracker.Snapshot()[0].Phase);
+    }
+    [Theory][InlineData(false)][InlineData(true)]
+    public async Task CancelAttachmentDownload_PropagatesToHttpAndPreservesDestination(bool archive)
+    {
+        var tracker=new TransferTracker();var chat=Substitute.For<IChatService>();chat.Transfers.Returns(tracker);
+        var file=Path.GetTempFileName();await File.WriteAllTextAsync(file,"original",TestContext.Current.CancellationToken);
+        var picker=Substitute.For<IFileService>();picker.PickSaveFileAsync(Arg.Any<string>(),Arg.Any<string>()).Returns(file);
+        var started=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        chat.SaveAttachmentToFileAsync(Arg.Any<Guid>(),Arg.Any<string>(),Arg.Any<EncryptedFile?>(),Arg.Any<CancellationToken>(),Arg.Any<IProgress<long>?>()).Returns(async call=>{started.TrySetResult();await Task.Delay(Timeout.Infinite,call.ArgAt<CancellationToken>(3));return true;});
+        var item=new ChatAttachmentItemViewModel(new ChatAttachment{Id=Guid.NewGuid(),FileName="file.txt",FileSize=100},chat,picker,Substitute.For<IImageService>());
+        try
+        {
+            var saving=archive?AttachmentArchive.SaveAsync(new[]{item},file):item.DownloadAsync();
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5),TestContext.Current.CancellationToken);tracker.Cancel(Assert.Single(tracker.Snapshot()).Id);
+            if(archive)await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>saving);else await saving.WaitAsync(TimeSpan.FromSeconds(5),TestContext.Current.CancellationToken);
+            var state=Assert.Single(tracker.Snapshot());Assert.True(state.Finished);Assert.True(state.CancellationRequested);Assert.False(state.Succeeded);Assert.Equal("original",await File.ReadAllTextAsync(file,TestContext.Current.CancellationToken));
+        }
+        finally{File.Delete(file);}
+    }
+    [Theory][InlineData("chunk")][InlineData("identity")]
+    public async Task CancelEncryptedAttachmentUpload_StopsNetworkWithoutPublishing(string stage)
+    {
+        using var vector=System.Text.Json.JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory,"chat-vector.json"),TestContext.Current.CancellationToken));
+        var owner=vector.RootElement.GetProperty("recovery").GetProperty("userId").GetGuid();var tracker=new TransferTracker();var auth=Substitute.For<IAuthService>();auth.CurrentUser.Returns(new UserData{Id=owner});
+        var config=Substitute.For<IConfigurationService>();config.ServerUrl.Returns("https://transfer-tests.invalid");using var handler=new UploadHandler(tracker,HttpStatusCode.OK,stage);
+        auth.CreateAuthenticatedClient().Returns(_=>new HttpClient(handler,false));var service=new ChatService(auth,config,transfers:tracker);
+        var one=Path.GetTempFileName();var two=Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllBytesAsync(one,new byte[100],TestContext.Current.CancellationToken);await File.WriteAllBytesAsync(two,new byte[200],TestContext.Current.CancellationToken);
+            Assert.False(await service.SendMessageWithAttachmentsAsync(owner,"Files",new[]{one,two}).WaitAsync(TimeSpan.FromSeconds(5),TestContext.Current.CancellationToken));
+            Assert.Equal(0,handler.Completions);var state=Assert.Single(tracker.Snapshot());Assert.True(state.Finished);Assert.False(state.Succeeded);Assert.True(state.CancellationRequested);Assert.Equal("Cancelled",state.Phase);
+            Assert.Equal(100,new FileInfo(one).Length);Assert.Equal(200,new FileInfo(two).Length);
+        }
+        finally{File.Delete(one);File.Delete(two);}
+    }
+    private sealed class CancellingDownloadStream(TransferTracker tracker):MemoryStream(new byte[200000])
+    {
+        private int reads;
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer,CancellationToken ct=default)
+        {
+            if(reads++==1){tracker.Cancel(Assert.Single(tracker.Snapshot()).Id);await Task.Delay(Timeout.Infinite,ct);}
+            return await base.ReadAsync(buffer[..Math.Min(4096,buffer.Length)],ct);
+        }
+    }
+    private sealed class CancellingDownloadHandler(TransferTracker tracker):HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)=>Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK){Content=new StreamContent(new CancellingDownloadStream(tracker))});
+    }
+    [Fact]
+    public async Task CancelStreamingAttachmentDownload_RemovesPartialAndKeepsExistingFile()
+    {
+        var tracker=new TransferTracker();var auth=Substitute.For<IAuthService>();var config=Substitute.For<IConfigurationService>();config.ServerUrl.Returns("https://transfer-tests.invalid");
+        auth.CreateAuthenticatedClient().Returns(_=>new HttpClient(new CancellingDownloadHandler(tracker)));var service=new ChatService(auth,config,transfers:tracker);
+        var path=Path.GetTempFileName();await File.WriteAllTextAsync(path,"original",TestContext.Current.CancellationToken);
+        using var transfer=tracker.Start(TransferDirection.Download,1);
+        try
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>service.SaveAttachmentToFileAsync(Guid.NewGuid(),path,cancellationToken:transfer.CancellationToken,progress:transfer));
+            transfer.Dispose();var state=Assert.Single(tracker.Snapshot());Assert.True(state.Finished);Assert.False(state.Succeeded);Assert.True(state.Bytes>0);Assert.Equal("Cancelled",state.Phase);
+            Assert.Equal("original",await File.ReadAllTextAsync(path,TestContext.Current.CancellationToken));Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(path)!,Path.GetFileName(path)+".*.partial"));
+        }
+        finally{File.Delete(path);}
     }
 }

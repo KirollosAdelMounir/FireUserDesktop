@@ -7,8 +7,10 @@ int main() {
         fireuser::screen_quality(1600000).height != 1080 || fireuser::screen_quality(3199999).fps != 30 ||
         fireuser::screen_quality(3200000).fps != 60 || fireuser::screen_quality(6400000, true).fps != 15 ||
         fireuser::screen_quality(-1).height != 720) return 5;
-    if (fu_abi_version() != 3) return 1;
+    if (fu_abi_version() != 6) return 1;
+    if(fireuser::control_quality(fireuser::screen_quality(-1),true).fps!=60||fireuser::control_quality(fireuser::screen_quality(100000),true).fps!=15||fireuser::control_quality(fireuser::screen_quality(-1),false).fps!=30)return 8;
     if (fu_connect(nullptr, "", "") != -1 || fu_push(nullptr, 0, nullptr, 0) != -1) return 2;
+    if(fu_send_input(nullptr,"peer",nullptr,0)!=-1||fu_send_transfer(nullptr,"peer",nullptr,0)!=-1)return 7;
     auto session = fu_create(nullptr, nullptr, nullptr, nullptr);
     if (!session) return 3;
     // Unconnected publication is rejected; destruction must not leave native readers alive.

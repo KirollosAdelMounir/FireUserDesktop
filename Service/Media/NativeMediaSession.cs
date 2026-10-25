@@ -35,7 +35,7 @@ public sealed partial class NativeMediaSession : INativeMediaSession
 
     public event Action<MediaConnectionState>? ConnectionChanged;
 
-    public NativeMediaSession() { videoCallback = OnVideo; audioCallback = OnAudio; eventCallback = OnEvent; dataCallback = OnData; }
+    public NativeMediaSession(IRemoteClipboard? clipboard = null,ITransferTracker? transfers = null) { clipboardStore = clipboard;transferTracker=transfers; videoCallback = OnVideo; audioCallback = OnAudio; eventCallback = OnEvent; dataCallback = OnData; }
     public async Task ConnectAsync(MediaToken token, CancellationToken ct = default)
     {
         await gate.WaitAsync(ct);
@@ -43,7 +43,7 @@ public sealed partial class NativeMediaSession : INativeMediaSession
         {
             if (room != IntPtr.Zero) throw new InvalidOperationException("Leave the current call first.");
             if (!Uri.TryCreate(token.ServerUrl, UriKind.Absolute, out var url) || url.Scheme is not ("wss" or "ws")) throw new InvalidOperationException("The server returned an invalid media endpoint.");
-            if (await Task.Run(LiveKitNative.fu_abi_version) != 3) throw new InvalidOperationException("The native LiveKit bridge version does not match this client.");
+            if (await Task.Run(LiveKitNative.fu_abi_version) != 6) throw new InvalidOperationException("The native LiveKit bridge version does not match this client.");
             lifetime = new CancellationTokenSource();
             room = await Task.Run(() => LiveKitNative.fu_create(videoCallback, audioCallback, eventCallback, dataCallback));
             if (room == IntPtr.Zero) throw new InvalidOperationException("Could not create the native LiveKit room.");
@@ -71,7 +71,8 @@ public sealed partial class NativeMediaSession : INativeMediaSession
         try
         {
             if (lifetime?.IsCancellationRequested != false || width <= 0 || height <= 0 || width > 4096 || height > 4096 || length != width * height * 4) return;
-            var bytes = new byte[length]; Marshal.Copy(data, bytes, 0, length);
+            // The native callback completely fills this buffer before it is published.
+            var bytes = GC.AllocateUninitializedArray<byte>(length); Marshal.Copy(data, bytes, 0, length);
             VideoReceived?.Invoke(new VideoPicture(Marshal.PtrToStringUTF8(identity) ?? "Participant", width, height, bytes));
         }
         catch { /* Never unwind managed exceptions across the C ABI. */ }
@@ -193,48 +194,42 @@ public sealed partial class NativeMediaSession : INativeMediaSession
                 var selected = devices.ShareSource ?? throw new InvalidOperationException("Choose a screen or window before sharing.");
                 if (OperatingSystem.IsLinux() && ScreenSources.IsWayland && selected.Backend != ScreenCaptureBackend.Portal) throw new InvalidOperationException("Wayland requires the system sharing portal.");
                 if (selected.Backend is ScreenCaptureBackend.Portal or ScreenCaptureBackend.MacOS) { await StartNativeScreenAsync(selected, devices, ct); return; }
+                devices = await Task.Run(() => NativeCapture.ResolveScreenOutput(devices), ct);
             }
             var platform = OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsMacOS() ? "macos" : "linux";
-            var args = new List<string> { "-hide_banner", "-loglevel", "error", "-nostdin" };
-            var width = 0; var height = 0;
-            args.AddRange(NativeCapture.Input(kind, devices, platform, Environment.GetEnvironmentVariable("DISPLAY"), ScreenSources.IsWayland, width, height));
-            var audio = nativeKind == 0;
-            args.AddRange(audio ? new[] { "-vn", "-ac", "1", "-ar", "48000", "-f", "s16le", "pipe:1" }
-                : new[] { "-an", "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2", "-r", kind == "screen" ? "60" : "30", "-pix_fmt", "rgba", "-f", "rawvideo", "pipe:1" });
-            var process = NativeCapture.Start("ffmpeg", args);
+            var source = new FfmpegVideoCapture(kind, devices, platform);
             var stop = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
-            var capture = new Capture(process, stop);
+            var capture = new Capture(source, stop);
             try
             {
-                var buffer = new byte[audio ? 960 : 1920 * 1080 * 4];
-                using var startup = CancellationTokenSource.CreateLinkedTokenSource(ct, stop.Token); startup.CancelAfter(TimeSpan.FromSeconds(10));
-                await NativeCapture.ReadFrame(process.StandardOutput.BaseStream, buffer, startup.Token);
-                LiveKitNative.Check(await Task.Run(() => LiveKitNative.fu_publish(room, nativeKind, 1920, 1080)), "publish");
+                using var startup = CancellationTokenSource.CreateLinkedTokenSource(ct, stop.Token);
+                await source.StartAsync(startup.Token);
+                LiveKitNative.Check(await Task.Run(() => LiveKitNative.fu_publish(room, nativeKind, FfmpegVideoCapture.Width, FfmpegVideoCapture.Height)), "publish");
                 captures.Add(kind, capture);
                 if (nativeKind == 2) SetRemoteSharing(true, devices);
                 capture.Work = Task.Run(async () =>
                 {
                     var lastPreview = 0L;
-                    try
+                    void Submit(byte[] pixels)
                     {
-                        while (!stop.IsCancellationRequested)
+                        LiveKitNative.Check(LiveKitNative.fu_push(room, nativeKind, pixels, source.FrameBytes), "frame submission");
+                        // Screen preview is generated by the native I420 pipeline at 10 FPS.
+                        if (nativeKind == 2 || Environment.TickCount64 - lastPreview < 100) return;
+                        lastPreview = Environment.TickCount64;
+                        var preview = new byte[source.FrameBytes]; Buffer.BlockCopy(pixels, 0, preview, 0, preview.Length);
+                        VideoReceived?.Invoke(new VideoPicture("You · " + kind, FfmpegVideoCapture.Width, FfmpegVideoCapture.Height, preview));
+                    }
+                    try { await source.RunAsync(Submit, stop.Token); }
+                    catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
+                    catch (Exception ex)
+                    {
+                        if (!stop.IsCancellationRequested)
                         {
-                            LiveKitNative.Check(LiveKitNative.fu_push(room, nativeKind, buffer, buffer.Length), "frame submission");
-                            // Keep preview work below the transport's 60 FPS screen ceiling.
-                            if (!audio && Environment.TickCount64 - lastPreview >= 100)
-                            {
-                                lastPreview = Environment.TickCount64;
-                                VideoReceived?.Invoke(new VideoPicture("You · " + kind, 1920, 1080, (byte[])buffer.Clone()));
-                            }
-                            await NativeCapture.ReadFrame(process.StandardOutput.BaseStream, buffer, stop.Token);
+                            CaptureStopped?.Invoke(kind);
+                            Error?.Invoke(ex is System.IO.IOException ? ex.Message : $"{kind} capture stopped. Check the device and permissions before enabling it again.");
                         }
                     }
-                    catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
-                    catch (Exception)
-                    {
-                        if (!stop.IsCancellationRequested) { CaptureStopped?.Invoke(kind); Error?.Invoke($"{kind} capture stopped. Check the device and permissions before enabling it again."); }
-                    }
-                    finally { NativeCapture.Stop(process); if (nativeKind == 2) SetRemoteSharing(false, devices); }
+                    finally { source.Stop(); if (nativeKind == 2) SetRemoteSharing(false, devices); }
                 });
             }
             catch { await capture.StopAsync(); capture.Dispose(); throw; }
@@ -250,7 +245,7 @@ public sealed partial class NativeMediaSession : INativeMediaSession
             lock (remoteLock) { RevokeLocal(); control.Clear(); canHost = false; RemoteControlChanged?.Invoke(CurrentControlStatus); }
             foreach (var capture in captures.Values) { await capture.StopAsync(); capture.Dispose(); }
             captures.Clear();
-            await Task.WhenAll(remoteReader, remoteWriter);
+            await Task.WhenAll(remoteReader, remoteWriter,moveWriter,clipboardCleanup);
             if (room != IntPtr.Zero) { await Task.Run(() => LiveKitNative.fu_destroy(room)); room = IntPtr.Zero; }
             Player[] snapshot; lock (playerLock) { snapshot = players.Values.ToArray(); players.Clear(); }
             await Task.WhenAll(snapshot.Select(x => x.Work));
@@ -265,6 +260,7 @@ public sealed partial class NativeMediaSession : INativeMediaSession
         private readonly IDisposable resource;
         private readonly CancellationTokenSource stop;
         public Capture(Process process, CancellationTokenSource stop) { resource = process; this.stop = stop; stopAction = () => NativeCapture.Stop(process); }
+        public Capture(FfmpegVideoCapture source, CancellationTokenSource stop) { resource = source; this.stop = stop; stopAction = source.Stop; }
         public Capture(NativeAudio.Input input, CancellationTokenSource stop) { resource = input; this.stop = stop; stopAction = input.Dispose; }
         public Capture(IScreenFrameSource source, CancellationTokenSource stop) { resource = source; this.stop = stop; stopAction = source.Stop; }
         public Task Work { get; set; } = Task.CompletedTask;

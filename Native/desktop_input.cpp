@@ -40,7 +40,7 @@ bool key(int code, bool down) {
     const int mapped = key_code(code); if (!mapped) return false;
     INPUT input{}; input.type = INPUT_KEYBOARD; input.ki.wVk = static_cast<WORD>(mapped);
     input.ki.dwFlags = down ? 0 : KEYEVENTF_KEYUP;
-    if (code == 76 || (code >= 79 && code <= 82) || code == 228 || code == 230) input.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
+    if (code == 76 || (code >= 79 && code <= 82) || code == 227 || code == 228 || code == 230 || code == 231) input.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
     return SendInput(1, &input, sizeof(input)) == 1;
 }
 bool button(int code, bool down) {

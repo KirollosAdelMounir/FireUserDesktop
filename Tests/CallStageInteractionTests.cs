@@ -16,6 +16,58 @@ using Xunit;
 namespace UserIdentityDesktop.Tests;
 public sealed class CallStageInteractionTests
 {
+    [AvaloniaFact]
+    public async Task FullscreenFooter_RemainsOutsideSharedVideoAndUsesRemoteIcon()
+    {
+        var (vm,_)=Create();var screen=new VideoTileViewModel("one · screen · track"){Frame=new("one · screen · track",16,9,new byte[16*9*4])};vm.Videos.Add(screen);vm.FocusedVideo=screen;
+        var window=new CallWindow{DataContext=vm,Width=1200,Height=800};window.Show();Dispatcher.UIThread.RunJobs();
+        window.FindControl<Button>("FullscreenButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Dispatcher.UIThread.RunJobs();
+        var footer=window.FindControl<Border>("FullscreenControls")!;var video=window.FindControl<ContentControl>("FocusedStage")!.GetVisualDescendants().OfType<NativeVideoView>().Single();
+        Assert.True(footer.IsVisible);Assert.True(footer.Bounds.Height>=76);
+        Assert.True(video.TranslatePoint(new Point(0,video.Bounds.Height),window)!.Value.Y<=footer.TranslatePoint(default,window)!.Value.Y);
+        Assert.Equal("Remote",DesktopIconography.Glyph("Request remote control"));Assert.Equal("Remote",DesktopIconography.Glyph("Share screen"));
+        var point=footer.TranslatePoint(new Point(footer.Bounds.Width/2,footer.Bounds.Height-2),window)!.Value;
+        window.MouseMove(point);Dispatcher.UIThread.RunJobs();Assert.Equal(1,window.FindControl<Border>("FullscreenToolbar")!.Opacity);
+        window.RequestedThemeVariant=Avalonia.Styling.ThemeVariant.Light;Dispatcher.UIThread.RunJobs();Save(window,"remote-fullscreen-footer.png");
+        window.RequestedThemeVariant=Avalonia.Styling.ThemeVariant.Dark;Dispatcher.UIThread.RunJobs();Save(window,"remote-fullscreen-footer-dark.png");
+        window.CloseAfterCall();Dispatcher.UIThread.RunJobs();await vm.DisposeAsync();
+    }
+    [Theory]
+    [InlineData(true,true,true,true,true)][InlineData(false,true,true,true,false)][InlineData(true,false,true,true,false)][InlineData(true,true,false,true,false)][InlineData(true,true,true,false,false)]
+    public void KeyboardRouting_RequiresForegroundFocusAndGrant(bool active,bool foreground,bool focused,bool grant,bool expected)=>Assert.Equal(expected,RemoteKeyboardCapture.CanRoute(active,foreground,focused,grant));
+    [AvaloniaFact]
+    public void RemoteKeys_ForwardWindowsAndClipboardGesturesOnlyWhenEnabled()
+    {
+        var inputs=new List<RemoteInput>();var view=new NativeVideoView{RemoteControlEnabled=true,Frame=new("peer · screen · track",2,2,new byte[16]),InputCommand=new CommunityToolkit.Mvvm.Input.RelayCommand<RemoteInput>(x=>inputs.Add(x!))};
+        Assert.Equal(227,RemoteKeyboardCapture.MapKey(91));Assert.Equal(231,RemoteKeyboardCapture.MapKey(92));Assert.Equal(43,RemoteKeyboardCapture.MapKey(9));
+        view.ForwardKey(227,true,false);view.ForwardKey(227,false,false);view.ForwardKey(6,true,true);view.ForwardKey(25,true,true);
+        Assert.Equal(new[]{2,2,4,5},inputs.Select(x=>x.Kind));Assert.Equal(227,inputs[0].Code);Assert.False(inputs[1].Down);
+        view.RemoteControlEnabled=false;view.ForwardKey(227,true,false);Assert.Equal(4,inputs.Count);
+    }
+    [AvaloniaFact]
+    public async Task IncomingControlRequest_ShowsIndependentToast_AndApproveRejectAnswerExactRequester()
+    {
+        var (vm, media) = Create(); var window = new CallWindow { DataContext = vm }; window.Show();
+        var peer = new NativePeer("one", true, true, Guid.NewGuid().ToString("N"));
+        var request = new RemoteControlStatus(new[] { peer }, "one", null, null) { RequestExpiresAt = DateTimeOffset.UtcNow.AddSeconds(30) };
+        media.RemoteControlChanged += Raise.Event<Action<RemoteControlStatus>>(request); Dispatcher.UIThread.RunJobs();
+        var toast = Assert.IsType<RemoteControlRequestWindow>(window.ControlRequestToast);
+        Assert.True(toast.IsVisible); Assert.True(toast.Topmost); Assert.False(toast.ShowActivated);
+        Assert.Contains("Alice Example", toast.GetVisualDescendants().OfType<TextBlock>().Select(x => x.Text).First(x => x?.Contains("requests keyboard") == true));
+        Assert.Contains("Automatically rejects in", toast.FindControl<TextBlock>("Countdown")!.Text);
+        toast.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark; Dispatcher.UIThread.RunJobs(); Save(toast, "remote-control-request-dark.png");
+        toast.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Light; Dispatcher.UIThread.RunJobs(); Save(toast, "remote-control-request-light.png");
+        var approve = toast.GetVisualDescendants().OfType<Button>().Single(x => Equals(x.Content, "Approve"));
+        Assert.Same(vm.AllowControlCommand, approve.Command); await vm.AllowControlCommand.ExecuteAsync(null);
+        await media.Received(1).AnswerControlAsync("one", true);
+        media.RemoteControlChanged += Raise.Event<Action<RemoteControlStatus>>(request with { RequestedBy = null, Controller = "one" }); Dispatcher.UIThread.RunJobs();
+        Assert.False(toast.IsVisible);
+        media.RemoteControlChanged += Raise.Event<Action<RemoteControlStatus>>(request); Dispatcher.UIThread.RunJobs();
+        var secondToast = Assert.IsType<RemoteControlRequestWindow>(window.ControlRequestToast);
+        var reject = secondToast.GetVisualDescendants().OfType<Button>().Single(x => Equals(x.Content, "Reject"));
+        Assert.Same(vm.DenyControlCommand, reject.Command); await vm.DenyControlCommand.ExecuteAsync(null); await media.Received(1).AnswerControlAsync("one", false);
+        window.CloseAfterCall(); Dispatcher.UIThread.RunJobs(); Assert.False(secondToast.IsVisible); await vm.DisposeAsync();
+    }
     private static (WorkspaceViewModel Vm,INativeMediaSession Media) Create()
     {
         var auth=Substitute.For<IAuthService>();auth.CurrentUser.Returns(new UserData{Id=Guid.NewGuid()});var chat=Substitute.For<IChatService>();var media=Substitute.For<INativeMediaSession>();
@@ -74,6 +126,14 @@ public sealed class CallStageInteractionTests
         media.RemoteControlChanged+=Raise.Event<Action<RemoteControlStatus>>(new RemoteControlStatus(new[]{peer},null,null,owner));Dispatcher.UIThread.RunJobs();
         Assert.Same(screen,vm.FocusedVideo);Assert.True(screen.CanControl);Assert.Equal(WindowState.FullScreen,window.WindowState);Assert.Contains("Kirollos Adel",vm.RemoteControlLabel);Assert.DoesNotContain(owner,vm.RemoteControlLabel);
         var input=window.FindControl<ContentControl>("FocusedStage")!.GetVisualDescendants().OfType<NativeVideoView>().Single();Assert.True(input.RemoteControlEnabled);Assert.True(input.IsFocused);
+        var context = new ContextRequestedEventArgs(); input.RaiseEvent(context); Dispatcher.UIThread.RunJobs();
+        Assert.True(context.Handled); Assert.Null(window.FindControl<ContentControl>("FocusedStage")!.ContextMenu);
+        using (var rendered = window.CaptureRenderedFrame()) Assert.NotNull(rendered);
+        var remotePoint = input.TranslatePoint(new Point(input.Bounds.Width / 2, input.Bounds.Height / 2), window)!.Value;
+        window.MouseMove(remotePoint); window.MouseDown(remotePoint, MouseButton.Right); window.MouseUp(remotePoint, MouseButton.Right); Dispatcher.UIThread.RunJobs();
+        media.Received().SendRemoteInput(Arg.Is<RemoteInput>(x => x.Target == track && x.Kind == 1 && x.Code == 2 && x.Down));
+        media.Received().SendRemoteInput(Arg.Is<RemoteInput>(x => x.Target == track && x.Kind == 1 && x.Code == 2 && !x.Down));
+        Assert.Null(window.FindControl<ContentControl>("FocusedStage")!.ContextMenu);
         input.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.A});media.Received().SendRemoteInput(Arg.Is<RemoteInput>(x=>x.Target==track&&x.Kind==2&&x.Code==4&&x.Down));
         media.RemoteControlChanged+=Raise.Event<Action<RemoteControlStatus>>(new RemoteControlStatus(new[]{peer},null,null,null));Dispatcher.UIThread.RunJobs();Assert.False(screen.CanControl);Assert.NotEqual(WindowState.FullScreen,window.WindowState);
         media.ClearReceivedCalls();input.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.B});media.DidNotReceive().SendRemoteInput(Arg.Is<RemoteInput>(x=>x.Kind==2));

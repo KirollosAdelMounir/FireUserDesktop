@@ -1,5 +1,6 @@
 #include "fireuser_livekit.h"
 #include "screen_quality.h"
+#include "video_scaling.h"
 #include <condition_variable>
 #include <livekit/livekit.h>
 #include <atomic>
@@ -38,8 +39,9 @@ public:
     std::mutex publication_mutex;
     std::array<Publication, 3> publications;
     fireuser::ScreenQuality screen_quality = fireuser::screen_quality(-1);
-    fireuser::ScreenQuality published_quality = screen_quality;
     std::chrono::steady_clock::time_point last_screen_frame{};
+    std::chrono::steady_clock::time_point last_screen_preview{};
+    std::atomic_bool interactive_screen{false};
     std::thread quality_worker;
     std::mutex quality_wait_mutex;
     std::condition_variable quality_wait;
@@ -102,7 +104,8 @@ public:
     }
     void onParticipantConnected(Room&, const ParticipantConnectedEvent& e) override { if (e.participant) { signal(4, e.participant->identity()); signal(6, e.participant->identity() + "\n" + e.participant->name()); } }
     void onUserPacketReceived(Room&, const UserDataPacketEvent& e) override {
-        if (!stopping && data && e.participant && e.topic == "fireuser.native.v1" && !e.data.empty() && e.data.size() <= 4096)
+        if (!stopping && data && e.participant && !e.data.empty() &&
+            ((e.topic == "fireuser.native.v1" && e.data.size() <= 4096) || (e.topic == "fireuser.clipboard.v1" && e.data.size() <= 15360)))
             data(e.participant->identity().c_str(), e.data.data(), static_cast<int>(e.data.size()));
     }
     void onDisconnected(Room&, const DisconnectedEvent& e) override { signal(2, std::to_string(static_cast<int>(e.reason))); }
@@ -192,7 +195,7 @@ public:
 };
 }
 
-int fu_abi_version() { return 3; }
+int fu_abi_version() { return 6; }
 void* fu_create(fu_video_callback video, fu_audio_callback audio, fu_event_callback event, fu_data_callback data) {
     std::lock_guard lock(runtime_mutex);
     try {
@@ -229,9 +232,9 @@ int fu_publish(void* handle, int kind, int width, int height) {
             value.audio = std::make_shared<AudioSource>(48000, 1, 0);
             value.track = LocalAudioTrack::createLocalAudioTrack("microphone", value.audio);
         } else {
-            const auto quality = session.screen_quality;
-            const bool desktop = kind == 2 && width == 1920 && height == 1080;
-            value.video = std::make_shared<VideoSource>(desktop ? quality.width : width, desktop ? quality.height : height);
+            // Keep one source/publication for the entire share. Frame dimensions and
+            // pacing can adapt without removing the receiver's tile or control grant.
+            value.video = std::make_shared<VideoSource>(width, height);
             value.track = LocalVideoTrack::createLocalVideoTrack(kind == 1 ? "camera" : "screen", value.video);
         }
         TrackPublishOptions options;
@@ -243,12 +246,11 @@ int fu_publish(void* handle, int kind, int width, int height) {
         } else {
             // Match Angular's 1080p camera preset and full-quality screen ceiling.
             options.video_codec = VideoCodec::VP8;
-            options.video_encoding = VideoEncodingOptions{kind == 2 ? session.screen_quality.bitrate : 3000000u, kind == 2 ? static_cast<double>(session.screen_quality.fps) : 30.0};
-            options.degradation_preference = DegradationPreference::MaintainResolution;
+            options.video_encoding = VideoEncodingOptions{kind == 2 ? 6400000u : 3000000u, kind == 2 ? 60.0 : 30.0};
+            options.degradation_preference = kind == 2 ? DegradationPreference::MaintainFramerate : DegradationPreference::MaintainResolution;
         }
         participant->publishTrack(value.track, options);
         session.publications[kind] = std::move(value);
-        if (kind == 2) session.published_quality = session.screen_quality;
         return 0;
     } catch (...) { return -1; }
 }
@@ -256,25 +258,45 @@ int fu_push(void* handle, int kind, const uint8_t* data, int length) {
     if (!handle || !data || kind < 0 || kind > 2) return -1;
     try {
         auto& session = *static_cast<Session*>(handle);
+        if (kind == 2 && length == 1920 * 1080 * 3 / 2) {
+            std::shared_ptr<VideoSource> source;
+            fireuser::ScreenQuality quality;
+            bool preview;
+            {
+                std::lock_guard guard(session.publication_mutex);
+                source = session.publications[2].video;
+                if (!source) return -1;
+                quality = fireuser::control_quality(session.screen_quality,session.interactive_screen.load());
+                const auto now = std::chrono::steady_clock::now();
+                // FFmpeg continuously produces desktop updates. Skip an early frame
+                // instead of sleeping on it while a newer mouse update arrives.
+                if (now - session.last_screen_frame + std::chrono::milliseconds(2) < std::chrono::microseconds(1000000 / quality.fps)) return 0;
+                session.last_screen_frame = now;
+                preview = now - session.last_screen_preview >= std::chrono::milliseconds(100);
+                if (preview) session.last_screen_preview = now;
+            }
+            auto pixels = fireuser::scale_i420(std::span<const uint8_t>(data, length), 1920, 1080, quality.width, quality.height);
+            VideoFrame frame(quality.width, quality.height, VideoBufferType::I420, std::move(pixels));
+            // Neither resampling nor SDK/preview conversion holds the publication
+            // lock, so screen work cannot block microphone frames and room changes.
+            source->captureFrame(frame);
+            if (preview && session.video && !session.stopping) {
+                try {
+                    auto rgba = frame.convert(VideoBufferType::RGBA);
+                    session.video("You · screen", rgba.data(), rgba.width(), rgba.height(), static_cast<int>(rgba.dataSize()));
+                } catch (...) { /* A preview failure never stops the published screen. */ }
+            }
+            return 0;
+        }
         std::unique_lock lock(session.publication_mutex);
         auto& value = session.publications[kind];
         if (value.audio && length == 960) {
             std::vector<int16_t> samples(480); std::memcpy(samples.data(), data, 960);
             value.audio->captureFrame(AudioFrame(std::move(samples), 48000, 1, 480));
         } else if (kind == 2 && value.video && length == 1920 * 1080 * 4) {
-            const auto next = session.screen_quality;
-            // Republish only on a stable tier change; ordinary congestion remains WebRTC's job.
-            if (next.height != session.published_quality.height || next.fps != session.published_quality.fps) {
-                auto participant = session.room.localParticipant().lock();
-                if (!participant) return -1;
-                participant->unpublishTrack(value.track->sid());
-                value.video = std::make_shared<VideoSource>(next.width, next.height);
-                value.track = LocalVideoTrack::createLocalVideoTrack("screen", value.video);
-                TrackPublishOptions options; options.source = TrackSource::SOURCE_SCREENSHARE; options.simulcast = false;
-                options.video_codec = VideoCodec::VP8; options.video_encoding = VideoEncodingOptions{next.bitrate, static_cast<double>(next.fps)};
-                options.degradation_preference = DegradationPreference::MaintainResolution;
-                participant->publishTrack(value.track, options); session.published_quality = next;
-            }
+            const auto next = fireuser::control_quality(session.screen_quality,session.interactive_screen.load());
+            // WebRTC applies congestion control inside the published ceiling.
+            // Never unpublish on telemetry changes: that interrupts screen/control.
             const auto due = session.last_screen_frame + std::chrono::microseconds(1000000 / next.fps);
             // Pace the producer instead of dropping the final update from a static portal source.
             // Release the publication lock while waiting so speech is never blocked by screen FPS.
@@ -335,4 +357,21 @@ int fu_send_data(void* handle, const char* destination, const uint8_t* data, int
         participant->publishData(std::vector<uint8_t>(data, data + length), true, targets, "fireuser.native.v1");
         return 0;
     } catch (...) { return -1; }
+}
+namespace {
+int send_channel(void* handle, const char* destination, const uint8_t* data, int length, bool reliable, const char* topic, int limit) {
+    if (!handle || !destination || !*destination || !data || length < 1 || length > limit) return -1;
+    try {
+        auto participant = static_cast<Session*>(handle)->room.localParticipant().lock();
+        if (!participant) return -1;
+        participant->publishData(std::vector<uint8_t>(data,data+length),reliable,{destination},topic);
+        return 0;
+    } catch (...) { return -1; }
+}
+}
+int fu_send_input(void* handle,const char* destination,const uint8_t* data,int length) { return send_channel(handle,destination,data,length,false,"fireuser.native.v1",1300); }
+int fu_send_transfer(void* handle,const char* destination,const uint8_t* data,int length) { return send_channel(handle,destination,data,length,true,"fireuser.clipboard.v1",15360); }
+int fu_interactive_screen(void* handle,int enabled) {
+    if(!handle||(enabled!=0&&enabled!=1))return -1;
+    static_cast<Session*>(handle)->interactive_screen=enabled!=0;return 0;
 }

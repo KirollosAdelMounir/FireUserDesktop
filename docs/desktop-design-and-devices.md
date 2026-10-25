@@ -58,7 +58,7 @@ license before public distribution. Do not fall back to unverified downloads.
 
 FFmpeg is resolved from the application `media` directory first, followed by
 the app directory and PATH. Microphone/speaker operation no longer uses
-FFmpeg/FFplay: miniaudio 0.11.23 is compiled into the C++ bridge, ABI version 3.
+FFmpeg/FFplay: miniaudio 0.11.23 is compiled into the C++ bridge, ABI version 6.
 
 ## Discovery, selection and checks
 
@@ -257,3 +257,14 @@ Windows completion uses the native information message box. macOS uses the syste
 Vacation state zero is labelled Pending. Only a current direct manager (catalog reporting distance exactly one, excluding the requester) can approve/reject a pending request or confirm a requested cancellation. The requester can withdraw a pending request or request cancellation of an approved one. Controls and command execution follow the same policy; backend authorization and manager notification routing remain authoritative. The approval queue refreshes on SignalR workplace events and reconnect snapshots, without polling.
 
 Conversation header avatars have explicit circular clipping. Interactive buttons, list items, menu items, tabs, dropdowns, inputs and selection controls use a faint orange hover treatment in both themes; primary and destructive controls retain their semantic styling.
+# Application icons across desktop shells
+
+The application uses a multi-resolution ICO (16–256 px) for the Windows executable, window and tray icons. All Avalonia windows inherit the branded icon, including the call window. Windows sets `UserIdentityDesktop.Desktop` before creating UI; both installer shortcuts carry that same AppUserModelID and an explicit executable icon. This follows the [Windows taskbar identity contract](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-setcurrentprocessexplicitappusermodelid).
+
+Linux uses `fire-user-connect` consistently for its desktop filename, icon name and X11 window class, with `StartupWMClass` in installed, AppImage and per-user desktop entries. The current backend runs on X11 or XWayland; native Wayland is not enabled by this change. This matches [Avalonia's window-class guidance](https://docs.avaloniaui.net/docs/platform-specific-guides/linux) and the [desktop entry specification](https://specifications.freedesktop.org/desktop-entry/latest-single/). Packages contain correctly sized 16, 24, 32, 48, 64, 128, 256 and 512 px PNGs in hicolor, plus a pixmaps fallback. AppImage includes its root icon and `.DirIcon`. Per-user registration honors an absolute `XDG_DATA_HOME`, extracts its icon before writing the desktop entry and uses an absolute icon path. These standard mechanisms cover compliant launchers/taskbars without restricting entries to named desktop environments.
+
+macOS publishes `Fire User Connect.app` with `CFBundleIconFile=FireUserConnect.icns` under `Contents/Resources`, including a 1024 px Retina representation for Finder, Dock and Launchpad. Launch the packaged `.app` to retain its bundle identity; a bare Unix executable has no app-bundle icon contract.
+
+Packaging tests inspect staged Linux packages/AppImages, both Windows shortcut declarations and the assembled macOS bundle. Windows headless tests check main/secondary window icons, per-user Linux registration and native API exports without changing the test process's shell identity. Actual Finder/Dock, Windows taskbar/pinning and GNOME, KDE Plasma, Xfce, Cinnamon, MATE, LXQt or other shell behavior still require target-machine verification; the Windows build does not certify every desktop environment. Existing pinned shortcuts and shell caches can retain an old icon until refreshed by the shell.
+
+Validation on Windows (25 October 2026): clean Release build passed with zero warnings/errors; full managed suite passed 406, skipped 18 and failed 0 (424 total). All 24 Python packaging/release checks passed, using temporary staged payloads and substituted packaging commands. No installers were installed or published during validation.

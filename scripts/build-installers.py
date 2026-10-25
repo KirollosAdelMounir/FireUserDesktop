@@ -26,6 +26,17 @@ RPM_DEPS = ('glibc >= 2.35', 'libicu', 'libstdc++', 'libgcc', 'libX11', 'libXtst
 ARCH_DEPS = ('glibc>=2.35', 'icu', 'gcc-libs', 'libx11', 'libxtst', 'libxi', 'libxext', 'libice', 'libsm',
              'fontconfig', 'ttf-dejavu', 'openssl', 'zlib', 'alsa-lib', 'libpulse', 'libglvnd', 'libnotify',
              'gstreamer', 'gst-plugins-base-libs')
+ICON_SIZES = (16, 24, 32, 48, 64, 128, 256, 512)
+
+
+def install_linux_icons(root):
+    for size in ICON_SIZES:
+        target = root / f'usr/share/icons/hicolor/{size}x{size}/apps/fire-user-connect.png'
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / f'Assets/Icons/fire-user-connect-{size}.png', target)
+    pixmap = root / 'usr/share/pixmaps/fire-user-connect.png'
+    pixmap.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(ROOT / 'Assets/Icons/fire-user-connect-256.png', pixmap)
 
 
 def run(*args, **kwargs):
@@ -46,10 +57,9 @@ def stage_linux(source, stage):
         'Comment=Chat, meetings and workplace collaboration\n'
         'Exec="/opt/fire-user-connect/Fire User Connect" --open-chat %u\n'
         'TryExec=/opt/fire-user-connect/Fire User Connect\nIcon=fire-user-connect\n'
+        'StartupWMClass=fire-user-connect\n'
         'Terminal=false\nCategories=Network;Chat;\nMimeType=x-scheme-handler/fireuserconnect;\n')
-    icons = stage / 'usr/share/icons/hicolor/256x256/apps'
-    icons.mkdir(parents=True)
-    shutil.copy2(ROOT / 'Assets/PageLogo.png', icons / 'fire-user-connect.png')
+    install_linux_icons(stage)
 
 
 def verified_download(url, checksum, destination):
@@ -77,8 +87,11 @@ def appimage(source, output, version, arch, work):
     (appdir / 'fire-user-connect.desktop').write_text(
         '[Desktop Entry]\nType=Application\nName=Fire User Connect\nExec=AppRun %u\n'
         'Icon=fire-user-connect\nTerminal=false\nCategories=Network;Chat;\n'
+        'StartupWMClass=fire-user-connect\n'
         'MimeType=x-scheme-handler/fireuserconnect;\n')
-    shutil.copy2(ROOT / 'Assets/PageLogo.png', appdir / 'fire-user-connect.png')
+    install_linux_icons(appdir)
+    shutil.copy2(ROOT / 'Assets/Icons/fire-user-connect-512.png', appdir / 'fire-user-connect.png')
+    shutil.copy2(appdir / 'fire-user-connect.png', appdir / '.DirIcon')
     definitions = json.loads((ROOT / 'packaging/appimage-tools.json').read_text())[arch]
     cache = ROOT / 'Native/sdk/appimage-tools' / arch
     cache.mkdir(parents=True, exist_ok=True)
@@ -134,11 +147,14 @@ cp -a "{stage}/." "%{{buildroot}}/"
 %defattr(-,root,root,-)
 /opt/fire-user-connect
 /usr/share/applications/fire-user-connect.desktop
-/usr/share/icons/hicolor/256x256/apps/fire-user-connect.png
+/usr/share/icons/hicolor/*/apps/fire-user-connect.png
+/usr/share/pixmaps/fire-user-connect.png
 %post
 update-desktop-database -q /usr/share/applications >/dev/null 2>&1 || :
+gtk-update-icon-cache -q -t /usr/share/icons/hicolor >/dev/null 2>&1 || :
 %postun
 update-desktop-database -q /usr/share/applications >/dev/null 2>&1 || :
+gtk-update-icon-cache -q -t /usr/share/icons/hicolor >/dev/null 2>&1 || :
 ''')
         run('rpmbuild', '--define', f'_topdir {rpmroot}', '--target', arch, '-bb', spec)
         for package in (rpmroot / 'RPMS').rglob('*.rpm'):

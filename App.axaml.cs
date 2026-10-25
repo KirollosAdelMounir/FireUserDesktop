@@ -41,6 +41,7 @@ public partial class App : Avalonia.Application
                     Dispatcher.UIThread.Post(async () => await HandleDeepLinkAsync(protocol.Uri.AbsoluteUri));
             };
         var services = new ServiceCollection();
+        services.AddSingleton<UserIdentityDesktop.Core.IRemoteClipboard, UserIdentityDesktop.Views.DesktopRemoteClipboard>();
         services.AddUserIdentityApplication();
         services.AddSingleton<MainViewModel>();
 
