@@ -41,6 +41,7 @@ public partial class CallWindow : Window
         SizeChanged += (_, _) => UpdateGalleryLayout();
         AddHandler(KeyDownEvent, PresentationKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent,(_,e)=>RouteControlKey(e,false),RoutingStrategies.Tunnel);
+        AddHandler(TextInputEvent,(_,e)=>{if(IsActive&&observedModel?.ControlledScreen!=null)e.Handled=true;},RoutingStrategies.Tunnel);
         AddHandler(PointerPressedEvent,RouteControlPointer,RoutingStrategies.Tunnel);
         AddHandler(PointerReleasedEvent,RouteControlPointer,RoutingStrategies.Tunnel);
         AddHandler(PointerMovedEvent,RouteControlPointer,RoutingStrategies.Tunnel);

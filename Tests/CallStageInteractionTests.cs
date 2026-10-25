@@ -276,6 +276,7 @@ public sealed class CallStageInteractionTests
         {
             media.RemoteControlChanged+=Raise.Event<Action<RemoteControlStatus>>(new RemoteControlStatus(new[]{new NativePeer("one",true,true,"scope")},null,null,"one"));Dispatcher.UIThread.RunJobs();
             using(var rendered=window.CaptureRenderedFrame())Assert.NotNull(rendered);
+            var text=new TextInputEventArgs{RoutedEvent=InputElement.TextInputEvent,Text="local text"};window.RaiseEvent(text);Assert.True(text.Handled);
             var view=window.FindControl<ContentControl>("FocusedStage")!.GetVisualDescendants().OfType<NativeVideoView>().Single();
             var point=view.TranslatePoint(new Point(view.Bounds.Width/2,view.Bounds.Height/2),window)!.Value;
             window.MouseWheel(point,new Vector(.5,-1));
