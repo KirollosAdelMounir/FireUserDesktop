@@ -73,16 +73,84 @@ public sealed class BackendActionQueueTests
         using var stop=new CancellationTokenSource();var request=client.GetAsync("https://fire.invalid/api/Chat/ChatOf",stop.Token);await started.Task;stop.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>request);Assert.True(queue.IsConnected);Assert.Equal(0,queue.PendingCount);
     }
-    [Theory][InlineData(true)][InlineData(false)]
-    public async Task TransferDurationDoesNotTriggerOrdinaryRequestDeadlineOrOfflineState(bool transfer)
+    [Theory]
+    [InlineData(true,true)][InlineData(false,true)]
+    [InlineData(true,false)][InlineData(false,false)]
+    public async Task TransferDurationDoesNotTriggerOrdinaryRequestDeadlineOrOfflineState(bool transfer,bool customDeadline)
     {
-        var queue=Offline();queue.SetConnected(true);
-        using var transport=new TokenHandler(async token=>{await Task.Delay(150,token);return new HttpResponseMessage(HttpStatusCode.OK);});
-        using var client=new HttpClient(new QueuedAuthenticatedHandler(queue,()=>Task.FromResult<string?>("session"),transport,requestTimeout:TimeSpan.FromMilliseconds(25))){Timeout=Timeout.InfiniteTimeSpan};
+        var queue=Offline();queue.SetConnected(true);var clock=new DeadlineClock();
+        var started=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var complete=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls=0;CancellationToken observed=default;
+        using var transport=new TokenHandler(async token=>{
+            calls++;observed=token;started.SetResult();await complete.Task.WaitAsync(token);
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        var duration=customDeadline?TimeSpan.FromMilliseconds(25):TimeSpan.FromSeconds(100);
+        using var client=new HttpClient(new QueuedAuthenticatedHandler(queue,()=>Task.FromResult<string?>("session"),transport,requestTimeout:customDeadline?duration:null,timeProvider:clock)){Timeout=Timeout.InfiniteTimeSpan};
         using var request=new HttpRequestMessage(HttpMethod.Get,"https://fire.invalid/transfer");
         request.Options.Set(UserIdentityDesktop.Core.AttachmentTransferRequests.UnlimitedDuration,transfer);
-        if(transfer){using var response=await client.SendAsync(request,TestContext.Current.CancellationToken);Assert.Equal(HttpStatusCode.OK,response.StatusCode);Assert.True(queue.IsConnected);}
-        else{await Assert.ThrowsAsync<HttpRequestException>(()=>client.SendAsync(request,TestContext.Current.CancellationToken));Assert.False(queue.IsConnected);}
+        var sending=client.SendAsync(request,TestContext.Current.CancellationToken);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5),TestContext.Current.CancellationToken);
+        Assert.Equal(transfer?0:1,clock.Timers.Count);
+        clock.Advance(duration-TimeSpan.FromTicks(1));
+        Assert.False(sending.IsCompleted);Assert.False(observed.IsCancellationRequested);Assert.True(queue.IsConnected);
+        clock.Advance(TimeSpan.FromTicks(1));
+        if(transfer)
+        {
+            clock.Advance(TimeSpan.FromDays(1));
+            Assert.False(observed.IsCancellationRequested);Assert.False(sending.IsCompleted);
+            complete.SetResult();using var response=await sending;
+            Assert.Equal(HttpStatusCode.OK,response.StatusCode);Assert.True(queue.IsConnected);
+        }
+        else
+        {
+            Assert.True(observed.IsCancellationRequested);
+            var error=await Assert.ThrowsAsync<HttpRequestException>(()=>sending);
+            Assert.IsAssignableFrom<OperationCanceledException>(error.InnerException);Assert.False(queue.IsConnected);
+            Assert.True(Assert.Single(clock.Timers).Disposed);
+        }
+        Assert.Equal(1,calls);Assert.Equal(0,queue.PendingCount);
+    }
+    [Fact]
+    public async Task SuccessfulOrdinaryRequestDisposesDeadlineWithoutCancellingTransportLater()
+    {
+        var queue=Offline();queue.SetConnected(true);var clock=new DeadlineClock();CancellationToken observed=default;
+        using var transport=new TokenHandler(token=>{observed=token;return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));});
+        using var client=new HttpClient(new QueuedAuthenticatedHandler(queue,()=>Task.FromResult<string?>("session"),transport,timeProvider:clock)){Timeout=Timeout.InfiniteTimeSpan};
+        using var response=await client.GetAsync("https://fire.invalid/action",TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK,response.StatusCode);Assert.True(Assert.Single(clock.Timers).Disposed);
+        clock.Advance(TimeSpan.FromDays(1));Assert.False(observed.IsCancellationRequested);Assert.True(queue.IsConnected);
+    }
+    // Only one-shot deadlines are needed here. No wall-clock waits or global clock overrides.
+    private sealed class DeadlineClock : TimeProvider
+    {
+        private TimeSpan elapsed;
+        public List<DeadlineTimer> Timers {get;}=[];
+        public override DateTimeOffset GetUtcNow()=>DateTimeOffset.UnixEpoch+elapsed;
+        public override ITimer CreateTimer(TimerCallback callback,object? state,TimeSpan dueTime,TimeSpan period)
+        {
+            var timer=new DeadlineTimer(this,callback,state);timer.Change(dueTime,period);Timers.Add(timer);return timer;
+        }
+        public void Advance(TimeSpan duration)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(duration,TimeSpan.Zero);elapsed+=duration;
+            foreach(var timer in Timers.ToArray())timer.Fire(elapsed);
+        }
+        public sealed class DeadlineTimer(DeadlineClock clock,TimerCallback callback,object? state) : ITimer
+        {
+            private TimeSpan due=TimeSpan.MaxValue;
+            public bool Disposed {get;private set;}
+            public bool Change(TimeSpan dueTime,TimeSpan period)
+            {
+                if(Disposed)return false;
+                if(period!=Timeout.InfiniteTimeSpan)throw new NotSupportedException("Only one-shot deadlines are expected.");
+                due=dueTime==Timeout.InfiniteTimeSpan?TimeSpan.MaxValue:clock.elapsed+dueTime;return true;
+            }
+            public void Fire(TimeSpan now){if(!Disposed&&due<=now){due=TimeSpan.MaxValue;callback(state);}}
+            public void Dispose()=>Disposed=true;
+            public ValueTask DisposeAsync(){Dispose();return ValueTask.CompletedTask;}
+        }
     }
     private sealed class TokenHandler(Func<CancellationToken,Task<HttpResponseMessage>> handle):HttpMessageHandler
     {protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)=>handle(ct);}

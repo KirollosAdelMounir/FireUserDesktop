@@ -144,7 +144,7 @@ public class AuthService : IAuthService
     public HttpClient CreateAuthenticatedClient()
     {
         var owner=CurrentUser?.Id;var server=_configService.ServerUrl;
-        var client = new HttpClient(new QueuedAuthenticatedHandler(Actions,FreshCredential,authenticatedTransport,()=>CurrentUser?.Id==owner&&IsAuthenticated&&_configService.ServerUrl==server)) { Timeout=Timeout.InfiniteTimeSpan };
+        var client = new HttpClient(new QueuedAuthenticatedHandler(Actions,FreshCredential,authenticatedTransport,()=>CurrentUser?.Id==owner&&IsAuthenticated&&_configService.ServerUrl==server,timeProvider:TimeProvider.System)) { Timeout=Timeout.InfiniteTimeSpan };
         if (!string.IsNullOrEmpty(AccessToken))
         {
             client.DefaultRequestHeaders.Authorization =

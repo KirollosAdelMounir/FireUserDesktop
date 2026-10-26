@@ -5,7 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using UserIdentityDesktop.Core;
 namespace UserIdentityDesktop.Data;
-internal sealed class QueuedAuthenticatedHandler(IBackendActionQueue queue,Func<Task<string?>> credential,HttpMessageHandler transport,Func<bool>? sameAccount=null,TimeSpan? requestTimeout=null) : HttpMessageHandler
+internal sealed class QueuedAuthenticatedHandler(IBackendActionQueue queue,Func<Task<string?>> credential,HttpMessageHandler transport,Func<bool>? sameAccount=null,TimeSpan? requestTimeout=null,TimeProvider? timeProvider=null) : HttpMessageHandler
 {
     private readonly HttpMessageInvoker sender=new(transport,disposeHandler:false);
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
@@ -18,9 +18,9 @@ internal sealed class QueuedAuthenticatedHandler(IBackendActionQueue queue,Func<
             request.Content=frozen;original.Dispose();
         }
         return await queue.RunAsync(async token=>{
-        using var timeout=CancellationTokenSource.CreateLinkedTokenSource(token);
-        if(!request.Options.TryGetValue(AttachmentTransferRequests.UnlimitedDuration,out var transfer)||!transfer)
-            timeout.CancelAfter(requestTimeout??TimeSpan.FromSeconds(100));
+        var unlimited=request.Options.TryGetValue(AttachmentTransferRequests.UnlimitedDuration,out var transfer)&&transfer;
+        using var deadline=unlimited?null:new CancellationTokenSource(requestTimeout??TimeSpan.FromSeconds(100),timeProvider??TimeProvider.System);
+        using var timeout=deadline==null?CancellationTokenSource.CreateLinkedTokenSource(token):CancellationTokenSource.CreateLinkedTokenSource(token,deadline.Token);
         if(sameAccount?.Invoke()==false)throw new OperationCanceledException("This action belongs to a previous account.");
         var bearer=await credential();timeout.Token.ThrowIfCancellationRequested();
         if(sameAccount?.Invoke()==false)throw new OperationCanceledException("This action belongs to a previous account.");
