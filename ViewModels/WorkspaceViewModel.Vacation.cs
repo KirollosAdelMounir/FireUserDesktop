@@ -166,7 +166,7 @@ public partial class WorkspaceViewModel
         var page = await api.VacationsAsync(vacationPage, lifetime.Token);
         if (page == null) return;
         var selectedId = SelectedVacation?.Id;
-        if (vacationPage == 1) Vacations.Clear(); foreach (var item in page.Requests) { item.RequesterName=await Chat.GetPersonNameAsync(item.UserId) ?? "Employee name unavailable";Vacations.Add(item); } VacationsHaveMore = page.HasMore;
+        if (vacationPage == 1) Vacations.Clear(); foreach (var item in page.Requests) { item.DatesLabel=string.Join("\n",(page.Allocations??new()).Where(a=>a.RequestId==item.Id).OrderBy(a=>a.AnchorDate).Select(a=>$"{a.AnchorDate:ddd, d MMM yyyy} · {a.Days:0.##} day(s){(a.Released ? " · Released" : "")}")); item.RequesterName=await Chat.GetPersonNameAsync(item.UserId) ?? "Employee name unavailable";Vacations.Add(item); } VacationsHaveMore = page.HasMore;
         SelectedVacation = Vacations.FirstOrDefault(item => item.Id == selectedId);
     }
     [RelayCommand(CanExecute = nameof(CanDecideVacation))] private Task DecideVacationAsync(string? action) => Work(async () =>

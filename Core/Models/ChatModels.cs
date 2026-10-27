@@ -20,6 +20,8 @@ public enum UserStatus
 
 public class UserPresence
 {
+    [JsonPropertyName("hasMobileConnection")]
+    public bool HasMobileConnection { get; set; }
     [JsonPropertyName("userId")]
     public Guid UserId { get; set; }
 

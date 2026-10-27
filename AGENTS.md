@@ -144,3 +144,9 @@ as an incidental verification step. Document remaining failures honestly.
 ## Desktop parity and device UX
 
 Preserve the Angular palette and Outfit font, the 70px navigation rail expanding to 210px on hover/focus, vector icons, 240ms cubic-bezier(.2,.8,.2,1) content transitions and reduced motion. Calls belong in an owned child window; closing it must leave and clean up media. Remote control must appear only for a native peer actively sharing its supported desktop, or an active host/grant requiring revocation. Refresh device discovery automatically when device menus open. Discovery must never start a microphone, camera or speaker test. See docs/desktop-design-and-devices.md.
+
+## Call Logs
+
+The workspace rail includes Call Logs at tab index 6; preserve existing tab indices used by notifications and navigation. `WorkspaceViewModel.CallLogs` owns history paging, seen acknowledgements and redial. `Views/CallLogsView` only binds that state. `ICollaborationApi` uses `/api/Calls/Logs` and `Logs/Seen`; only send the snapshot's server `ObservedAt`. Opening history clears missed calls through that snapshot, synchronized via `CallLogsSeen`. Call-summary message events and reconnect refresh history; do not poll. Redial creates a new call with the original audio/video type through existing server permissions and native media lifecycle.
+
+The composer uses a single action slot: ShowRecordAction for empty/whitespace drafts, ShowSendAction for text, attachments or editing. Preserve the separate recording/prepared-audio lifecycle. SurfaceMotion's composer effects run only when the mode changes and honor reduced motion; do not retrigger them on every character.

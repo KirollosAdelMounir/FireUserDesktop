@@ -51,6 +51,7 @@ public partial class ChatService : IChatService
         await QueueHubAction("RespondToMeetingInvitation", locator, invitationId, accept);
     }
     public event Action<ChatMessage>? MessageReceived;
+    public event Action? CallLogsSeen;
     public event Action<ChatMessage>? MessageUpdated;
     public event Action<PlaybackReceipt>? AttachmentPlayed;
     public Task MarkAttachmentPlayedAsync(string messageId, Guid attachmentId) => QueueHubAction("MarkAttachmentPlayed", messageId, attachmentId);
@@ -134,6 +135,7 @@ public partial class ChatService : IChatService
         _hubConnection.On("ConversationsUpdated", async () => RecipientsUpdated?.Invoke(await GetRecipientsAsync()));
         _hubConnection.On<string>("MeetingConversationChanged", _ => WorkplaceChanged?.Invoke());
         _hubConnection.On<IncomingCall>("IncomingCall", call => IncomingCallReceived?.Invoke(call));
+        _hubConnection.On("CallLogsSeen",()=>CallLogsSeen?.Invoke());
         _hubConnection.On<CallParticipantLeft>("CallParticipantLeft", change => CallParticipantLeft?.Invoke(change));
 
         _hubConnection.On<ChatMessage>("ReceiveMessageInChat", async msg =>

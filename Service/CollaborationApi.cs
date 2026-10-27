@@ -12,6 +12,8 @@ namespace UserIdentityDesktop.Service;
 
 public sealed partial class CollaborationApi(IAuthService auth, IConfigurationService config) : ICollaborationApi
 {
+    public Task<CallLogPage> CallLogsAsync(string? before = null, CancellationToken ct = default) => Get<CallLogPage>("Calls/Logs" + (before == null ? "" : "?before=" + Segment(before)), ct);
+    public async Task MarkCallLogsSeenAsync(DateTime through, CancellationToken ct = default) => await Post<bool>("Calls/Logs/Seen", new { through }, ct);
     public Task<AppearancePreferences> AppearanceAsync(CancellationToken ct = default) => Get<AppearancePreferences>("Workplace/appearance/preferences",ct);
     public Task<AppearancePreferences> SaveAppearanceAsync(AppearancePreferences value, CancellationToken ct = default) => Post<AppearancePreferences>("Workplace/appearance/preferences",value,ct);
     private async Task<T> Send<T>(HttpMethod method, string path, object? body, CancellationToken ct)

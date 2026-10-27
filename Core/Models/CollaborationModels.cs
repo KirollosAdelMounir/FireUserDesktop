@@ -69,10 +69,13 @@ public sealed record VacationShift(DateOnly AnchorDate, DateTime StartUtc, DateT
 public sealed record VacationBalance(int Year, decimal Available, decimal Pending, decimal Approved, decimal Entitlement = 0, decimal Adjustments = 0, decimal Taken = 0)
 { public string Label => $"{Year}: {Available:0.##} days available · entitlement {Entitlement:0.##} · adjustments {Adjustments:0.##} · {Pending:0.##} pending · {Approved:0.##} approved · {Taken:0.##} taken"; }
 public sealed record VacationPreview(System.Collections.Generic.List<VacationShift> Shifts, string PreviewToken, System.Collections.Generic.List<VacationBalance> Balances);
+public sealed record VacationAllocation(Guid Id, Guid RequestId, DateOnly AnchorDate, DateTime StartUtc, DateTime EndUtc, decimal Days, bool Released);
 public sealed record VacationRequest(Guid Id, Guid UserId, int State, string Reason, decimal RequestedDays, long Version)
-{ [System.Text.Json.Serialization.JsonIgnore] public string RequesterName {get;set;} = "Employee";
+{ [System.Text.Json.Serialization.JsonIgnore] public string DatesLabel {get;set;} = "";
+  public DateTime CreatedUtc {get;init;}
+  [System.Text.Json.Serialization.JsonIgnore] public string RequesterName {get;set;} = "Employee";
   public string StateLabel => State switch { 0 => "Pending", 1 => "Approved", 2 => "Rejected", 3 => "Withdrawn", 4 => "Cancellation requested", 5 => "Cancelled", _ => "Unknown" }; }
-public sealed record VacationPage(System.Collections.Generic.List<VacationRequest> Requests, bool HasMore, int Page);
+public sealed record VacationPage(System.Collections.Generic.List<VacationRequest> Requests, bool HasMore, int Page, System.Collections.Generic.List<VacationAllocation>? Allocations = null);
 
 public sealed record VacationReadiness(bool Ready, string? Instructions);
 public sealed record MeetingUnitOption(Guid Id, string Name, int MemberCount) { public override string ToString() => $"{Name} · {MemberCount} people (including child units)"; }

@@ -39,7 +39,10 @@ public partial class RecipientItemViewModel : ObservableObject
     private string? _lastMessage;
     [ObservableProperty] private int _attachmentsCount;
     public bool HasPreviewAttachments => AttachmentsCount > 0;
-    public string PreviewText => string.IsNullOrWhiteSpace(LastMessage) && HasPreviewAttachments ? "Attachments" : LastMessage ?? "";
+    [ObservableProperty] private string _activityLabel = string.Empty;
+    partial void OnActivityLabelChanged(string value)=>OnPropertyChanged(nameof(PreviewText));
+    partial void OnIsTypingChanged(bool value)=>OnPropertyChanged(nameof(PreviewText));
+    public string PreviewText => !string.IsNullOrWhiteSpace(ActivityLabel)?ActivityLabel:IsTyping?"Typing…":string.IsNullOrWhiteSpace(LastMessage) && HasPreviewAttachments ? "Attachments" : LastMessage ?? "";
     partial void OnLastMessageChanged(string? value) => OnPropertyChanged(nameof(PreviewText));
     partial void OnAttachmentsCountChanged(int value) { OnPropertyChanged(nameof(PreviewText)); OnPropertyChanged(nameof(HasPreviewAttachments)); }
 
@@ -60,6 +63,9 @@ public partial class RecipientItemViewModel : ObservableObject
 
     [ObservableProperty]
     private UserStatus _status = UserStatus.Offline;
+
+    [ObservableProperty]
+    private bool _hasMobileConnection;
 
     public string StatusLabel => IsGroup ? "Group conversation" : ChatViewModel.GetStatusLabel(Status);
     public IBrush StatusColor => ChatViewModel.GetStatusColor(Status);

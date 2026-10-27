@@ -258,6 +258,7 @@ public sealed class WorkspaceTests
         var auth = Substitute.For<IAuthService>(); auth.CurrentUser.Returns(new UserData { Id = Guid.NewGuid() });
         var chat = Substitute.For<IChatService>();
         var api = Substitute.For<ICollaborationApi>(); var media = Substitute.For<INativeMediaSession>();
+        api.CallLogsAsync(Arg.Any<string?>(),Arg.Any<CancellationToken>()).Returns(new CallLogPage(new(),null,0,DateTime.UtcNow));
         api.CatalogAsync(Arg.Any<CancellationToken>()).Returns(new WorkplaceCatalog(new()));
         api.CalendarAsync(Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>()).Returns(new List<CalendarItem>());
         api.AnnouncementsAsync(Arg.Any<CancellationToken>()).Returns(new List<Announcement>());
@@ -300,6 +301,25 @@ public sealed class WorkspaceTests
     }
 
     [AvaloniaFact]
+    public async Task CallLogs_OpenAcknowledgesSnapshotAndRedialUsesOriginalPeerAndMediaType()
+    {
+        var (vm,api,media)=Workspace();var peer=Guid.NewGuid();var observed=DateTime.UtcNow.AddSeconds(-1);
+        var item=new CallLogItem("record","old-call","Colleague",peer,null,"video","missed",false,observed.AddMinutes(-1),observed,0);
+        api.CallLogsAsync(null,Arg.Any<CancellationToken>()).Returns(new CallLogPage(new(){item},null,1,observed));
+        await vm.RefreshCallLogsAsync();Assert.Equal(1,vm.MissedCalls);Assert.Equal(item,Assert.Single(vm.CallLogs));
+        await api.DidNotReceive().MarkCallLogsSeenAsync(Arg.Any<DateTime>(),Arg.Any<CancellationToken>());
+        vm.SelectedWorkspaceTab=6;
+        await api.Received().MarkCallLogsSeenAsync(observed,Arg.Any<CancellationToken>());Assert.Equal(0,vm.MissedCalls);
+        vm.CallingEnabled=true;
+        api.CreateCallAsync(peer,true,Arg.Any<CancellationToken>()).Returns(new CallSession("new-call","video",new(){peer},null));
+        api.CallTokenAsync("new-call",Arg.Any<CancellationToken>()).Returns(new MediaToken("wss://media.test","token"));
+        await vm.RedialCommand.ExecuteAsync(item);
+        await api.Received().CreateCallAsync(peer,true,Arg.Any<CancellationToken>());
+        await api.DidNotReceive().CallTokenAsync("old-call",Arg.Any<CancellationToken>());
+        Assert.True(vm.InCall);await vm.DisposeAsync();
+    }
+
+    [AvaloniaFact]
     public void VideoControl_RendersFrames_AndRejectsInvalidBuffer()
     {
         var pixels = Enumerable.Repeat(new byte[] { 255, 0, 0, 255 }, 16 * 16).SelectMany(x => x).ToArray();
@@ -332,7 +352,7 @@ public sealed class WorkspaceTests
         for (var index = 0; index < tabs.ItemCount; index++)
         {
             tabs.SelectedIndex = index; Dispatcher.UIThread.RunJobs();
-            var expected = new[] { "Maya Hassan", "Join meeting", "Calendar", "Announcements", "Media & preferences", "Notifications" }[index];
+            var expected = new[] { "Maya Hassan", "Join meeting", "Calendar", "Announcements", "Media & preferences", "Notifications", "Call Logs" }[index];
             Assert.Contains(view.GetVisualDescendants().OfType<TextBlock>(), text => text.Text == expected && text.IsVisible);
             using var frame = window.CaptureRenderedFrame(); Assert.NotNull(frame);
             var output = Environment.GetEnvironmentVariable("FIREUSER_TEST_ARTIFACTS");

@@ -24,6 +24,8 @@ public partial class ChatViewModel
     [ObservableProperty, NotifyPropertyChangedFor(nameof(VoiceComposerActive)), NotifyPropertyChangedFor(nameof(CanTypeMessage)), NotifyPropertyChangedFor(nameof(VoiceStatusLabel))] private bool _isPreparingVoice;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(VoiceComposerActive)), NotifyPropertyChangedFor(nameof(CanTypeMessage)), NotifyPropertyChangedFor(nameof(VoiceStatusLabel))] private bool _isOpeningMicrophone;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasVoiceNote)), NotifyPropertyChangedFor(nameof(VoiceComposerActive)), NotifyPropertyChangedFor(nameof(CanTypeMessage))] private string? _voiceNotePath;
+    public bool ShowSendAction => !string.IsNullOrWhiteSpace(MessageDraft) || PendingAttachments.Count>0 || EditingMessage!=null;
+    public bool ShowRecordAction => !ShowSendAction;
     public bool HasVoiceNote => VoiceNotePath != null;
     public bool VoiceComposerActive => IsRecordingVoice || IsPreparingVoice || IsOpeningMicrophone || HasVoiceNote;
     public bool CanTypeMessage => !VoiceComposerActive;
@@ -53,12 +55,15 @@ public partial class ChatViewModel
             return result.Length > 0 ? result : IsOtherPartyTyping ? "Typing…" : "";
         }
     }
-    partial void OnIsOtherPartyTypingChanged(bool value) => OnPropertyChanged(nameof(ChatActivityLabel));
+    public bool HasChatActivity => !string.IsNullOrWhiteSpace(ChatActivityLabel);
+    public bool IsRecordingActivity => activities.Values.Any(x=>SelectedRecipient is {} r && x.Activity.UserId!=CurrentUser.Id && (r.IsGroup?x.Activity.ConversationId==r.ConversationId:x.Activity.ConversationId==null&&x.Activity.UserId==r.ReceiverId) && x.Activity.Kind=="recording");
+    private void RefreshRecipientActivity(){foreach(var r in Recipients){r.ActivityLabel=string.Join(" · ",activities.Values.Where(x=>x.Activity.UserId!=CurrentUser.Id&&(r.IsGroup?x.Activity.ConversationId==r.ConversationId:x.Activity.ConversationId==null&&x.Activity.UserId==r.ReceiverId)).Select(x=>(r.IsGroup?"A participant":r.ReceiverName)+(x.Activity.Kind=="recording"?" is recording a voice note…":x.Activity.Kind=="photo"?" is sending a photo…":" is sending attachments…")).Distinct());}}
+    partial void OnIsOtherPartyTypingChanged(bool value) {OnPropertyChanged(nameof(ChatActivityLabel));OnPropertyChanged(nameof(HasChatActivity));}
     private void OnChatActivity(ChatActivity activity) => Dispatcher.UIThread.Post(() =>
     {
         var key = (activity.UserId, activity.SourceId, activity.Kind);
         if (activity.Active) activities[key] = (activity, DateTime.UtcNow.AddSeconds(8)); else activities.Remove(key);
-        OnPropertyChanged(nameof(ChatActivityLabel));
+        RefreshRecipientActivity();OnPropertyChanged(nameof(ChatActivityLabel));OnPropertyChanged(nameof(HasChatActivity));OnPropertyChanged(nameof(IsRecordingActivity));
     });
     private void OnConversationTyping(ConversationTyping typing)
     {
@@ -71,9 +76,10 @@ public partial class ChatViewModel
     {
         PropertyChanged += (_, e) =>
         {
+            if(e.PropertyName is nameof(MessageDraft) or nameof(EditingMessage)){OnPropertyChanged(nameof(ShowSendAction));OnPropertyChanged(nameof(ShowRecordAction));}
             if (e.PropertyName is nameof(SelectedRecipient) or nameof(IsSendingMessage) or nameof(IsOpeningMicrophone) or nameof(IsPreparingVoice) or nameof(IsRecordingVoice) or nameof(HasVoiceNote) or nameof(EditingMessage)) ToggleVoiceRecordingCommand.NotifyCanExecuteChanged();
         };
-        PendingAttachments.CollectionChanged += (_, _) => ToggleVoiceRecordingCommand.NotifyCanExecuteChanged();
+        PendingAttachments.CollectionChanged += (_, _) => {ToggleVoiceRecordingCommand.NotifyCanExecuteChanged();OnPropertyChanged(nameof(ShowSendAction));OnPropertyChanged(nameof(ShowRecordAction));};
     }
     [RelayCommand(CanExecute = nameof(CanToggleVoiceRecording))] private async Task ToggleVoiceRecordingAsync()
     {

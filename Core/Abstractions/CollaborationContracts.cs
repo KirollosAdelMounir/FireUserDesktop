@@ -8,6 +8,8 @@ namespace UserIdentityDesktop.Core;
 
 public interface ICollaborationApi
 {
+    Task<CallLogPage> CallLogsAsync(string? before = null, CancellationToken ct = default) => throw new NotSupportedException("Call logs are unavailable.");
+    Task MarkCallLogsSeenAsync(DateTime through, CancellationToken ct = default) => throw new NotSupportedException("Call logs are unavailable.");
     Task<AppearancePreferences> AppearanceAsync(CancellationToken ct = default);
     Task<AppearancePreferences> SaveAppearanceAsync(AppearancePreferences value, CancellationToken ct = default);
     Task<PolicyCatalog> PoliciesAsync(int country, CancellationToken ct = default);

@@ -10,7 +10,7 @@ using UserIdentityDesktop.ViewModels;
 
 namespace UserIdentityDesktop.Views;
 
-public enum SurfaceMotionKind { Page, Popup, Overlay, Drawer, Toast }
+public enum SurfaceMotionKind { Page, Popup, Overlay, Drawer, Toast, ComposerMic, ComposerSend }
 
 /// <summary>One animation owns a surface; cancellation restores it before reuse.</summary>
 internal sealed class SurfaceMotion
@@ -47,18 +47,18 @@ internal sealed class SurfaceMotion
         if (reduced) return Completion = Task.CompletedTask;
         var stop = new CancellationTokenSource(); active = stop; target = surface;
         previousTransform = surface.RenderTransform; previousOpacity = surface.Opacity; previousOrigin = surface.RenderTransformOrigin;
-        surface.RenderTransform = new TransformGroup { Children = { new ScaleTransform(), new TranslateTransform() } };
+        surface.RenderTransform = new TransformGroup { Children = { new ScaleTransform(),new RotateTransform(), new TranslateTransform() } };
         surface.RenderTransformOrigin = new RelativePoint(.5, .5, RelativeUnit.Relative);
-        var offsetX = kind == SurfaceMotionKind.Drawer ? 18d : kind == SurfaceMotionKind.Toast ? 40d : 0;
-        var offsetY = kind is SurfaceMotionKind.Page or SurfaceMotionKind.Popup ? 10d : 0;
-        var scale = kind == SurfaceMotionKind.Popup ? .96d : kind == SurfaceMotionKind.Toast ? .95d : 1d;
+        var offsetX = kind == SurfaceMotionKind.ComposerSend ? -10d : kind == SurfaceMotionKind.Drawer ? 18d : kind == SurfaceMotionKind.Toast ? 40d : 0;
+        var offsetY = kind is SurfaceMotionKind.ComposerMic or SurfaceMotionKind.ComposerSend ? 8d : kind is SurfaceMotionKind.Page or SurfaceMotionKind.Popup ? 10d : 0;
+        var scale = kind is SurfaceMotionKind.ComposerMic or SurfaceMotionKind.ComposerSend ? .94d : kind == SurfaceMotionKind.Popup ? .96d : kind == SurfaceMotionKind.Toast ? .95d : 1d;
         var effect = new Animation
         {
-            Duration = TimeSpan.FromMilliseconds(exit ? (kind == SurfaceMotionKind.Toast ? 320 : 180) : (kind is SurfaceMotionKind.Popup or SurfaceMotionKind.Overlay ? 180 : 240)), Easing = new AngularNavigationEasing(),
+            Duration = TimeSpan.FromMilliseconds(kind==SurfaceMotionKind.ComposerMic?150:kind==SurfaceMotionKind.ComposerSend?180:exit ? (kind == SurfaceMotionKind.Toast ? 320 : 180) : (kind is SurfaceMotionKind.Popup or SurfaceMotionKind.Overlay ? 180 : 240)), Easing = new AngularNavigationEasing(),
             Children =
             {
-                new KeyFrame { Cue = new Cue(0), Setters = { new Setter(Visual.OpacityProperty, exit ? 1d : 0d), new Setter(TranslateTransform.XProperty, exit ? 0d : offsetX), new Setter(TranslateTransform.YProperty, exit ? 0d : offsetY), new Setter(ScaleTransform.ScaleXProperty, exit ? 1d : scale), new Setter(ScaleTransform.ScaleYProperty, exit ? 1d : scale) } },
-                new KeyFrame { Cue = new Cue(1), Setters = { new Setter(Visual.OpacityProperty, exit ? 0d : 1d), new Setter(TranslateTransform.XProperty, exit ? offsetX : 0d), new Setter(TranslateTransform.YProperty, exit ? offsetY : 0d), new Setter(ScaleTransform.ScaleXProperty, exit ? scale : 1d), new Setter(ScaleTransform.ScaleYProperty, exit ? scale : 1d) } }
+                new KeyFrame { Cue = new Cue(0), Setters = { new Setter(Visual.OpacityProperty, exit ? 1d : 0d),new Setter(RotateTransform.AngleProperty,kind==SurfaceMotionKind.ComposerSend?-20d:0d), new Setter(TranslateTransform.XProperty, exit ? 0d : offsetX), new Setter(TranslateTransform.YProperty, exit ? 0d : offsetY), new Setter(ScaleTransform.ScaleXProperty, exit ? 1d : scale), new Setter(ScaleTransform.ScaleYProperty, exit ? 1d : scale) } },
+                new KeyFrame { Cue = new Cue(1), Setters = { new Setter(Visual.OpacityProperty, exit ? 0d : 1d),new Setter(RotateTransform.AngleProperty,0d), new Setter(TranslateTransform.XProperty, exit ? offsetX : 0d), new Setter(TranslateTransform.YProperty, exit ? offsetY : 0d), new Setter(ScaleTransform.ScaleXProperty, exit ? scale : 1d), new Setter(ScaleTransform.ScaleYProperty, exit ? scale : 1d) } }
             }
         };
         return Completion = RunAsync(effect, surface, stop);

@@ -151,6 +151,7 @@ public partial class ChatViewModel : ViewModelBase
     partial void OnIsSearchingChanged(bool value)=>OnPropertyChanged(nameof(NoPeopleSearchResults));
     public bool NoPeopleSearchResults => !IsSearching && SearchResults.Count==0;
     private readonly Dictionary<Guid,long> presenceVersions=new();
+    public bool SelectedRecipientHasMobileConnection => SelectedRecipient?.HasMobileConnection == true;
     public UserStatus SelectedRecipientStatus => SelectedRecipient?.Status ?? UserStatus.Offline;
     public bool SelectedRecipientHasPresence => SelectedRecipient is {IsGroup:false};
     public string SelectedRecipientStatusLabel => SelectedRecipient?.StatusLabel ?? string.Empty;
@@ -188,7 +189,7 @@ public partial class ChatViewModel : ViewModelBase
         activityExpiry.Tick += (_, _) =>
         {
             foreach (var key in activities.Where(x => x.Value.Expires <= DateTime.UtcNow).Select(x => x.Key).ToArray()) activities.Remove(key);
-            OnPropertyChanged(nameof(ChatActivityLabel));
+            RefreshRecipientActivity();OnPropertyChanged(nameof(ChatActivityLabel));OnPropertyChanged(nameof(HasChatActivity));OnPropertyChanged(nameof(IsRecordingActivity));
         };
         activityExpiry.Start();
         InitializeVoiceRecording();
@@ -287,7 +288,7 @@ public partial class ChatViewModel : ViewModelBase
         var version=presenceVersions.GetValueOrDefault(recipient.ReceiverId);
         var presence = await _chatService.GetUserPresenceAsync(recipient.ReceiverId);
         if (presence != null && presence.UserId==recipient.ReceiverId)
-            Dispatcher.UIThread.Post(() => { if(presenceVersions.GetValueOrDefault(recipient.ReceiverId)==version)recipient.Status=presence.Status; });
+            Dispatcher.UIThread.Post(() => { if(presenceVersions.GetValueOrDefault(recipient.ReceiverId)==version){recipient.Status=presence.Status;recipient.HasMobileConnection=presence.HasMobileConnection;} });
     }
 
     partial void OnSearchTextChanged(string value)
@@ -422,7 +423,7 @@ public partial class ChatViewModel : ViewModelBase
         OnPropertyChanged(nameof(SelectedRecipientAvatar));
         OnPropertyChanged(nameof(SelectedRecipientName));
         OnPropertyChanged(nameof(SelectedRecipientStatusLabel));
-        OnPropertyChanged(nameof(SelectedRecipientStatus));OnPropertyChanged(nameof(SelectedRecipientHasPresence));
+        OnPropertyChanged(nameof(SelectedRecipientStatus));OnPropertyChanged(nameof(SelectedRecipientHasPresence));OnPropertyChanged(nameof(SelectedRecipientHasMobileConnection));
         if (newValue != null)
             _ = LoadRecipientPresenceAsync(newValue);
 
@@ -443,7 +444,7 @@ public partial class ChatViewModel : ViewModelBase
         if (activeConversationKey is {} previous && loadedHistory.Contains(previous))
             historyCache[previous] = new(Messages.ToList(), CurrentPage, HasMoreMessages);
         _ = CancelVoiceRecording();
-        OnPropertyChanged(nameof(ChatActivityLabel));
+        OnPropertyChanged(nameof(ChatActivityLabel));OnPropertyChanged(nameof(HasChatActivity));OnPropertyChanged(nameof(IsRecordingActivity));
         activeConversationKey = key;
         ++historyVersion;
 
@@ -486,6 +487,7 @@ public partial class ChatViewModel : ViewModelBase
 
     private void OnSelectedRecipientPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        if(e.PropertyName == nameof(RecipientItemViewModel.HasMobileConnection))OnPropertyChanged(nameof(SelectedRecipientHasMobileConnection));
         if(e.PropertyName == nameof(RecipientItemViewModel.Status))OnPropertyChanged(nameof(SelectedRecipientStatus));
         if (e.PropertyName == nameof(RecipientItemViewModel.StatusLabel)) OnPropertyChanged(nameof(SelectedRecipientStatusLabel));
         if (e.PropertyName == nameof(RecipientItemViewModel.ReceiverName)) OnPropertyChanged(nameof(SelectedRecipientName));
@@ -1070,6 +1072,7 @@ public partial class ChatViewModel : ViewModelBase
         Dispatcher.UIThread.Post(() => ApplyPresence(new UserPresence
         {
             UserId = userId,
+            HasMobileConnection = Recipients.FirstOrDefault(r => r.ReceiverId == userId)?.HasMobileConnection == true,
             Status = status
         }));
     }
@@ -1082,8 +1085,8 @@ public partial class ChatViewModel : ViewModelBase
 
         var recipient = Recipients.FirstOrDefault(item => item.ReceiverId == presence.UserId);
         if (recipient != null && !recipient.IsGroup)
-            recipient.Status = presence.Status;
-        if(SelectedRecipient is {IsGroup:false} selected && selected.ReceiverId==presence.UserId)selected.Status=presence.Status;
+            { recipient.Status = presence.Status; recipient.HasMobileConnection = presence.HasMobileConnection; }
+        if(SelectedRecipient is {IsGroup:false} selected && selected.ReceiverId==presence.UserId){ selected.Status=presence.Status; selected.HasMobileConnection=presence.HasMobileConnection; }
     }
 
     public void RecordActivity()

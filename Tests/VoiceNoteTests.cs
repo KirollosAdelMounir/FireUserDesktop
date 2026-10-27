@@ -179,6 +179,14 @@ public sealed class VoiceNoteTests
         }
         var view = new ChatView { DataContext = vm };
         var window = new Window { Content = view, Width = 1100, Height = 700, RequestedThemeVariant = light ? Avalonia.Styling.ThemeVariant.Light : Avalonia.Styling.ThemeVariant.Dark }; window.Show(); Dispatcher.UIThread.RunJobs();
+        var recordAction=view.FindControl<Button>("RecordComposerButton")!;
+        var sendAction=view.FindControl<Button>("SendComposerButton")!;
+        Assert.True(recordAction.IsVisible);Assert.False(sendAction.IsVisible);
+        SaveVoiceFrame(window,$"composer-mic-{(light ? "light" : "dark")}.png");
+        vm.MessageDraft="Hello";Dispatcher.UIThread.RunJobs();Assert.True(sendAction.IsVisible);Assert.False(recordAction.IsVisible);
+        SaveVoiceFrame(window,$"composer-send-{(light ? "light" : "dark")}.png");
+        vm.MessageDraft="  ";Dispatcher.UIThread.RunJobs();Assert.True(recordAction.IsVisible);Assert.False(sendAction.IsVisible);
+        vm.MessageDraft="";Dispatcher.UIThread.RunJobs();
         var players = view.GetVisualDescendants().OfType<InlineAudioPlayer>().Where(player => player.Attachment != null).ToArray();
         Assert.Equal(2, players.Length); Assert.All(players, player => Assert.InRange(player.Bounds.Width, 300, 310)); Assert.Single(players, player => player.IsSent); Assert.Single(players, player => !player.IsSent);
         vm.CreateVoiceRecorderAsync = _ => { var note = Recorder(out var frames); frames.Writer.TryWrite(Tone(1.1)); return Task.FromResult(note); };

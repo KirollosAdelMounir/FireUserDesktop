@@ -60,6 +60,7 @@ public interface IImageService
 public interface IChatService
 {
     ITransferTracker? Transfers => null;
+    event Action? CallLogsSeen { add { } remove { } }
     event Action? WorkplaceChanged;
     event Action? AppearancePreferencesChanged;
     event Action<Guid>? WorkplaceNotificationChanged;

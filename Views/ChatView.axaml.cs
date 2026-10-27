@@ -18,6 +18,8 @@ public partial class ChatView : UserControl
     private ChatViewModel? model;
     private AttachmentGalleryWindow? sharedGallery;
     private readonly SurfaceMotion motion = new();
+    private readonly SurfaceMotion composerMotion = new();
+    private bool? composerSend;
     private void SearchResult_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         Dispatcher.UIThread.Post(() => { FindPeopleButton.Flyout?.Hide(); MessageInputBox.Focus(); });
@@ -136,6 +138,10 @@ public partial class ChatView : UserControl
     }
     private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if(e.PropertyName==nameof(ChatViewModel.ShowSendAction) && model is {} chat && composerSend!=chat.ShowSendAction){
+            composerSend=chat.ShowSendAction;
+            _=composerMotion.EnterAsync(chat.ShowSendAction?SendComposerButton:RecordComposerButton,SurfaceMotion.Reduced(this),chat.ShowSendAction?SurfaceMotionKind.ComposerSend:SurfaceMotionKind.ComposerMic);
+        }
         if (e.PropertyName == nameof(ChatViewModel.SelectedRecipient))
         {
             emojiFlyout?.Hide();emojiFlyout=null;
@@ -146,7 +152,7 @@ public partial class ChatView : UserControl
     {
         emojiFlyout?.Hide();emojiFlyout=null;
         sharedGallery?.Close(); sharedGallery = null;
-        motion.Cancel();
+        motion.Cancel();composerMotion.Cancel();
         if (model != null) { model.RequestScrollToBottom -= ScrollToBottom; model.PropertyChanged -= OnModelChanged; }
         base.OnDetachedFromVisualTree(e);
     }

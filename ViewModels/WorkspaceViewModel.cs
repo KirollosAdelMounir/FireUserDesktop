@@ -272,6 +272,9 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         chatService.WorkplaceChanged += OnInvalidated;
         chatService.AppearancePreferencesChanged += AppearanceInvalidated;
         chatService.ConnectionStateChanged += OnConnection;
+        chatService.CallLogsSeen += InvalidateCallLogs;
+        chatService.MessageReceived += OnCallLogMessage;
+        chatService.MessageUpdated += OnCallLogMessage;
         chatService.IncomingCallReceived += OnIncoming;
         chatService.CallParticipantLeft += OnCallLeft;
         media.VideoReceived += OnVideo;
@@ -491,6 +494,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
                 }
                 await Task.WhenAll(
                     Appearance.RefreshAsync(),
+                    RefreshCallLogsAsync(),
                     Load(LoadCalendar(date, date.AddDays(42)), items =>
                     {
                         Calendar.Clear(); foreach (var entry in items) Calendar.Add(entry);
@@ -816,6 +820,9 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         chatService.WorkplaceNotificationsRead -= OnNotificationsRead;
         RecentNotifications.Clear();
         chatService.WorkplaceChanged -= OnInvalidated; chatService.ConnectionStateChanged -= OnConnection;
+        chatService.CallLogsSeen -= InvalidateCallLogs;
+        chatService.MessageReceived -= OnCallLogMessage;
+        chatService.MessageUpdated -= OnCallLogMessage;
         chatService.IncomingCallReceived -= OnIncoming; chatService.CallParticipantLeft -= OnCallLeft;
         media.ConnectionChanged -= OnMediaConnectionChanged;
         media.VideoReceived -= OnVideo; media.Error -= OnMediaError; media.ParticipantLeft -= OnParticipantLeft;

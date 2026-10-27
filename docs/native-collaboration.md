@@ -266,3 +266,7 @@ portal axis messages, and a keyboard lease/focus test using a private Xvfb displ
 These checks never grab or inject into the user's desktop. Real cross-machine
 shortcuts, macOS consent, compositor policy and measured end-to-end latency need
 runtime device testing.
+
+### Call Logs
+
+A separate Call Logs tab shows authorized direct/group call summaries with direction, outcome, local time, media type and duration. History loads 50 records at a time with a stable message cursor. Select a row to create a new call (not rejoin an expired call). Missed badges use the authenticated participant’s attendance: a group call answered by others remains missed for an invitee who never joined. Busy calls are excluded. Historical summaries without attendance retain their recorded global outcome. Opening the tab acknowledges the server snapshot time via a monotonic account-scoped Redis marker. `CallLogsSeen`, call-summary messages and reconnect invalidate snapshots. History remains separate from chat read receipts. Source/build verification does not establish physical call delivery.
