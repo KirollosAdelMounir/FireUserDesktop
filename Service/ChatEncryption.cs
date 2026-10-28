@@ -18,6 +18,9 @@ namespace UserIdentityDesktop.Service;
 /// <summary>Native FUCHAT1 JOSE interoperability. Private keys and device grants stay in memory.</summary>
 public sealed class ChatEncryption(IAuthService auth, IConfigurationService config)
 {
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string,(Guid Owner,Guid[] Audience)> notificationAudiences=new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string,(DateTime Until,NotificationDeviceKey[] Keys)> notificationKeys=new();
+    private sealed record NotificationDeviceKey(Guid UserId,string KeyId,string PublicKey,string Scope);
     private readonly SemaphoreSlim gate = new(1, 1);
     private string? deviceToken;
     private Guid deviceOwner;
@@ -32,7 +35,7 @@ public sealed class ChatEncryption(IAuthService auth, IConfigurationService conf
     public sealed record Payload(int Version, string Nonce, Guid Sender, Guid Receiver, string? ConversationId,
         Guid[] Audience, string? Text, EncryptedFile[] Files);
     public sealed record PreparedFile(string Path, EncryptedFile Metadata);
-    public void Lock() { Interlocked.Increment(ref identityEpoch); deviceToken = null; deviceOwner = Guid.Empty; sessionIdentity = null; publicKeys.Clear(); }
+    public void Lock() { Interlocked.Increment(ref identityEpoch); deviceToken = null; deviceOwner = Guid.Empty; sessionIdentity = null; publicKeys.Clear(); notificationAudiences.Clear();notificationKeys.Clear(); }
 
     private async Task<T> Request<T>(string path, object? body = null,CancellationToken cancellationToken = default)
     {
@@ -123,9 +126,32 @@ public sealed class ChatEncryption(IAuthService auth, IConfigurationService conf
             var keys = new Dictionary<Guid, PublicIdentity>();
             foreach (var id in audience) keys[id] = await Public(id, owner,cancellationToken);
             if (auth.CurrentUser?.Id != owner) throw new InvalidOperationException("The session changed.");
-            return await Task.Run(() => Protect(new Payload(1, Guid.NewGuid().ToString("D"), owner, receiver, conversationId, audience, text, files ?? Array.Empty<EncryptedFile>()), identity, keys));
+            var wire=await Task.Run(() => Protect(new Payload(1, Guid.NewGuid().ToString("D"), owner, receiver, conversationId, audience, text, files ?? Array.Empty<EncryptedFile>()), identity, keys));
+            if(notificationAudiences.Count>128)notificationAudiences.Clear();notificationAudiences[wire]=(owner,audience);return wire;
         }
         finally { gate.Release(); }
+    }
+
+    public async Task<List<EncryptedNotificationPreview>> NotificationPreviewsAsync(string wire,string? text)
+    {
+        var result=new List<EncryptedNotificationPreview>();
+        if(!notificationAudiences.TryRemove(wire,out var context) || auth.CurrentUser?.Id!=context.Owner)return result;
+        try{
+            var ids=context.Audience.Where(id=>id!=context.Owner).ToArray();if(ids.Length==0)return result;
+            var cacheKey=context.Owner+":"+string.Join(",",ids);NotificationDeviceKey[] devices;
+            if(notificationKeys.TryGetValue(cacheKey,out var cached)&&cached.Until>DateTime.UtcNow)devices=cached.Keys;
+            else {using var client=auth.CreateAuthenticatedClient();client.Timeout=TimeSpan.FromMilliseconds(1200);using var response=await client.GetAsync(config.ServerUrl.TrimEnd('/')+"/api/MobileDevices/PreviewKeys?"+string.Join("&",ids.Select(id=>"userIds="+id)));devices=await ApiPayload.ReadAsync<NotificationDeviceKey[]>(response);notificationKeys[cacheKey]=(DateTime.UtcNow.AddMinutes(1),devices);}
+            var identity=await Identity(context.Owner);using var signing=ECDsa.Create();signing.ImportPkcs8PrivateKey(Convert.FromBase64String(identity.SigningPrivateKey),out _);
+            var snippet=string.Concat((text??"Attachment").EnumerateRunes().Take(160).Select(r=>r.ToString()));
+            foreach(var device in devices){
+                if(auth.CurrentUser?.Id!=context.Owner)return [];
+                var body=new {version=1,keyId=device.KeyId,scope=device.Scope,recipient=device.UserId.ToString("D"),sender=context.Owner.ToString("D"),text=snippet,wireHash=Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(wire))),sentAt=DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'"),conversationId=(string?)null};
+                var header=Encode(JsonSerializer.SerializeToUtf8Bytes(new{alg="ES256",kid=context.Owner.ToString("D"),typ="FUPUSH1"}));var payload=Encode(JsonSerializer.SerializeToUtf8Bytes(body,new JsonSerializerOptions{Encoder=System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping}));var input=header+"."+payload;var signed=input+"."+Encode(signing.SignData(Encoding.ASCII.GetBytes(input),HashAlgorithmName.SHA256,DSASignatureFormat.IeeeP1363FixedFieldConcatenation));
+                using var rsa=RSA.Create();rsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(device.PublicKey),out _);var key=RandomNumberGenerator.GetBytes(32);var iv=RandomNumberGenerator.GetBytes(12);
+                try{var plain=Encoding.UTF8.GetBytes(signed);var cipher=new byte[plain.Length];var tag=new byte[16];using var aes=new AesGcm(key,16);aes.Encrypt(iv,plain,cipher,tag);var data=new byte[cipher.Length+16];cipher.CopyTo(data,0);tag.CopyTo(data,cipher.Length);var capsule=new{key=Convert.ToBase64String(rsa.Encrypt(key,RSAEncryptionPadding.OaepSHA256)),iv=Convert.ToBase64String(iv),data=Convert.ToBase64String(data)};result.Add(new(device.UserId,device.KeyId,"PN1."+Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(capsule))));}finally{CryptographicOperations.ZeroMemory(key);}
+            }
+        }catch{ /* Optional encrypted previews never block the original encrypted message. */ }
+        return result;
     }
 
     public static string Protect(Payload payload, Recovery identity, IReadOnlyDictionary<Guid, PublicIdentity> audience)

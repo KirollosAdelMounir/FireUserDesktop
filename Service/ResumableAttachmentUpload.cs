@@ -13,7 +13,7 @@ namespace UserIdentityDesktop.Service;
 
 internal sealed record AttachmentUploadFile(string Name, string ContentType, long Size);
 internal sealed record AttachmentUploadRequest(Guid Sender, Guid Receiver, string? ConversationId, string? Text,
-    string? ReplyToMessageId, List<AttachmentUploadFile> Files);
+    string? ReplyToMessageId, List<AttachmentUploadFile> Files, List<UserIdentityDesktop.Core.Models.EncryptedNotificationPreview>? NotificationPreviews=null);
 internal sealed record AttachmentUploadStatus(string UploadId, List<long> Offsets);
 
 /// <summary>Only chunk writes are recovered. Creation and final message publication are never replayed.</summary>

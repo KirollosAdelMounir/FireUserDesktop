@@ -230,8 +230,11 @@ public class SystemUserSearch
     }
 }
 
+public sealed record EncryptedNotificationPreview(Guid UserId,string KeyId,string Envelope);
+
 public class ChatDto
 {
+    public List<EncryptedNotificationPreview>? NotificationPreviews {get;set;}
     public string? ConversationId { get; set; }
     public string? ReplyToMessageId { get; set; }
     [JsonPropertyName("sender")]

@@ -34,7 +34,7 @@ public partial class ChatService
         var sender=_authService.CurrentUser?.Id ?? throw new InvalidOperationException("Sign in first.");
         var encrypted = await Protect(Guid.Empty, conversationId, text);
         if(_authService.CurrentUser?.Id!=sender)throw new OperationCanceledException("The signed-in account changed.");
-        await QueueHubAction("SendMessageToConversation", new ChatDto { Sender = sender, Receiver = Guid.Empty, ConversationId = conversationId, Text = encrypted, ReplyToMessageId = replyTo });
+        await QueueHubAction("SendMessageToConversation", new ChatDto { Sender = sender, Receiver = Guid.Empty, ConversationId = conversationId, Text = encrypted, NotificationPreviews=await _encryption.NotificationPreviewsAsync(encrypted,text), ReplyToMessageId = replyTo });
         return true;
     }
     public async Task<List<ChatMessage>> GetConversationHistoryAsync(string id, int page = 0)
@@ -83,7 +83,7 @@ public partial class ChatService
     public async Task<bool> SendReplyAsync(Guid receiverId, string text, string replyTo)
     {
         var encrypted = await _encryption.EncryptAsync(receiverId, text);
-        await QueueHubAction("SendMessageToUser", new ChatDto { Sender = _authService.CurrentUser!.Id, Receiver = receiverId, Text = encrypted, ReplyToMessageId = replyTo });
+        await QueueHubAction("SendMessageToUser", new ChatDto { Sender = _authService.CurrentUser!.Id, Receiver = receiverId, Text = encrypted, NotificationPreviews=await _encryption.NotificationPreviewsAsync(encrypted,text), ReplyToMessageId = replyTo });
         return true;
     }
     public async Task EditMessageAsync(ChatMessage message, string text)

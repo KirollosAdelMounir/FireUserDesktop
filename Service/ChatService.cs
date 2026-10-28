@@ -257,6 +257,7 @@ public partial class ChatService : IChatService
                 Attachments = null
             };
 
+            chatDto.NotificationPreviews=await _encryption.NotificationPreviewsAsync(chatDto.Text!,text);
             await QueueHubAction("SendMessageToUser", chatDto);
             return true;
         }
@@ -286,7 +287,7 @@ public partial class ChatService : IChatService
             if (_authService.CurrentUser?.Id != currentUser.Id) throw new OperationCanceledException("The signed-in account changed.");
             await ResumableAttachmentUpload.SendAsync(client, _configService.ServerUrl,
                 new AttachmentUploadRequest(currentUser.Id, receiverId, conversationId, encrypted, replyTo,
-                    prepared.ConvertAll(x => new AttachmentUploadFile(x.Metadata.Id + ".fua", "application/octet-stream", new FileInfo(x.Path).Length))),
+                    prepared.ConvertAll(x => new AttachmentUploadFile(x.Metadata.Id + ".fua", "application/octet-stream", new FileInfo(x.Path).Length)), await _encryption.NotificationPreviewsAsync(encrypted,text)),
                 prepared.ConvertAll(x => x.Path), transfer,transfer.CancellationToken);
             transfer.Complete(true);
             return true;
